@@ -1,27 +1,22 @@
-#fastapi==0.111.0
-#uvicorn[standard]==0.30.1
-#starlette==0.37.2
-#itsdangerous==2.2.0           # required by SessionMiddleware
- 
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+starlette==0.37.2
+itsdangerous==2.2.0
+
 # Google
-#google-auth==2.29.0
-#google-auth-oauthlib==1.2.0
-#google-api-python-client==2.128.0
- 
+google-auth==2.29.0
+google-auth-oauthlib==1.2.0
+google-api-python-client==2.128.0
+
 # Celery + Redis
-#celery==5.4.0
-#redis==5.0.4
- 
+celery==5.4.0
+redis==5.0.4
+
 # Config
-#pydantic-settings==2.2.1
- 
+pydantic-settings==2.2.1
+
 # Optional: Celery monitoring
 #flower==2.0.1
-
- 
-
-# Database
-sqlalchemy==2.0.30
  
 # LLM
 openai>=1.30.0

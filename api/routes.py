@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse, JSONResponse
 
 from googleapiclient.discovery import build
-from sqlalchemy import func
 
 from gmail_auth import build_oauth_flow, get_authorization_url, get_gmail_service
 from gmail_service import (
@@ -18,17 +17,13 @@ from gmail_service import (
 from history_tracker import get_latest_history_id, save_latest_history_id
 from token_store import save_token, delete_token
 from workers.tasks import process_email_chunk
-from models.email_model import Email, SessionLocal, init_db
-from models.rfq_model import RFQItem, init_rfq_db
+from next_api_client import get_inquiries
 from config import get_settings
 from logging_setup import get_logger
 
 logger = get_logger(__name__)
 settings = get_settings()
 router = APIRouter()
-
-init_db()
-init_rfq_db()
 
 
 @router.get("/")
@@ -195,67 +190,46 @@ def list_rfq(
     username: str = None,
 ):
     """
-    List extracted RFQ emails.
-    Each row = one email with all its parts comma-joined.
-
-    Optional filters:
-      ?brand=Siemens        → emails containing 'Siemens' in brands column
-      ?location=India       → emails from India
-      ?username=Polycab     → emails from Polycab
+    List extracted RFQs from the Next.js/PostgreSQL backend.
     """
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Not authenticated.")
 
-    db = SessionLocal()
     try:
-        q = db.query(RFQItem).filter(RFQItem.user_id == user_id)
+        data = get_inquiries()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Next.js API error: {exc}")
 
-        if brand:
-            q = q.filter(RFQItem.brands.ilike(f"%{brand}%"))
-        if location:
-            q = q.filter(RFQItem.location.ilike(f"%{location}%"))
-        if username:
-            q = q.filter(RFQItem.username.ilike(f"%{username}%"))
+    inquiries = data.get("inquiries", [])
 
-        total = q.count()
-        items = (
-            q.order_by(RFQItem.created_at.desc())
-             .offset((page - 1) * per_page)
-             .limit(per_page)
-             .all()
-        )
+    def matches(inquiry):
+        items = inquiry.get("items", [])
+        brand_text = " ".join(str(item.get("brand") or "") for item in items)
+        if brand and brand.lower() not in brand_text.lower():
+            return False
+        if location and location.lower() not in str(inquiry.get("location") or "").lower():
+            return False
+        if username and username.lower() not in str(inquiry.get("client_name") or "").lower():
+            return False
+        return True
 
-        return {
-            "total":    total,
-            "page":     page,
-            "per_page": per_page,
-            "rfq_items": [
-                {
-                    "id":           i.id,
-                    "message_id":   i.message_id,
-                    "email_date":   i.email_date,
-                    "username":     i.username,
-                    "location":     i.location,
-                    "brands":       i.brands,
-                    "part_numbers": i.part_numbers,
-                    "quantities":   i.quantities,
-                    "notes":        i.notes,
-                    "sender":       i.sender,
-                    "subject":      i.subject,
-                }
-                for i in items
-            ],
-        }
-    finally:
-        db.close()
+    filtered = [inquiry for inquiry in inquiries if matches(inquiry)]
+    start = (page - 1) * per_page
+    end = start + per_page
+
+    return {
+        "total": len(filtered),
+        "page": page,
+        "per_page": per_page,
+        "rfq_items": filtered[start:end],
+    }
 
 
 @router.get("/rfq/export")
 def export_rfq_csv(request: Request):
     """
-    Download all RFQ data as a CSV file.
-    Columns: date, username, location, brands, part_numbers, quantities, notes, sender, subject
+    Download RFQ data from the Next.js/PostgreSQL backend as a CSV file.
     """
     import csv
     import io
@@ -265,37 +239,40 @@ def export_rfq_csv(request: Request):
     if not user_id:
         raise HTTPException(status_code=401, detail="Not authenticated.")
 
-    db = SessionLocal()
     try:
-        items = (
-            db.query(RFQItem)
-            .filter(RFQItem.user_id == user_id)
-            .order_by(RFQItem.email_date.desc())
-            .all()
-        )
+        data = get_inquiries()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Next.js API error: {exc}")
 
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow([
-            "date", "username", "location",
-            "brands", "part_numbers", "quantities", "notes",
-            "sender", "subject", "message_id"
-        ])
-        for i in items:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "date", "client_name", "location",
+        "brand", "part_number", "quantity", "notes",
+        "sender", "subject", "unique_code"
+    ])
+    for inquiry in data.get("inquiries", []):
+        items = inquiry.get("items") or [{}]
+        for item in items:
             writer.writerow([
-                i.email_date, i.username, i.location,
-                i.brands, i.part_numbers, i.quantities, i.notes,
-                i.sender, i.subject, i.message_id
+                inquiry.get("email_date"),
+                inquiry.get("client_name"),
+                inquiry.get("location"),
+                item.get("brand"),
+                item.get("partNumber"),
+                item.get("quantity"),
+                item.get("itemNotes") or inquiry.get("notes"),
+                inquiry.get("sender_email") or inquiry.get("sender_name"),
+                inquiry.get("subject"),
+                inquiry.get("unique_code"),
             ])
 
-        output.seek(0)
-        return StreamingResponse(
-            iter([output.getvalue()]),
-            media_type="text/csv",
-            headers={"Content-Disposition": "attachment; filename=rfq_export.csv"}
-        )
-    finally:
-        db.close()
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=rfq_export.csv"}
+    )
 
 
 @router.get("/stats")
@@ -304,18 +281,19 @@ def stats(request: Request):
     if not user_id:
         raise HTTPException(status_code=401, detail="Not authenticated.")
 
-    db = SessionLocal()
     try:
-        total_emails = db.query(func.count(Email.id)).filter(Email.user_id == user_id).scalar()
-        total_rfqs   = db.query(func.count(RFQItem.id)).filter(RFQItem.user_id == user_id).scalar()
+        data = get_inquiries()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Next.js API error: {exc}")
 
-        return {
-            "user_id":          user_id,
-            "total_emails":     total_emails,
-            "rfq_emails_found": total_rfqs,
-        }
-    finally:
-        db.close()
+    inquiries = data.get("inquiries", [])
+
+    return {
+        "user_id": user_id,
+        "rfq_emails_found": len(inquiries),
+        "new": sum(1 for inquiry in inquiries if inquiry.get("status") == "new"),
+        "in_progress": sum(1 for inquiry in inquiries if inquiry.get("status") == "in_progress"),
+    }
 
 
 @router.get("/logout")

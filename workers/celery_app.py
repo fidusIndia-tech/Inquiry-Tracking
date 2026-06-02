@@ -23,6 +23,7 @@ celery_app.conf.update(
     result_serializer="json",
     accept_content=["json"],
     task_routes={
+        "workers.tasks.process_email_message": {"queue": "emails"},
         "workers.tasks.process_email_chunk": {"queue": "emails"},
         "workers.tasks.poll_inbox":          {"queue": "emails"},
         "workers.tasks.poll_all_users":      {"queue": "emails"},

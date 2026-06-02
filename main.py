@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from api.routes import router
 from config import get_settings
+from database import init_db
 
 settings = get_settings()
 
@@ -26,3 +27,8 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+
+@app.on_event("startup")
+def startup() -> None:
+    init_db()

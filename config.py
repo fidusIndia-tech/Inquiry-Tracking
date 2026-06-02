@@ -19,10 +19,12 @@ class Settings(BaseSettings):
     ]
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
+    CREDENTIAL_ENCRYPTION_KEY: str = ""
 
-    TOKEN_DIR: str = "tokens"
     NEXT_PARSER_API_URL: str = "http://localhost:3000/api/parser/rfq-items"
     NEXT_INQUIRIES_API_URL: str = "http://localhost:3000/api/inquiries"
+
+    DATABASE_URL: str = "sqlite:///emails.db"
 
     REDIS_URL: str = "redis://localhost:6379/0"
 

@@ -8,15 +8,9 @@ Swap DATABASE_URL in .env to PostgreSQL for production:
 """
 
 from datetime import datetime
-from sqlalchemy import (
-    Column, String, Text, DateTime, Integer, Boolean, create_engine
-)
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import Column, String, Text, DateTime, Integer, Boolean
 
-from config import get_settings
-
-settings = get_settings()
-Base = declarative_base()
+from database import Base, SessionLocal, engine
 
 
 class Email(Base):
@@ -52,17 +46,6 @@ class Email(Base):
 
 
 # ── DB engine + session factory ───────────────────────────────────────────────
-
-DATABASE_URL = getattr(settings, "DATABASE_URL", "sqlite:///emails.db")
-
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
-    echo=False,
-)
-
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-
 
 def init_db():
     """Create all tables. Call once at startup."""

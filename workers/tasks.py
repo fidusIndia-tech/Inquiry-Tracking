@@ -9,12 +9,11 @@ from celery import Task
 from googleapiclient.errors import HttpError
 
 from workers.celery_app import celery_app
-from gmail_auth import get_gmail_service
+from gmail_auth import get_gmail_service_for_user
 from gmail_service import (
     get_full_message,
     fetch_new_message_ids_from_history,
     HistoryExpiredError,
-    chunk_messages,
 )
 from history_tracker import get_latest_history_id, save_latest_history_id, get_all_user_ids
 from email_parser import parse_email
@@ -38,7 +37,7 @@ class BaseTask(Task):
 @celery_app.task(
     bind=True,
     base=BaseTask,
-    name="workers.tasks.process_email_chunk",
+    name="workers.tasks.process_email_message",
     autoretry_for=(HttpError, ConnectionError, TimeoutError),
     max_retries=3,
     retry_backoff=60,
@@ -46,20 +45,20 @@ class BaseTask(Task):
     retry_jitter=True,
     rate_limit="30/s",
 )
-def process_email_chunk(self, user_id: str, messages: list[dict]) -> dict:
+def process_email_message(self, user_id: str, message_id: str) -> dict:
     logger.info(
-        "Task %s | user=%s | chunk=%d | attempt=%d",
-        self.request.id, user_id, len(messages), self.request.retries + 1,
+        "Task %s | user=%s | message=%s | attempt=%d",
+        self.request.id, user_id, message_id, self.request.retries + 1,
     )
 
     try:
-        service = get_gmail_service(user_id)
+        service = get_gmail_service_for_user(user_id)
     except ValueError as exc:
         logger.error("Auth error for '%s': %s", user_id, exc)
         raise
 
     stats = {
-        "total": len(messages),
+        "total": 1,
         "parsed": 0,
         "layer1_dropped": 0,
         "layer2_dropped": 0,
@@ -67,8 +66,7 @@ def process_email_chunk(self, user_id: str, messages: list[dict]) -> dict:
         "failed": 0,
     }
 
-    for msg_stub in messages:
-        msg_id = msg_stub["id"]
+    for msg_id in [message_id]:
         try:
             # 1. Fetch and flatten the full email from Gmail.
             raw = get_full_message(service, msg_id)
@@ -173,6 +171,24 @@ def process_email_chunk(self, user_id: str, messages: list[dict]) -> dict:
 @celery_app.task(
     bind=True,
     base=BaseTask,
+    name="workers.tasks.process_email_chunk",
+)
+def process_email_chunk(self, user_id: str, messages: list[dict]) -> dict:
+    """
+    Backward-compatible wrapper for any old callers.
+    New SaaS workflow queues process_email_message(user_id, message_id).
+    """
+    task_ids = []
+    for msg in messages:
+        msg_id = msg["id"] if isinstance(msg, dict) else str(msg)
+        task = process_email_message.apply_async(args=[user_id, msg_id], queue="emails")
+        task_ids.append(task.id)
+    return {"status": "queued", "user_id": user_id, "messages_queued": len(task_ids), "task_ids": task_ids}
+
+
+@celery_app.task(
+    bind=True,
+    base=BaseTask,
     name="workers.tasks.poll_inbox",
     autoretry_for=(HttpError, ConnectionError, TimeoutError),
     max_retries=3,
@@ -192,7 +208,7 @@ def poll_inbox(self, user_id: str) -> dict:
         return {"status": "no_history_id", "user_id": user_id}
 
     try:
-        service = get_gmail_service(user_id)
+        service = get_gmail_service_for_user(user_id)
     except ValueError as exc:
         logger.error("poll_inbox | auth error for %s: %s", user_id, exc)
         return {"status": "auth_error", "detail": str(exc)}
@@ -211,8 +227,8 @@ def poll_inbox(self, user_id: str) -> dict:
         return {"status": "no_new_messages", "user_id": user_id}
 
     task_ids = []
-    for chunk in chunk_messages(new_msgs):
-        t = process_email_chunk.apply_async(args=[user_id, chunk], queue="emails")
+    for msg in new_msgs:
+        t = process_email_message.apply_async(args=[user_id, msg["id"]], queue="emails")
         task_ids.append(t.id)
 
     logger.info(
@@ -223,7 +239,7 @@ def poll_inbox(self, user_id: str) -> dict:
         "status":            "queued",
         "user_id":           user_id,
         "new_messages":      len(new_msgs),
-        "chunks_queued":     len(task_ids),
+        "messages_queued":   len(task_ids),
         "latest_history_id": latest_id,
     }
 

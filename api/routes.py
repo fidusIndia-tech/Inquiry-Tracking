@@ -7,16 +7,15 @@ from fastapi.responses import RedirectResponse, JSONResponse
 
 from googleapiclient.discovery import build
 
-from gmail_auth import build_oauth_flow, get_authorization_url, get_gmail_service
+from gmail_auth import build_oauth_flow, get_authorization_url, get_gmail_service_for_user
 from gmail_service import (
     fetch_message_ids,
-    chunk_messages,
     fetch_new_message_ids_from_history,
     HistoryExpiredError,
 )
 from history_tracker import get_latest_history_id, save_latest_history_id
-from token_store import save_token, delete_token
-from workers.tasks import process_email_chunk
+from models.user_model import save_user_credentials
+from workers.tasks import process_email_message
 from next_api_client import get_inquiries
 from config import get_settings
 from logging_setup import get_logger
@@ -56,24 +55,24 @@ def oauth_callback(request: Request):
         raise HTTPException(status_code=400, detail=f"Token exchange failed: {exc}")
 
     try:
-        svc = build("oauth2", "v2", credentials=credentials, cache_discovery=False)
-        user_info = svc.userinfo().get().execute()
-        user_id = user_info["email"]
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Could not get user info: {exc}")
-
-    save_token(user_id, credentials)
-
-    # Capture initial historyId — becomes the incremental sync checkpoint
-    try:
         gmail_svc = build("gmail", "v1", credentials=credentials, cache_discovery=False)
         profile = gmail_svc.users().getProfile(userId="me").execute()
+        user_id = profile["emailAddress"]
         history_id = profile.get("historyId")
-        if history_id:
-            save_latest_history_id(user_id, history_id)
-            logger.info("Initial historyId captured | user=%s historyId=%s", user_id, history_id)
     except Exception as exc:
-        logger.warning("Could not capture historyId for %s: %s", user_id, exc)
+        raise HTTPException(status_code=500, detail=f"Could not get Gmail profile: {exc}")
+
+        save_user_credentials(
+            email=user_id,
+            refresh_token=credentials.refresh_token,
+            access_token=credentials.token,
+            access_token_expiry=credentials.expiry,
+            history_id=history_id,
+            scopes=list(credentials.scopes or settings.GOOGLE_SCOPES),
+        )
+
+    # Capture initial historyId — becomes the incremental sync checkpoint
+    logger.info("Initial Gmail profile captured | user=%s historyId=%s", user_id, history_id)
 
     request.session["user_id"] = user_id
     request.session.pop("oauth_state", None)
@@ -95,7 +94,7 @@ def start_fetch(request: Request, reseed: bool = False):
         raise HTTPException(status_code=401, detail="Not authenticated.")
 
     try:
-        service = get_gmail_service(user_id)
+        service = get_gmail_service_for_user(user_id)
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc))
     except Exception as exc:
@@ -122,14 +121,14 @@ def start_fetch(request: Request, reseed: bool = False):
             return JSONResponse({"status": "no_messages"})
 
         task_ids = []
-        for chunk in chunk_messages(messages):
-            task = process_email_chunk.apply_async(args=[user_id, chunk], queue="emails")
+        for msg in messages:
+            task = process_email_message.apply_async(args=[user_id, msg["id"]], queue="emails")
             task_ids.append(task.id)
 
         return JSONResponse({
             "status":         "full_fetch_queued",
             "total_messages": len(messages),
-            "chunks_queued":  len(task_ids),
+            "messages_queued": len(task_ids),
             "note":           "Seed complete. Future calls will use incremental History API.",
         })
 
@@ -151,14 +150,14 @@ def start_fetch(request: Request, reseed: bool = False):
         return JSONResponse({"status": "no_new_messages", "latest_history_id": latest_id})
 
     task_ids = []
-    for chunk in chunk_messages(new_msgs):
-        task = process_email_chunk.apply_async(args=[user_id, chunk], queue="emails")
+    for msg in new_msgs:
+        task = process_email_message.apply_async(args=[user_id, msg["id"]], queue="emails")
         task_ids.append(task.id)
 
     return JSONResponse({
         "status":             "queued",
         "new_messages":       len(new_msgs),
-        "chunks_queued":      len(task_ids),
+        "messages_queued":    len(task_ids),
         "latest_history_id":  latest_id,
     })
 
@@ -298,8 +297,5 @@ def stats(request: Request):
 
 @router.get("/logout")
 def logout(request: Request):
-    user_id = request.session.get("user_id")
-    if user_id:
-        delete_token(user_id)
-        request.session.clear()
+    request.session.clear()
     return {"status": "logged_out"}

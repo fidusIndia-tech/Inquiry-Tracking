@@ -29,7 +29,7 @@ services:
     build: .
     # Windows: --pool=solo   |  Linux production: remove --pool flag (uses prefork)
     command: >
-      celery -A app.workers.celery_app:celery_app worker
+      celery -A workers.celery_app:celery_app worker
       --queues=emails
       --pool=solo
       --loglevel=info
@@ -42,9 +42,20 @@ services:
       redis:
         condition: service_healthy
 
+  beat:
+    build: .
+    command: celery -A workers.celery_app:celery_app beat --loglevel=info
+    volumes:
+      - .:/app
+      - ./tokens:/app/tokens
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+
   flower:
     build: .
-    command: celery -A app.workers.celery_app:celery_app flower --port=5555
+    command: celery -A workers.celery_app:celery_app flower --port=5555
     ports:
       - "5555:5555"
     env_file: .env

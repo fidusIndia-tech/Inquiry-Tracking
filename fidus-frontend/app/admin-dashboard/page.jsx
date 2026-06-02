@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   LayoutDashboard,
@@ -13,6 +13,51 @@ import {
 export default function AdminDashboard() {
 
   const [activeMenu, setActiveMenu] = useState("dashboard");
+  const [inquiries, setInquiries] = useState([]);
+  const [isLoadingInquiries, setIsLoadingInquiries] = useState(true);
+  const [inquiriesError, setInquiriesError] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadInquiries() {
+      try {
+        setIsLoadingInquiries(true);
+        setInquiriesError("");
+
+        const response = await fetch("/api/inquiries");
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to load inquiries");
+        }
+
+        if (isMounted) {
+          setInquiries(data.inquiries || []);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setInquiriesError(error.message);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingInquiries(false);
+        }
+      }
+    }
+
+    loadInquiries();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const totalInquiries = inquiries.length;
+  const inProgressCount = inquiries.filter(
+    (inquiry) => inquiry.status === "in_progress"
+  ).length;
+  const newCount = inquiries.filter((inquiry) => inquiry.status === "new").length;
 
   return (
 
@@ -156,23 +201,27 @@ export default function AdminDashboard() {
 
                 <DashboardCard
                   title="Total Inquiries"
-                  value="128"
+                  value={isLoadingInquiries ? "..." : totalInquiries}
                 />
 
                 <DashboardCard
                   title="In Progress"
-                  value="37"
+                  value={isLoadingInquiries ? "..." : inProgressCount}
                 />
 
                 <DashboardCard
                   title="New"
-                  value="21"
+                  value={isLoadingInquiries ? "..." : newCount}
                 />
 
               </div>
 
               {/* RECENT SALES TABLE */}
-              <RecentSalesTable />
+              <RecentSalesTable
+                inquiries={inquiries}
+                isLoading={isLoadingInquiries}
+                error={inquiriesError}
+              />
 
             </>
           )}
@@ -373,7 +422,11 @@ function SalesRow({
 }
 
 /* ================= RECENT SALES TABLE ================= */
-function RecentSalesTable() {
+function RecentSalesTable({
+  inquiries,
+  isLoading,
+  error,
+}) {
 
   return (
 
@@ -431,37 +484,52 @@ function RecentSalesTable() {
 
           <tbody>
 
-            <TableRow
-              sr="1"
-              date="15-06-26"
-              code="FIAPL0000001"
-              client="Ceat"
-              location="Halol"
-              user="Deepak"
-              pr="123456789"
-              brand="Shinhen"
-              part="BP20"
-              uom="Ltr"
-              qty="100"
-              assigned="Deepak"
-              status="Pending"
-            />
+            {isLoading && (
+              <tr>
+                <td className="px-6 py-8 text-sm text-gray-400" colSpan={13}>
+                  Loading inquiries...
+                </td>
+              </tr>
+            )}
 
-            <TableRow
-              sr="2"
-              date="14-06-26"
-              code="FIAPL0000002"
-              client="Toyota UAE"
-              location="Dubai"
-              user="Rahul"
-              pr="876543210"
-              brand="Toyota"
-              part="Filter-X"
-              uom="PCS"
-              qty="50"
-              assigned="Rahul"
-              status="Completed"
-            />
+            {!isLoading && error && (
+              <tr>
+                <td className="px-6 py-8 text-sm text-red-400" colSpan={13}>
+                  {error}
+                </td>
+              </tr>
+            )}
+
+            {!isLoading && !error && inquiries.length === 0 && (
+              <tr>
+                <td className="px-6 py-8 text-sm text-gray-400" colSpan={13}>
+                  No inquiries found.
+                </td>
+              </tr>
+            )}
+
+            {!isLoading && !error && inquiries.map((inquiry, index) => {
+              const firstItem = inquiry.items?.[0] || {};
+
+              return (
+                <TableRow
+                  key={inquiry.id}
+                  sr={index + 1}
+                  date={formatDate(inquiry.email_date || inquiry.created_at)}
+                  code={inquiry.unique_code}
+                  client={inquiry.client_name || "-"}
+                  location={inquiry.location || "-"}
+                  user={inquiry.sender_name || "-"}
+                  pr="-"
+                  brand={firstItem.brand || "-"}
+                  part={firstItem.partNumber || "-"}
+                  uom={firstItem.uom || "-"}
+                  qty={firstItem.quantity || "-"}
+                  assigned="Deepak"
+                  status={formatStatus(inquiry.status)}
+                />
+              );
+            })}
 
           </tbody>
 
@@ -471,6 +539,25 @@ function RecentSalesTable() {
 
     </div>
   );
+}
+
+function formatDate(value) {
+  if (!value) return "-";
+
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "2-digit",
+  }).format(new Date(value));
+}
+
+function formatStatus(status) {
+  if (!status) return "New";
+
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 /* ================= TABLE ROW ================= */
@@ -525,9 +612,11 @@ function TableRow({
 
         <span
           className={`px-4 py-2 rounded-full text-xs font-semibold border ${
-            status === "Completed"
+            status === "Completed" || status === "Converted"
               ? "bg-green-500/10 text-green-400 border-green-500/20"
-              : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
+              : status === "New"
+                ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
           }`}
         >
 

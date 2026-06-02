@@ -1,13 +1,12 @@
 """
 workers/tasks.py
 ----------------
-Full pipeline — saves ONE row per email, comma-joined fields.
+Full pipeline — sends ONE parsed RFQ row per email to the Next.js backend.
 """
 
 import traceback
 from celery import Task
 from googleapiclient.errors import HttpError
-from sqlalchemy.exc import IntegrityError
 
 from workers.celery_app import celery_app
 from gmail_auth import get_gmail_service
@@ -22,16 +21,12 @@ from email_parser import parse_email
 from rfq_filter import is_rfq_candidate
 from attachment_handler import extract_attachment_text
 from llm_extractor import is_rfq_email, extract_rfq_data
-from models.email_model import Email, SessionLocal, init_db
-from models.rfq_model import RFQItem, init_rfq_db
+from next_api_client import post_rfq_item
 from config import get_settings
 from logging_setup import get_logger
 
 logger = get_logger(__name__)
 settings = get_settings()
-
-init_db()
-init_rfq_db()
 
 
 class BaseTask(Task):
@@ -65,130 +60,112 @@ def process_email_chunk(self, user_id: str, messages: list[dict]) -> dict:
 
     stats = {
         "total": len(messages),
-        "stored_raw": 0,
+        "parsed": 0,
         "layer1_dropped": 0,
         "layer2_dropped": 0,
-        "rfq_found": 0,
+        "rfq_exported": 0,
         "failed": 0,
     }
 
-    db = SessionLocal()
-    try:
-        for msg_stub in messages:
-            msg_id = msg_stub["id"]
-            try:
-                # ── 1. Fetch full email from Gmail API ────────────────────
-                raw    = get_full_message(service, msg_id)
-                parsed = parse_email(raw, user_id)
+    for msg_stub in messages:
+        msg_id = msg_stub["id"]
+        try:
+            # 1. Fetch and flatten the full email from Gmail.
+            raw = get_full_message(service, msg_id)
+            parsed = parse_email(raw, user_id)
+            stats["parsed"] += 1
 
-                # ── 2. Save raw email — skip if already stored ────────────
-                try:
-                    db.add(Email(**parsed))
-                    db.commit()
-                    stats["stored_raw"] += 1
-                except IntegrityError:
-                    db.rollback()
+            # 2. Layer 1: fast rule-based filter.
+            if not is_rfq_candidate(parsed):
+                stats["layer1_dropped"] += 1
+                continue
 
-                # ── 3. Layer 1: instant rule-based filter (free) ──────────
-                if not is_rfq_candidate(parsed):
-                    stats["layer1_dropped"] += 1
-                    continue
-
-                # ── 4. Extract text from attachments (PDF/XLSX/DOCX) ──────
-                attachment_text = ""
-                if parsed.get("has_attachment"):
-                    attachment_text = extract_attachment_text(
-                        service, msg_id, raw.get("payload", {})
-                    )
-
-                # ── 5. Layer 2: LLM yes/no classifier (gpt-4o-mini) ───────
-                if not is_rfq_email(parsed):
-                    stats["layer2_dropped"] += 1
-                    logger.debug("L2 DROP | %s | %s", parsed["sender"], parsed["subject"])
-                    continue
-
-                logger.info("✓ RFQ | %s | %s", parsed.get("sender", ""), parsed.get("subject", ""))
-
-                # ── 6. Layer 3: LLM structured extractor (gpt-4o) ─────────
-                line_items = extract_rfq_data(parsed, attachment_text)
-
-                if not line_items:
-                    logger.warning("  No items extracted for %s", msg_id)
-                    continue
-
-                # ── 7. Collapse all items into ONE row ────────────────────
-                # username + location come from first item (same sender throughout)
-                username = None
-                location = None
-                for item in line_items:
-                    if isinstance(item, dict):
-                        username = username or item.get("username")
-                        location = location or item.get("location")
-
-                brands       = ", ".join(str(i.get("brand")       or "") for i in line_items if isinstance(i, dict))
-                part_numbers = ", ".join(str(i.get("part_number") or "") for i in line_items if isinstance(i, dict))
-                quantities   = ", ".join(str(i.get("quantity")    or "") for i in line_items if isinstance(i, dict))
-                notes        = ", ".join(str(i.get("notes")       or "") for i in line_items if isinstance(i, dict))
-
-                # ── 8. Upsert: update if message already exists ───────────
-                existing = db.query(RFQItem).filter_by(message_id=msg_id).first()
-                if existing:
-                    existing.username     = username
-                    existing.location     = location
-                    existing.brands       = brands
-                    existing.part_numbers = part_numbers
-                    existing.quantities   = quantities
-                    existing.notes        = notes
-                else:
-                    db.add(RFQItem(
-                        message_id   = msg_id,
-                        user_id      = user_id,
-                        username     = username,
-                        location     = location,
-                        brands       = brands,
-                        part_numbers = part_numbers,
-                        quantities   = quantities,
-                        notes        = notes,
-                        sender       = parsed.get("sender"),
-                        subject      = parsed.get("subject"),
-                        email_date   = parsed.get("date_str"),
-                    ))
-
-                db.commit()
-                stats["rfq_found"] += 1
-
-                logger.info(
-                    "  → saved | %s | brands: %s | parts: %s",
-                    username or parsed.get("sender", ""),
-                    brands[:40],
-                    part_numbers[:60],
+            # 3. Extract text from attachments before LLM extraction.
+            attachment_text = ""
+            if parsed.get("has_attachment"):
+                attachment_text = extract_attachment_text(
+                    service, msg_id, raw.get("payload", {})
                 )
 
-            except HttpError as exc:
-                db.rollback()
-                status = exc.resp.status if exc.resp else "unknown"
-                if status == 404:
-                    logger.warning("Message %s not found, skipping", msg_id)
-                elif status == 429:
-                    logger.warning("Rate limited — retrying chunk")
-                    raise
-                else:
-                    logger.error("HttpError %s on %s: %s", status, msg_id, exc)
-                stats["failed"] += 1
+            # 4. Layer 2: LLM yes/no classifier.
+            if not is_rfq_email(parsed):
+                stats["layer2_dropped"] += 1
+                logger.debug("L2 DROP | %s | %s", parsed["sender"], parsed["subject"])
+                continue
 
-            except Exception as exc:
-                db.rollback()
-                logger.error("Error on %s: %s\n%s", msg_id, exc, traceback.format_exc())
-                stats["failed"] += 1
+            logger.info("RFQ | %s | %s", parsed.get("sender", ""), parsed.get("subject", ""))
 
-    finally:
-        db.close()
+            # 5. Layer 3: LLM structured extractor.
+            line_items = extract_rfq_data(parsed, attachment_text)
+
+            if not line_items:
+                logger.warning("No items extracted for %s", msg_id)
+                continue
+
+            # 6. Collapse all items into one parser row for the Next.js API.
+            username = None
+            location = None
+            for item in line_items:
+                if isinstance(item, dict):
+                    username = username or item.get("username")
+                    location = location or item.get("location")
+
+            brands = ", ".join(
+                str(i.get("brand") or "") for i in line_items if isinstance(i, dict)
+            )
+            part_numbers = ", ".join(
+                str(i.get("part_number") or "") for i in line_items if isinstance(i, dict)
+            )
+            quantities = ", ".join(
+                str(i.get("quantity") or "") for i in line_items if isinstance(i, dict)
+            )
+            notes = ", ".join(
+                str(i.get("notes") or "") for i in line_items if isinstance(i, dict)
+            )
+
+            result = post_rfq_item({
+                "message_id": msg_id,
+                "user_id": user_id,
+                "username": username,
+                "location": location,
+                "brands": brands,
+                "part_numbers": part_numbers,
+                "quantities": quantities,
+                "notes": notes,
+                "sender": parsed.get("sender"),
+                "subject": parsed.get("subject"),
+                "email_date": parsed.get("date_str"),
+            })
+
+            stats["rfq_exported"] += 1
+
+            logger.info(
+                "Exported RFQ | %s | %s | items=%s",
+                result.get("uniqueCode"),
+                username or parsed.get("sender", ""),
+                result.get("itemCount"),
+            )
+
+        except HttpError as exc:
+            status = exc.resp.status if exc.resp else "unknown"
+            if status == 404:
+                logger.warning("Message %s not found, skipping", msg_id)
+            elif status == 429:
+                logger.warning("Rate limited, retrying chunk")
+                raise
+            else:
+                logger.error("HttpError %s on %s: %s", status, msg_id, exc)
+            stats["failed"] += 1
+
+        except Exception as exc:
+            logger.error("Error on %s: %s\n%s", msg_id, exc, traceback.format_exc())
+            stats["failed"] += 1
 
     logger.info(
-        "Chunk done | total=%d | raw=%d | L1_drop=%d | L2_drop=%d | rfq=%d | failed=%d",
-        stats["total"], stats["stored_raw"],
+        "Chunk done | total=%d | parsed=%d | L1_drop=%d | L2_drop=%d | exported=%d | failed=%d",
+        stats["total"], stats["parsed"],
         stats["layer1_dropped"], stats["layer2_dropped"],
-        stats["rfq_found"], stats["failed"],
+        stats["rfq_exported"], stats["failed"],
     )
     return stats
 

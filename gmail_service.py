@@ -1,0 +1,139 @@
+"""
+gmail_service.py  (flat-import edition)
+"""
+
+from typing import Generator
+from googleapiclient.errors import HttpError
+from config import get_settings
+from logging_setup import get_logger
+
+logger = get_logger(__name__)
+settings = get_settings()
+
+
+def fetch_message_ids(service, max_results: int | None = None) -> list[dict]:
+    max_results = max_results or settings.GMAIL_FETCH_MAX_RESULTS
+    messages: list[dict] = []
+    page_token: str | None = None
+
+    logger.info("Fetching up to %d message IDs…", max_results)
+
+    while True:
+        kwargs: dict = {
+            "userId": "me",
+            "maxResults": min(200, max_results - len(messages)),
+        }
+        if page_token:
+            kwargs["pageToken"] = page_token
+
+        response = service.users().messages().list(**kwargs).execute()
+        batch = response.get("messages", [])
+        messages.extend(batch)
+        page_token = response.get("nextPageToken")
+
+        if not page_token or len(messages) >= max_results:
+            break
+
+    logger.info("Total message IDs fetched: %d", len(messages))
+    return messages
+
+
+def chunk_messages(
+    messages: list[dict],
+    chunk_size: int | None = None,
+) -> Generator[list[dict], None, None]:
+    chunk_size = chunk_size or settings.GMAIL_CHUNK_SIZE
+    for i in range(0, len(messages), chunk_size):
+        yield messages[i : i + chunk_size]
+
+
+def get_full_message(service, msg_id: str) -> dict:
+    return (
+        service.users()
+        .messages()
+        .get(userId="me", id=msg_id, format="full")
+        .execute()
+    )
+
+
+class HistoryExpiredError(Exception):
+    """Gmail returned 404 for the historyId — it is too old (Gmail keeps ~30 days)."""
+
+
+def fetch_new_message_ids_from_history(
+    service,
+    start_history_id: str,
+) -> tuple[list[dict], str | None]:
+    """
+    Return only messages *added* to the mailbox since `start_history_id`.
+
+    Returns:
+        new_messages      – list of {"id": msg_id} stubs (deduped)
+        latest_history_id – newest historyId from the response; save as next checkpoint.
+                            None only when the history response is completely empty.
+
+    Raises:
+        HistoryExpiredError – historyId is too old; caller must re-seed from profile.
+        HttpError           – any other Gmail API error.
+    """
+    messages: list[dict] = []
+    latest_history_id: str | None = None
+    page_token: str | None = None
+
+    try:
+        while True:
+            kwargs: dict = {
+                "userId": "me",
+                "startHistoryId": start_history_id,
+                "historyTypes": ["messageAdded"],
+            }
+            if page_token:
+                kwargs["pageToken"] = page_token
+
+            resp = service.users().history().list(**kwargs).execute()
+
+            if resp.get("historyId"):
+                latest_history_id = str(resp["historyId"])
+
+            for record in resp.get("history", []):
+                for added in record.get("messagesAdded", []):
+                    msg_id = added.get("message", {}).get("id")
+                    if msg_id:
+                        messages.append({"id": msg_id})
+
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+
+    except HttpError as exc:
+        if exc.resp.status == 404:
+            raise HistoryExpiredError(
+                f"historyId {start_history_id!r} has expired. "
+                "Call /start-fetch?reseed=true to re-seed."
+            ) from exc
+        raise
+
+    # Deduplicate — the same message can appear in multiple history records
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for m in messages:
+        if m["id"] not in seen:
+            seen.add(m["id"])
+            unique.append(m)
+
+    logger.info(
+        "History API | start=%s latest=%s new_msgs=%d",
+        start_history_id, latest_history_id, len(unique),
+    )
+    return unique, latest_history_id
+
+
+def parse_headers(email_data: dict) -> dict:
+    headers = email_data.get("payload", {}).get("headers", [])
+    header_map = {h["name"].lower(): h["value"] for h in headers}
+    return {
+        "subject": header_map.get("subject", "(no subject)"),
+        "from":    header_map.get("from", ""),
+        "to":      header_map.get("to", ""),
+        "date":    header_map.get("date", ""),
+    }

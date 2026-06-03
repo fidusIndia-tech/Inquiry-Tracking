@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   LayoutDashboard,
@@ -8,9 +9,12 @@ import {
   Bell,
   Search,
   Package,
+  LogOut,
 } from "lucide-react";
 
 export default function AdminDashboard() {
+
+  const router = useRouter();
 
   const [activeMenu, setActiveMenu] = useState("dashboard");
   const [inquiries, setInquiries] = useState([]);
@@ -59,30 +63,37 @@ export default function AdminDashboard() {
   ).length;
   const newCount = inquiries.filter((inquiry) => inquiry.status === "new").length;
 
+  const handleLogout = () => {
+    localStorage.removeItem("role");
+    localStorage.removeItem("userId");
+    localStorage.removeItem("userName");
+    router.push("/login");
+  };
+
   return (
 
-    <div className="h-screen bg-[#060B1A] text-white flex overflow-hidden">
+    <div className="h-screen bg-[#f7f7f7] text-neutral-950 flex overflow-hidden">
 
       {/* ================= SIDEBAR ================= */}
-      <div className="w-[260px] bg-[#081225] border-r border-white/10 flex flex-col justify-between">
+      <div className="w-[260px] bg-white border-r border-neutral-200 flex flex-col justify-between">
 
         <div>
 
           {/* LOGO */}
-          <div className="px-7 py-7 border-b border-white/10">
+          <div className="px-7 py-7 border-b border-neutral-200">
 
             <h1 className="text-3xl font-bold tracking-tight">
 
-              Fidus{" "}
+              FIAPL{" "}
 
-              <span className="text-violet-400">
-                India
+              <span className="text-orange-500">
+                Automation
               </span>
 
             </h1>
 
-            <p className="text-gray-400 mt-1 text-sm">
-              Workflow Platform
+            <p className="text-neutral-500 mt-1 text-sm">
+              Fidus India Automation
             </p>
 
           </div>
@@ -109,11 +120,11 @@ export default function AdminDashboard() {
         </div>
 
         {/* PROFILE */}
-        <div className="p-4 border-t border-white/10">
+        <div className="p-4 border-t border-neutral-200">
 
-          <div className="bg-[#111C34] rounded-3xl p-4 flex items-center gap-3 border border-white/5">
+          <div className="bg-[#fafafa] rounded-3xl p-4 flex items-center gap-3 border border-neutral-200">
 
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-lg font-bold shadow-lg">
+            <div className="w-12 h-12 rounded-2xl bg-orange-500 text-white flex items-center justify-center text-lg font-bold shadow-sm">
 
               A
 
@@ -125,13 +136,21 @@ export default function AdminDashboard() {
                 Admin
               </h3>
 
-              <p className="text-gray-400 text-xs">
+              <p className="text-neutral-500 text-xs">
                 Super Admin
               </p>
 
             </div>
 
           </div>
+
+          <button
+            onClick={handleLogout}
+            className="mt-4 w-full flex items-center justify-center gap-3 bg-neutral-950 hover:bg-neutral-800 transition-all px-5 py-3.5 rounded-2xl text-white font-medium"
+          >
+            <LogOut size={18} />
+            Logout
+          </button>
 
         </div>
 
@@ -141,7 +160,7 @@ export default function AdminDashboard() {
       <div className="flex-1 flex flex-col overflow-hidden">
 
         {/* ================= TOPBAR ================= */}
-        <div className="px-8 py-5 border-b border-white/10 flex items-center justify-between bg-[#081225]/95 backdrop-blur-xl">
+        <div className="px-8 py-5 border-b border-neutral-200 flex items-center justify-between bg-white/95 backdrop-blur-xl">
 
           <div>
 
@@ -153,7 +172,7 @@ export default function AdminDashboard() {
 
             </h1>
 
-            <p className="text-gray-400 mt-1 text-sm">
+            <p className="text-neutral-500 mt-1 text-sm">
               Monitor inquiries and employee workflow
             </p>
 
@@ -162,23 +181,23 @@ export default function AdminDashboard() {
           <div className="flex items-center gap-4">
 
             {/* SEARCH */}
-            <div className="flex items-center gap-3 bg-[#111C34] border border-white/10 px-4 py-3 rounded-2xl min-w-[280px]">
+            <div className="flex items-center gap-3 bg-[#fafafa] border border-neutral-200 px-4 py-3 rounded-2xl min-w-[280px]">
 
               <Search
                 size={16}
-                className="text-gray-400"
+                className="text-neutral-500"
               />
 
               <input
                 type="text"
                 placeholder="Search..."
-                className="bg-transparent outline-none text-sm text-white placeholder:text-gray-500 w-full"
+                className="bg-transparent outline-none text-sm text-neutral-950 placeholder:text-neutral-400 w-full"
               />
 
             </div>
 
             {/* NOTIFICATION */}
-            <button className="w-11 h-11 rounded-2xl bg-[#111C34] border border-white/10 flex items-center justify-center hover:bg-violet-500/20 hover:border-violet-500/30 transition-all duration-300">
+            <button className="w-11 h-11 rounded-2xl bg-[#fafafa] border border-neutral-200 flex items-center justify-center hover:bg-orange-50 hover:border-orange-200 transition-all duration-300">
 
               <Bell size={18} />
 
@@ -229,7 +248,7 @@ export default function AdminDashboard() {
           {/* ================= SALES SCREEN ================= */}
           {activeMenu === "sales" && (
 
-            <div className="bg-gradient-to-b from-[#0B1736] to-[#08142C] border border-[#1b2b52] rounded-[28px] overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.45)]">
+            <div className="bg-white border border-neutral-200 rounded-[28px] overflow-hidden shadow-sm">
 
               {/* HEADER */}
               <div className="flex items-center justify-between px-8 py-7 border-b border-white/5">
@@ -240,17 +259,17 @@ export default function AdminDashboard() {
                     Sales Inquiries Dashboard
                   </h2>
 
-                  <p className="text-gray-400 mt-2 text-sm">
+                  <p className="text-neutral-500 mt-2 text-sm">
                     Team inquiry performance overview
                   </p>
 
                 </div>
 
-                <div className="w-14 h-14 rounded-2xl bg-violet-500/10 border border-violet-400/20 flex items-center justify-center">
+                <div className="w-14 h-14 rounded-2xl bg-orange-500/10 border border-orange-400/25 flex items-center justify-center">
 
                   <Package
                     size={24}
-                    className="text-violet-400"
+                    className="text-orange-400"
                   />
 
                 </div>
@@ -262,7 +281,7 @@ export default function AdminDashboard() {
 
                 <table className="w-full">
 
-                  <thead className="bg-[#141F3B] text-gray-400 text-sm border-b border-white/5">
+                  <thead className="bg-orange-50 text-neutral-500 text-sm border-b border-orange-100">
 
                     <tr>
 
@@ -347,8 +366,8 @@ function SidebarItem({
       onClick={onClick}
       className={`w-full flex items-center gap-3 px-5 py-4 rounded-2xl transition-all duration-300 ${
         active
-          ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/20"
-          : "text-gray-300 hover:bg-[#111C34]"
+          ? "bg-orange-500 text-white shadow-sm"
+          : "text-neutral-700 hover:bg-orange-50 hover:text-orange-700"
       }`}
     >
 
@@ -370,9 +389,9 @@ function DashboardCard({
 
   return (
 
-    <div className="bg-gradient-to-b from-[#0B1736] to-[#08142C] border border-[#1b2b52] rounded-[28px] p-7 shadow-[0_10px_30px_rgba(0,0,0,0.35)] hover:translate-y-[-2px] transition-all duration-300">
+    <div className="bg-white border border-neutral-200 rounded-[28px] p-7 shadow-sm hover:translate-y-[-2px] hover:border-orange-200 transition-all duration-300">
 
-      <p className="text-gray-400 text-sm">
+      <p className="text-neutral-500 text-sm">
         {title}
       </p>
 
@@ -395,13 +414,13 @@ function SalesRow({
 
   return (
 
-    <tr className="border-t border-[#1b2b52] hover:bg-white/[0.03] transition-all duration-300">
+    <tr className="border-t border-neutral-200 hover:bg-orange-50 transition-all duration-300">
 
       <td className="px-7 py-6 text-sm">
         {sr}
       </td>
 
-      <td className="px-7 py-6 text-cyan-400 font-semibold text-sm">
+      <td className="px-7 py-6 text-orange-400 font-semibold text-sm">
         {team}
       </td>
 
@@ -430,7 +449,7 @@ function RecentSalesTable({
 
   return (
 
-    <div className="bg-gradient-to-b from-[#0B1736] to-[#08142C] border border-[#1b2b52] rounded-[28px] overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.45)]">
+    <div className="bg-white border border-neutral-200 rounded-[28px] overflow-hidden shadow-sm">
 
       {/* HEADER */}
       <div className="px-7 py-6 border-b border-white/5 flex items-center justify-between">
@@ -441,13 +460,13 @@ function RecentSalesTable({
             Recent Sales Inquiries
           </h2>
 
-          <p className="text-gray-400 text-sm mt-1">
+          <p className="text-neutral-500 text-sm mt-1">
             Latest inquiry activity overview
           </p>
 
         </div>
 
-        <button className="bg-gradient-to-r from-violet-500 to-purple-600 hover:scale-105 transition-all duration-300 px-5 py-3 rounded-2xl text-sm font-semibold shadow-lg shadow-violet-500/20">
+        <button className="bg-orange-500 hover:bg-orange-600 transition-all duration-300 px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-sm">
 
           + Add Inquiry
 
@@ -460,7 +479,7 @@ function RecentSalesTable({
 
         <table className="w-full table-auto">
 
-          <thead className="bg-[#141F3B] text-gray-400 text-sm border-b border-white/5">
+          <thead className="bg-orange-50 text-neutral-500 text-sm border-b border-orange-100">
 
             <tr>
 
@@ -579,7 +598,7 @@ function TableRow({
 
   return (
 
-    <tr className="border-t border-[#1b2b52] hover:bg-white/[0.03] transition-all duration-300">
+    <tr className="border-t border-neutral-200 hover:bg-orange-50 transition-all duration-300">
 
       <td className="px-6 py-6 text-sm">{sr}</td>
       <td className="px-6 py-6 text-sm">{date}</td>
@@ -597,7 +616,7 @@ function TableRow({
 
         <select
           defaultValue={assigned}
-          className="bg-[#111C34] border border-[#24345c] text-white px-4 py-2.5 rounded-2xl outline-none text-sm focus:border-violet-500 transition-all"
+          className="bg-white border border-neutral-200 text-neutral-950 px-4 py-2.5 rounded-2xl outline-none text-sm focus:border-orange-500 transition-all"
         >
 
           <option>Deepak</option>

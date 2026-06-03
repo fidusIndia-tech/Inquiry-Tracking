@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { users } from "@/data/users";
 
 import {
   ShieldCheck,
@@ -14,53 +15,40 @@ export default function LoginPage() {
 
   const router = useRouter();
 
-  const [mounted, setMounted] = useState(false);
-
   const [role, setRole] = useState("admin");
 
   const [email, setEmail] = useState("");
 
   const [password, setPassword] = useState("");
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) return null;
-
   const handleLogin = () => {
 
-    if (!email || !password) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedPassword = password.trim();
+
+    if (!normalizedEmail || !normalizedPassword) {
       alert("Please fill all fields");
       return;
     }
 
-    /* ================= ADMIN LOGIN ================= */
+    const matchedUser = users.find(
+      (user) =>
+        user.email.toLowerCase() === normalizedEmail &&
+        user.password === normalizedPassword &&
+        user.role === role
+    );
 
-    if (
-      email === "admin@fidusindia.com" &&
-      password === "123456" &&
-      role === "admin"
-    ) {
+    if (matchedUser) {
 
-      localStorage.setItem("role", "admin");
+      localStorage.setItem("role", matchedUser.role);
+      localStorage.setItem("userId", matchedUser.id);
+      localStorage.setItem("userName", matchedUser.name);
 
-      router.push("/admin-dashboard");
-
-      return;
-    }
-
-    /* ================= EMPLOYEE LOGIN ================= */
-
-    if (
-      email === "employee@fidusindia.com" &&
-      password === "123456" &&
-      role === "employee"
-    ) {
-
-      localStorage.setItem("role", "employee");
-
-      router.push("/employee-dashboard");
+      router.push(
+        matchedUser.role === "admin"
+          ? "/admin-dashboard"
+          : "/employee-dashboard"
+      );
 
       return;
     }
@@ -72,21 +60,16 @@ export default function LoginPage() {
 
   return (
 
-    <div className="h-screen w-full overflow-hidden bg-[#050B14] flex items-center justify-center relative text-white px-6 py-6">
+    <div className="h-screen w-full overflow-hidden bg-[#f7f7f7] flex items-center justify-center relative text-neutral-950 px-6 py-6">
 
       {/* TOP LINE */}
-      <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-violet-400/60 to-transparent" />
-
-      {/* GLOW EFFECTS */}
-      <div className="absolute top-[-120px] left-[-120px] w-[350px] h-[350px] bg-violet-500/20 blur-[140px] rounded-full" />
-
-      <div className="absolute bottom-[-120px] right-[-120px] w-[350px] h-[350px] bg-cyan-500/10 blur-[140px] rounded-full" />
+      <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-orange-500/70 to-transparent" />
 
       {/* GRID */}
       <div
         className="
-        absolute inset-0 opacity-[0.04]
-        bg-[linear-gradient(to_right,#ffffff_1px,transparent_1px),linear-gradient(to_bottom,#ffffff_1px,transparent_1px)]
+        absolute inset-0 opacity-[0.35]
+        bg-[linear-gradient(to_right,#e5e5e5_1px,transparent_1px),linear-gradient(to_bottom,#e5e5e5_1px,transparent_1px)]
         bg-[size:74px_74px]
       "
       />
@@ -97,30 +80,30 @@ export default function LoginPage() {
         relative z-10
         w-full max-w-[500px]
         rounded-[44px]
-        border border-white/10
-        bg-[#08111D]/90
+        border border-neutral-200
+        bg-white
         backdrop-blur-2xl
         px-10
         py-8
-        shadow-[0_0_80px_rgba(0,0,0,0.45)]
+        shadow-xl shadow-neutral-200/70
       "
       >
 
         {/* CARD SHINE */}
-        <div className="absolute inset-0 rounded-[44px] bg-gradient-to-b from-white/[0.05] to-transparent pointer-events-none" />
+        <div className="absolute inset-0 rounded-[44px] bg-gradient-to-b from-orange-50/70 to-transparent pointer-events-none" />
 
         {/* LOGO */}
         <div className="text-center relative z-10">
 
           <h1 className="text-[42px] font-black tracking-[-2px] leading-none">
-            Fidus{" "}
-            <span className="text-violet-400">
-              India
+            FIAPL{" "}
+            <span className="text-orange-500">
+              Automation
             </span>
           </h1>
 
-          <p className="text-gray-500 mt-3 text-[13px]">
-            AI Workflow Management Platform
+          <p className="text-neutral-500 mt-3 text-[13px]">
+            Fidus India Automation Pvt. Ltd.
           </p>
 
         </div>
@@ -132,22 +115,22 @@ export default function LoginPage() {
             Welcome Back
           </h2>
 
-          <p className="text-gray-400 text-[15px] mt-3">
+          <p className="text-neutral-500 text-[15px] mt-3">
             Sign in to continue workflow monitoring
           </p>
 
         </div>
 
         {/* ROLE SWITCH */}
-        <div className="relative z-10 flex items-center bg-white/[0.04] border border-white/10 rounded-[22px] p-[5px] mb-7">
+        <div className="relative z-10 flex items-center bg-[#fafafa] border border-neutral-200 rounded-[22px] p-[5px] mb-7">
 
           {/* ADMIN */}
           <button
             onClick={() => setRole("admin")}
             className={`flex-1 py-[14px] rounded-[18px] text-[15px] font-medium transition-all duration-300 ${
               role === "admin"
-                ? "bg-violet-500 text-white shadow-[0_0_25px_rgba(139,92,246,0.45)]"
-                : "text-gray-400 hover:text-white"
+                ? "bg-orange-500 text-white shadow-sm"
+                : "text-neutral-500 hover:text-neutral-950"
             }`}
           >
 
@@ -166,8 +149,8 @@ export default function LoginPage() {
             onClick={() => setRole("employee")}
             className={`flex-1 py-[14px] rounded-[18px] text-[15px] font-medium transition-all duration-300 ${
               role === "employee"
-                ? "bg-violet-500 text-white shadow-[0_0_25px_rgba(139,92,246,0.45)]"
-                : "text-gray-400 hover:text-white"
+                ? "bg-orange-500 text-white shadow-sm"
+                : "text-neutral-500 hover:text-neutral-950"
             }`}
           >
 
@@ -186,20 +169,20 @@ export default function LoginPage() {
         {/* EMAIL */}
         <div className="mb-4 relative z-10">
 
-          <label className="text-[13px] text-gray-400">
+          <label className="text-[13px] text-neutral-500">
             Email Address
           </label>
 
-          <div className="mt-2 flex items-center gap-3 bg-white/[0.05] border border-white/10 rounded-[18px] px-5 py-3 focus-within:border-violet-500 transition-all duration-300">
+          <div className="mt-2 flex items-center gap-3 bg-[#fafafa] border border-neutral-200 rounded-[18px] px-5 py-3 focus-within:border-orange-500 transition-all duration-300">
 
-            <Mail size={17} className="text-gray-400" />
+            <Mail size={17} className="text-neutral-500" />
 
             <input
               type="email"
-              placeholder="you@fidusindia.com"
+              placeholder="you@fidus.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="bg-transparent outline-none w-full text-[14px] placeholder:text-gray-500"
+              className="bg-transparent outline-none w-full text-[14px] placeholder:text-neutral-400"
             />
 
           </div>
@@ -209,20 +192,20 @@ export default function LoginPage() {
         {/* PASSWORD */}
         <div className="relative z-10">
 
-          <label className="text-[13px] text-gray-400">
+          <label className="text-[13px] text-neutral-500">
             Password
           </label>
 
-          <div className="mt-2 flex items-center gap-3 bg-white/[0.05] border border-white/10 rounded-[18px] px-5 py-3 focus-within:border-violet-500 transition-all duration-300">
+          <div className="mt-2 flex items-center gap-3 bg-[#fafafa] border border-neutral-200 rounded-[18px] px-5 py-3 focus-within:border-orange-500 transition-all duration-300">
 
-            <LockKeyhole size={17} className="text-gray-400" />
+            <LockKeyhole size={17} className="text-neutral-500" />
 
             <input
               type="password"
               placeholder="Enter password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="bg-transparent outline-none w-full text-[14px] placeholder:text-gray-500"
+              className="bg-transparent outline-none w-full text-[14px] placeholder:text-neutral-400"
             />
 
           </div>
@@ -232,7 +215,7 @@ export default function LoginPage() {
         {/* FORGOT PASSWORD */}
         <div className="flex justify-end mt-4 mb-7 relative z-10">
 
-          <button className="text-violet-400 text-[13px] hover:text-violet-300 transition-all duration-300">
+          <button className="text-orange-400 text-[13px] hover:text-orange-300 transition-all duration-300">
             Forgot Password?
           </button>
 
@@ -246,12 +229,12 @@ export default function LoginPage() {
           w-full
           py-3.5
           rounded-[22px]
-          bg-violet-500
-          hover:bg-violet-400
+          bg-orange-500
+          hover:bg-orange-400
           text-[22px]
           font-bold
           transition-all duration-300
-          shadow-[0_0_35px_rgba(139,92,246,0.35)]
+          shadow-sm
           hover:scale-[1.01]
         "
         >
@@ -261,7 +244,7 @@ export default function LoginPage() {
         </button>
 
         {/* FOOTER */}
-        <p className="text-center text-gray-500 text-[12px] mt-7 leading-5 relative z-10">
+        <p className="text-center text-neutral-500 text-[12px] mt-7 leading-5 relative z-10">
 
           Secure enterprise workflow access for authorized employees
 

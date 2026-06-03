@@ -1,12 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   LayoutDashboard,
-  ClipboardList,
-  CheckCircle,
-  User,
   LogOut,
   Bell,
   Search,
@@ -15,24 +13,33 @@ import {
 } from "lucide-react";
 
 export default function EmployeeDashboard() {
+  const router = useRouter();
+
   const [activeMenu, setActiveMenu] = useState("dashboard");
 
+  const handleLogout = () => {
+    localStorage.removeItem("role");
+    localStorage.removeItem("userId");
+    localStorage.removeItem("userName");
+    router.push("/login");
+  };
+
   return (
-    <div className="h-screen flex bg-[#060B1A] text-white overflow-hidden">
+    <div className="h-screen flex bg-[#f7f7f7] text-neutral-950 overflow-hidden">
       {/* ================= SIDEBAR ================= */}
-      <div className="w-[300px] bg-[#081225] border-r border-white/10 flex flex-col justify-between">
+      <div className="w-[300px] bg-white border-r border-neutral-200 flex flex-col justify-between">
         <div>
           {/* LOGO */}
-          <div className="px-8 py-10 border-b border-white/10">
+          <div className="px-8 py-10 border-b border-neutral-200">
             <h1 className="text-4xl font-bold tracking-tight">
-              Fidus{" "}
-              <span className="text-violet-400">
-                India
+              FIAPL{" "}
+              <span className="text-orange-500">
+                Automation
               </span>
             </h1>
 
-            <p className="text-gray-400 mt-2">
-              Employee Workflow Panel
+            <p className="text-neutral-500 mt-2">
+              Fidus India Automation
             </p>
           </div>
 
@@ -49,8 +56,11 @@ export default function EmployeeDashboard() {
         </div>
 
         {/* LOGOUT */}
-        <div className="p-5 border-t border-white/10">
-          <button className="w-full flex items-center gap-4 bg-red-500/20 hover:bg-red-500/30 transition-all px-5 py-4 rounded-2xl text-red-400">
+        <div className="p-5 border-t border-neutral-200">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-4 bg-neutral-950 hover:bg-neutral-800 transition-all px-5 py-4 rounded-2xl text-white"
+          >
             <LogOut size={20} />
             Logout
           </button>
@@ -60,31 +70,31 @@ export default function EmployeeDashboard() {
       {/* ================= MAIN ================= */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* ================= TOPBAR ================= */}
-        <div className="px-10 py-6 border-b border-white/10 flex items-center justify-between bg-[#081225]">
+        <div className="px-10 py-6 border-b border-neutral-200 flex items-center justify-between bg-white">
           <div>
             <h1 className="text-4xl font-bold">
               Employee Dashboard
             </h1>
 
-            <p className="text-gray-400 mt-1">
+            <p className="text-neutral-500 mt-1">
               Manage and update assigned inquiries
             </p>
           </div>
 
           <div className="flex items-center gap-4">
             {/* SEARCH */}
-            <div className="flex items-center gap-3 bg-[#111C34] px-5 py-3 rounded-2xl border border-white/10">
-              <Search size={18} className="text-gray-400" />
+            <div className="flex items-center gap-3 bg-[#fafafa] px-5 py-3 rounded-2xl border border-neutral-200">
+              <Search size={18} className="text-neutral-500" />
 
               <input
                 type="text"
                 placeholder="Search..."
-                className="bg-transparent outline-none text-sm text-white placeholder:text-gray-500"
+                className="bg-transparent outline-none text-sm text-neutral-950 placeholder:text-neutral-400"
               />
             </div>
 
             {/* NOTIFICATION */}
-            <button className="w-12 h-12 rounded-2xl bg-[#111C34] border border-white/10 flex items-center justify-center hover:bg-violet-500/20 transition-all">
+            <button className="w-12 h-12 rounded-2xl bg-[#fafafa] border border-neutral-200 flex items-center justify-center hover:bg-orange-50 hover:border-orange-200 transition-all">
               <Bell size={20} />
             </button>
           </div>
@@ -112,8 +122,8 @@ function SidebarItem({
       onClick={onClick}
       className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-300 ${
         active
-          ? "bg-gradient-to-r from-violet-500 to-purple-600 shadow-lg"
-          : "hover:bg-[#111C34]"
+          ? "bg-orange-500 text-white shadow-sm"
+          : "text-neutral-700 hover:bg-orange-50 hover:text-orange-700"
       }`}
     >
       {icon}
@@ -122,24 +132,6 @@ function SidebarItem({
         {title}
       </span>
     </button>
-  );
-}
-
-/* ================= CARD ================= */
-function Card({
-  title,
-  value,
-}) {
-  return (
-    <div className="bg-[#08142C] border border-[#1b2b52] rounded-[30px] p-8 shadow-[0_0_30px_rgba(139,92,246,0.08)]">
-      <p className="text-gray-400 text-lg">
-        {title}
-      </p>
-
-      <h2 className="text-5xl font-bold mt-4">
-        {value}
-      </h2>
-    </div>
   );
 }
 
@@ -193,15 +185,15 @@ function EditableInquiryTable() {
   };
 
   return (
-    <div className="bg-[#08142C] border border-[#1b2b52] rounded-[30px] overflow-hidden shadow-[0_0_40px_rgba(139,92,246,0.08)]">
+    <div className="bg-white border border-neutral-200 rounded-[30px] overflow-hidden shadow-sm">
       {/* HEADER */}
-      <div className="flex items-center justify-between px-8 py-6 border-b border-[#1b2b52] bg-gradient-to-r from-[#2b2255] to-[#08142C]">
+      <div className="flex items-center justify-between px-8 py-6 border-b border-neutral-200 bg-orange-50">
         <div>
           <h2 className="text-3xl font-bold">
             Inquiry Information
           </h2>
 
-          <p className="text-gray-400 mt-2">
+          <p className="text-neutral-500 mt-2">
             Edit and Update Inquiries
           </p>
         </div>
@@ -209,7 +201,7 @@ function EditableInquiryTable() {
         <div className="flex gap-4">
           <button
             onClick={addRow}
-            className="bg-violet-500 hover:bg-violet-400 transition-all px-5 py-3 rounded-2xl flex items-center gap-2 font-medium"
+            className="bg-orange-500 hover:bg-orange-600 transition-all px-5 py-3 rounded-2xl flex items-center gap-2 font-medium text-white shadow-sm"
           >
             <Plus size={18} />
 
@@ -227,7 +219,7 @@ function EditableInquiryTable() {
       {/* TABLE */}
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
-          <thead className="bg-[#141F3B] text-gray-300">
+          <thead className="bg-[#fafafa] text-neutral-600">
             <tr>
               <th className="px-6 py-5 text-left">
                 Sr No.
@@ -287,7 +279,7 @@ function EditableInquiryTable() {
             {rows.map((row, index) => (
               <tr
                 key={index}
-                className="border-t border-[#1b2b52] hover:bg-white/[0.03]"
+                className="border-t border-neutral-200 hover:bg-orange-50"
               >
                 <td className="px-4 py-4 text-center">
                   {row.sr}
@@ -320,15 +312,15 @@ function EditableInquiryTable() {
                       }
                       className="
                         w-full
-                        bg-[#111C34]
+                        bg-white
                         border
-                        border-[#1b2b52]
+                        border-neutral-200
                         rounded-xl
                         px-3
                         py-2
-                        text-white
+                        text-neutral-950
                         outline-none
-                        focus:border-violet-500
+                        focus:border-orange-500
                       "
                     />
                   </td>

@@ -25,6 +25,20 @@ from logging_setup import get_logger
 
 logger = get_logger(__name__)
 
+INTERNAL_FIDUS_SENDER_RE = re.compile(
+    r"(?:^|<|\s)(?:fidusindia\d*@gmail\.com|[A-Z0-9._%+-]+@fidusindia\.com)(?:>|\s|$)",
+    re.IGNORECASE,
+)
+
+FORWARDED_MARKER_RE = re.compile(
+    r"(?im)^[-\s]*(forwarded\s+message|begin\s+forwarded\s+message|original\s+message)[-\s]*$",
+    re.IGNORECASE,
+)
+
+FORWARDED_HEADER_RE = re.compile(
+    r"(?is)\bfrom:\s*.+?\b(?:sent|date):\s*.+?\bto:\s*.+?\b(?:cc:\s*.+?)?\bsubject:\s*",
+)
+
 # ── Sender domains that are NEVER RFQs ───────────────────────────────────────
 SPAM_DOMAINS = {
     "machinebidder.com", "fluidhandlingpro.com", "netlabindia.com",
@@ -186,6 +200,13 @@ def is_rfq_candidate(email_dict: dict) -> bool:
     body = plain if len(plain) >= 100 else html_stripped
     # combined source for seller signal detection (catches HTML-only emails)
     body_all = plain + " " + html_stripped
+
+    if INTERNAL_FIDUS_SENDER_RE.search(sender):
+        if FORWARDED_MARKER_RE.search(body_all) or FORWARDED_HEADER_RE.search(body_all):
+            logger.debug("KEEP (internal forwarded client mail) | %s | %s", sender, subject[:60])
+        else:
+            logger.debug("DROP (internal fidus sender without forwarded client block) | %s | %s", sender, subject[:60])
+            return False
 
     # ── 1. Hard-drop known spam / marketing domains ───────────────────────
     for domain in SPAM_DOMAINS:

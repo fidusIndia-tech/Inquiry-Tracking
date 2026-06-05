@@ -1,21 +1,180 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-
 import {
+  Bell,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   LayoutDashboard,
   LogOut,
-  Bell,
-  Search,
-  Plus,
+  RefreshCw,
   Save,
+  Search,
 } from "lucide-react";
+
+const STATUS_OPTIONS = [
+  { value: "assigned", label: "Assigned" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "quoted", label: "Quoted" },
+  { value: "converted", label: "Converted" },
+  { value: "lost", label: "Lost" },
+];
 
 export default function EmployeeDashboard() {
   const router = useRouter();
+  const [employeeId, setEmployeeId] = useState(null);
+  const [employeeName, setEmployeeName] = useState("Employee");
+  const [inquiries, setInquiries] = useState([]);
+  const [statusDrafts, setStatusDrafts] = useState({});
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const knownAssignmentsRef = useRef(new Map());
+  const firstLoadRef = useRef(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const [activeMenu, setActiveMenu] = useState("dashboard");
+  const loadInquiries = useCallback(async (userId, options = {}) => {
+    const silent = Boolean(options.silent);
+    if (!silent) setLoading(true);
+    setError("");
+    if (!silent) setNotice("");
+
+    try {
+      const res = await fetch("/api/inquiries", { cache: "no-store" });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to load assigned inquiries");
+      }
+
+      const assigned = (data.inquiries || []).filter(
+        (item) => Number(item.assigned_to) === Number(userId)
+      );
+
+      if (
+        !firstLoadRef.current &&
+        typeof window !== "undefined" &&
+        "Notification" in window &&
+        Notification.permission === "granted"
+      ) {
+        assigned.forEach((item) => {
+          const previousAssignedAt = knownAssignmentsRef.current.get(item.unique_code);
+          const currentAssignedAt = item.assigned_at || "";
+          if (!previousAssignedAt || previousAssignedAt !== currentAssignedAt) {
+            new Notification("New inquiry assigned", {
+              body: `${item.unique_code} ${item.client_name || item.sender_name || ""}`.trim(),
+              tag: item.unique_code,
+            });
+          }
+        });
+      }
+
+      knownAssignmentsRef.current = new Map(
+        assigned.map((item) => [item.unique_code, item.assigned_at || ""])
+      );
+      firstLoadRef.current = false;
+      setInquiries(assigned);
+      setStatusDrafts(
+        Object.fromEntries(assigned.map((item) => [item.unique_code, item.status || "assigned"]))
+      );
+    } catch (err) {
+      setError(err.message || "Failed to load assigned inquiries");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!employeeId) return undefined;
+
+    const timer = window.setInterval(() => {
+      loadInquiries(employeeId, { silent: true });
+    }, 60000);
+
+    return () => window.clearInterval(timer);
+  }, [employeeId, loadInquiries]);
+
+  const enableNotifications = async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotice("Browser notifications are not supported here.");
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    setNotificationsEnabled(permission === "granted");
+    setNotice(permission === "granted" ? "Notifications enabled." : "Notifications blocked by browser.");
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const role = localStorage.getItem("role");
+      const storedUserId = localStorage.getItem("userId");
+      const storedUserName = localStorage.getItem("userName");
+
+      if (role !== "employee" || !storedUserId) {
+        router.push("/login");
+        return;
+      }
+
+      const nextEmployeeId = Number(storedUserId);
+      setEmployeeId(nextEmployeeId);
+      setEmployeeName(storedUserName || "Employee");
+      loadInquiries(nextEmployeeId);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [router, loadInquiries]);
+
+  const rows = useMemo(() => {
+    const text = search.trim().toLowerCase();
+
+    return inquiries
+      .flatMap((inquiry) => {
+        const items = inquiry.items?.length ? inquiry.items : [{}];
+        return items.map((item, index) => ({
+          rowKey: `${inquiry.unique_code}-${item.id || index}`,
+          unique_code: inquiry.unique_code,
+          email_date: inquiry.email_date,
+          client_name: inquiry.client_name || "-",
+          location: inquiry.location || "-",
+          sender_name: inquiry.sender_name || "-",
+          subject: inquiry.subject || "-",
+          status: inquiry.status || "assigned",
+          brand: item.brand || "-",
+          part_number: item.partNumber || "-",
+          quantity: item.quantity ?? "-",
+          uom: item.uom || "-",
+          item_notes: item.itemNotes || "-",
+        }));
+      })
+      .filter((row) => {
+        if (!text) return true;
+        return [
+          row.unique_code,
+          row.client_name,
+          row.location,
+          row.sender_name,
+          row.subject,
+          row.brand,
+          row.part_number,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(text);
+      });
+  }, [inquiries, search]);
+
+  const changedStatuses = useMemo(() => {
+    return inquiries.filter(
+      (item) => statusDrafts[item.unique_code] && statusDrafts[item.unique_code] !== item.status
+    );
+  }, [inquiries, statusDrafts]);
 
   const handleLogout = () => {
     localStorage.removeItem("role");
@@ -24,312 +183,297 @@ export default function EmployeeDashboard() {
     router.push("/login");
   };
 
+  const updateDraftStatus = (uniqueCode, value) => {
+    setNotice("");
+    setStatusDrafts((current) => ({ ...current, [uniqueCode]: value }));
+  };
+
+  const saveStatuses = async () => {
+    if (!changedStatuses.length) {
+      setNotice("No status changes to save.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setNotice("");
+
+    try {
+      await Promise.all(
+        changedStatuses.map(async (item) => {
+          const res = await fetch("/api/inquiries/status", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              unique_code: item.unique_code,
+              status: statusDrafts[item.unique_code],
+              changed_by: employeeId,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to save status");
+        })
+      );
+
+      setNotice("Status updated successfully.");
+      await loadInquiries(employeeId);
+    } catch (err) {
+      setError(err.message || "Failed to save status");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="h-screen flex bg-[#f7f7f7] text-neutral-950 overflow-hidden">
-      {/* ================= SIDEBAR ================= */}
-      <div className="w-[300px] bg-white border-r border-neutral-200 flex flex-col justify-between">
+    <div className="min-h-screen bg-[#F4F7FB] text-slate-900 lg:flex">
+      <aside
+        className={`flex border-b border-slate-200 bg-white/95 px-3 py-3 transition-all duration-200 lg:fixed lg:inset-y-0 lg:left-0 lg:flex-col lg:justify-between lg:border-b-0 lg:border-r ${
+          sidebarCollapsed ? "lg:w-16" : "lg:w-52"
+        }`}
+      >
         <div>
-          {/* LOGO */}
-          <div className="px-8 py-10 border-b border-neutral-200">
-            <h1 className="text-4xl font-bold tracking-tight">
-              FIAPL{" "}
-              <span className="text-orange-500">
-                Automation
-              </span>
-            </h1>
-
-            <p className="text-neutral-500 mt-2">
-              Fidus India Automation
-            </p>
-          </div>
-
-          {/* MENU */}
-          <div className="p-5 space-y-4">
-            <SidebarItem
-              icon={<LayoutDashboard size={20} />}
-              title="Dashboard"
-              active={activeMenu === "dashboard"}
-              onClick={() => setActiveMenu("dashboard")}
+          <div className="flex items-center gap-3 lg:h-14">
+            <Image
+              src="/logo-dark.png"
+              alt="FIAPL"
+              width={132}
+              height={44}
+              className={`h-9 w-auto object-contain ${sidebarCollapsed ? "lg:hidden" : ""}`}
+              priority
             />
-
+            <div className={`min-w-0 ${sidebarCollapsed ? "lg:hidden" : ""}`}>
+              <p className="text-sm font-semibold text-slate-900">Automation</p>
+              <p className="text-xs text-slate-500">Fidus India</p>
+            </div>
           </div>
-        </div>
 
-        {/* LOGOUT */}
-        <div className="p-5 border-t border-neutral-200">
+          <nav className="mt-0 ml-auto flex items-center lg:mt-8 lg:ml-0 lg:block">
+            <button className={`flex h-10 items-center gap-3 rounded-xl bg-blue-50 px-3 text-sm font-medium text-blue-700 lg:w-full ${sidebarCollapsed ? "lg:justify-center lg:px-0" : ""}`}>
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-white text-blue-600 shadow-sm">
+                <LayoutDashboard size={16} />
+              </span>
+              <span className={sidebarCollapsed ? "lg:hidden" : ""}>Dashboard</span>
+            </button>
+          </nav>
+
           <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-4 bg-neutral-950 hover:bg-neutral-800 transition-all px-5 py-4 rounded-2xl text-white"
+            onClick={() => setSidebarCollapsed((current) => !current)}
+            className={`mt-4 hidden h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white text-[11px] font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 lg:flex ${
+              sidebarCollapsed ? "justify-center px-0" : "px-3"
+            }`}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            <LogOut size={20} />
-            Logout
+            {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            {!sidebarCollapsed && "Collapse"}
           </button>
         </div>
-      </div>
 
-      {/* ================= MAIN ================= */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* ================= TOPBAR ================= */}
-        <div className="px-10 py-6 border-b border-neutral-200 flex items-center justify-between bg-white">
-          <div>
-            <h1 className="text-4xl font-bold">
-              Employee Dashboard
-            </h1>
-
-            <p className="text-neutral-500 mt-1">
-              Manage and update assigned inquiries
-            </p>
+        <div className="hidden border-t border-slate-200 pt-4 lg:block">
+          <div className={`mb-3 flex items-center gap-3 ${sidebarCollapsed ? "justify-center" : ""}`}>
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-slate-900 text-sm font-semibold text-white">
+              {employeeName.charAt(0).toUpperCase()}
+            </div>
+            <div className={sidebarCollapsed ? "hidden" : ""}>
+              <p className="text-sm font-semibold text-slate-900">{employeeName}</p>
+              <p className="text-xs text-slate-500">Employee</p>
+            </div>
           </div>
+          <button
+            onClick={handleLogout}
+            className={`flex h-10 w-full items-center gap-2 rounded-xl bg-slate-100 text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-700 ${
+              sidebarCollapsed ? "justify-center px-0" : "px-3"
+            }`}
+          >
+            <LogOut size={15} />
+            {!sidebarCollapsed && "Sign out"}
+          </button>
+        </div>
+      </aside>
 
-          <div className="flex items-center gap-4">
-            {/* SEARCH */}
-            <div className="flex items-center gap-3 bg-[#fafafa] px-5 py-3 rounded-2xl border border-neutral-200">
-              <Search size={18} className="text-neutral-500" />
-
-              <input
-                type="text"
-                placeholder="Search..."
-                className="bg-transparent outline-none text-sm text-neutral-950 placeholder:text-neutral-400"
-              />
+      <main className={`min-w-0 flex-1 transition-all duration-200 ${sidebarCollapsed ? "lg:ml-16" : "lg:ml-52"}`}>
+        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/85 px-4 py-4 backdrop-blur lg:px-8">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-600">
+                Employee Desk
+              </p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">
+                Assigned Inquiries
+              </h1>
             </div>
 
-            {/* NOTIFICATION */}
-            <button className="w-12 h-12 rounded-2xl bg-[#fafafa] border border-neutral-200 flex items-center justify-center hover:bg-orange-50 hover:border-orange-200 transition-all">
-              <Bell size={20} />
-            </button>
-          </div>
-        </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex h-10 min-w-64 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
+                <Search size={16} className="text-slate-400" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search code, client, part..."
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+                />
+              </div>
 
-        {/* ================= CONTENT ================= */}
-        <div className="flex-1 overflow-auto p-10 space-y-8">
-          {/* ================= TABLE ================= */}
-          <EditableInquiryTable />
-        </div>
-      </div>
+              <button
+                onClick={() => employeeId && loadInquiries(employeeId)}
+                className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50"
+                title="Refresh"
+              >
+                <RefreshCw size={16} />
+              </button>
+
+              <button
+                onClick={enableNotifications}
+                className={`grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white shadow-sm transition hover:bg-slate-50 ${
+                  notificationsEnabled ? "text-emerald-600" : "text-slate-600"
+                }`}
+                title={notificationsEnabled ? "Notifications enabled" : "Enable notifications"}
+              >
+                <Bell size={16} />
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="flex h-10 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 lg:hidden"
+              >
+                <LogOut size={15} />
+                Sign out
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <section className="p-4 lg:p-8">
+          <div className="mb-5 grid gap-4 sm:grid-cols-3">
+            <MetricCard label="Assigned" value={inquiries.length} />
+            <MetricCard label="Line items" value={rows.length} />
+            <MetricCard label="Pending save" value={changedStatuses.length} />
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-slate-950">Inquiry Information</h2>
+                <p className="text-sm text-slate-500">
+                  Update status for inquiries assigned to you.
+                </p>
+              </div>
+
+              <button
+                onClick={saveStatuses}
+                disabled={saving}
+                className="flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {saving ? <RefreshCw size={15} className="animate-spin" /> : <Save size={15} />}
+                Save changes
+              </button>
+            </div>
+
+            {error && (
+              <div className="border-b border-rose-100 bg-rose-50 px-5 py-3 text-sm font-medium text-rose-700">
+                {error}
+              </div>
+            )}
+
+            {notice && (
+              <div className="flex items-center gap-2 border-b border-emerald-100 bg-emerald-50 px-5 py-3 text-sm font-medium text-emerald-700">
+                <CheckCircle2 size={16} />
+                {notice}
+              </div>
+            )}
+
+            <EmployeeTable
+              rows={rows}
+              loading={loading}
+              statusDrafts={statusDrafts}
+              onStatusChange={updateDraftStatus}
+            />
+          </div>
+        </section>
+      </main>
     </div>
   );
 }
 
-/* ================= SIDEBAR ITEM ================= */
-function SidebarItem({
-  icon,
-  title,
-  active,
-  onClick,
-}) {
+function MetricCard({ label, value }) {
   return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-300 ${
-        active
-          ? "bg-orange-500 text-white shadow-sm"
-          : "text-neutral-700 hover:bg-orange-50 hover:text-orange-700"
-      }`}
-    >
-      {icon}
-
-      <span className="font-medium text-lg">
-        {title}
-      </span>
-    </button>
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">{label}</p>
+      <p className="mt-2 text-3xl font-semibold text-slate-950">{value}</p>
+    </div>
   );
 }
 
-/* ================= EDITABLE TABLE ================= */
-function EditableInquiryTable() {
-  const [rows, setRows] = useState([
-    {
-      sr: 1,
-      code: "FIAPL0000001",
-      client: "Ceat",
-      location: "Halol",
-      user: "Deepak",
-      pr: "123456789",
-      brand: "Shinhen",
-      part: "BP20",
-      uom: "Ltr",
-      qty: "100",
-      vendor: "HRD",
-      system: "XYS",
-      status: "Sent",
-    },
-  ]);
+function EmployeeTable({ rows, loading, statusDrafts, onStatusChange }) {
+  if (loading) {
+    return (
+      <div className="space-y-3 p-5">
+        {[1, 2, 3].map((item) => (
+          <div key={item} className="h-12 rounded-xl bg-slate-100 skeleton" />
+        ))}
+      </div>
+    );
+  }
 
-  const handleChange = (index, field, value) => {
-    const updatedRows = [...rows];
-
-    updatedRows[index][field] = value;
-
-    setRows(updatedRows);
-  };
-
-  const addRow = () => {
-    setRows([
-      ...rows,
-      {
-        sr: rows.length + 1,
-        code: "",
-        client: "",
-        location: "",
-        user: "",
-        pr: "",
-        brand: "",
-        part: "",
-        uom: "",
-        qty: "",
-        vendor: "",
-        system: "",
-        status: "",
-      },
-    ]);
-  };
+  if (!rows.length) {
+    return (
+      <div className="p-10 text-center">
+        <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-slate-500">
+          <LayoutDashboard size={20} />
+        </div>
+        <h3 className="mt-4 text-sm font-semibold text-slate-900">No assigned inquiries</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          When admin assigns inquiries to you, they will appear here.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-white border border-neutral-200 rounded-[30px] overflow-hidden shadow-sm">
-      {/* HEADER */}
-      <div className="flex items-center justify-between px-8 py-6 border-b border-neutral-200 bg-orange-50">
-        <div>
-          <h2 className="text-3xl font-bold">
-            Inquiry Information
-          </h2>
-
-          <p className="text-neutral-500 mt-2">
-            Edit and Update Inquiries
-          </p>
-        </div>
-
-        <div className="flex gap-4">
-          <button
-            onClick={addRow}
-            className="bg-orange-500 hover:bg-orange-600 transition-all px-5 py-3 rounded-2xl flex items-center gap-2 font-medium text-white shadow-sm"
-          >
-            <Plus size={18} />
-
-            Add Row
-          </button>
-
-          <button className="bg-green-500 hover:bg-green-400 transition-all px-5 py-3 rounded-2xl flex items-center gap-2 font-medium">
-            <Save size={18} />
-
-            Save
-          </button>
-        </div>
-      </div>
-
-      {/* TABLE */}
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-[#fafafa] text-neutral-600">
-            <tr>
-              <th className="px-6 py-5 text-left">
-                Sr No.
-              </th>
-
-              <th className="px-6 py-5 text-left">
-                F Unique Code
-              </th>
-
-              <th className="px-6 py-5 text-left">
-                Client Name
-              </th>
-
-              <th className="px-6 py-5 text-left">
-                Location
-              </th>
-
-              <th className="px-6 py-5 text-left">
-                User Name
-              </th>
-
-              <th className="px-6 py-5 text-left">
-                PR #
-              </th>
-
-              <th className="px-6 py-5 text-left">
-                Brand
-              </th>
-
-              <th className="px-6 py-5 text-left">
-                Part Number
-              </th>
-
-              <th className="px-6 py-5 text-left">
-                UOM
-              </th>
-
-              <th className="px-6 py-5 text-left">
-                Qty
-              </th>
-
-              <th className="px-6 py-5 text-left">
-                Vendor
-              </th>
-
-              <th className="px-6 py-5 text-left">
-                System Minute
-              </th>
-
-              <th className="px-6 py-5 text-left">
-                Status
-              </th>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[900px] border-collapse text-left text-[11px]">
+        <thead>
+          <tr className="border-b border-slate-200 bg-slate-50 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+            <th className="border-r border-slate-200 px-2 py-2">Code</th>
+            <th className="border-r border-slate-200 px-2 py-2">Client</th>
+            <th className="border-r border-slate-200 px-2 py-2">Location</th>
+            <th className="border-r border-slate-200 px-2 py-2">Brand</th>
+            <th className="border-r border-slate-200 px-2 py-2">Part number</th>
+            <th className="border-r border-slate-200 px-2 py-2">Qty</th>
+            <th className="border-r border-slate-200 px-2 py-2">UOM</th>
+            <th className="border-r border-slate-200 px-2 py-2">Notes</th>
+            <th className="px-2 py-2">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.rowKey} className="border-b border-slate-100 transition hover:bg-blue-50/40">
+              <td className="border-r border-slate-100 px-2 py-2 font-semibold text-slate-900">{row.unique_code}</td>
+              <td className="border-r border-slate-100 px-2 py-2 text-slate-700">{row.client_name}</td>
+              <td className="border-r border-slate-100 px-2 py-2 text-slate-600">{row.location}</td>
+              <td className="border-r border-slate-100 px-2 py-2 text-slate-600">{row.brand}</td>
+              <td className="border-r border-slate-100 px-2 py-2 font-medium text-slate-900">{row.part_number}</td>
+              <td className="border-r border-slate-100 px-2 py-2 text-slate-600">{row.quantity}</td>
+              <td className="border-r border-slate-100 px-2 py-2 text-slate-600">{row.uom}</td>
+              <td className="max-w-44 truncate border-r border-slate-100 px-2 py-2 text-slate-500" title={row.item_notes}>
+                {row.item_notes}
+              </td>
+              <td className="px-2 py-2">
+                <select
+                  value={statusDrafts[row.unique_code] || row.status}
+                  onChange={(e) => onStatusChange(row.unique_code, e.target.value)}
+                  className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                >
+                  {STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </td>
             </tr>
-          </thead>
-
-          <tbody>
-            {rows.map((row, index) => (
-              <tr
-                key={index}
-                className="border-t border-neutral-200 hover:bg-orange-50"
-              >
-                <td className="px-4 py-4 text-center">
-                  {row.sr}
-                </td>
-
-                {[
-                  "code",
-                  "client",
-                  "location",
-                  "user",
-                  "pr",
-                  "brand",
-                  "part",
-                  "uom",
-                  "qty",
-                  "vendor",
-                  "system",
-                  "status",
-                ].map((field) => (
-                  <td key={field} className="px-3 py-3">
-                    <input
-                      type="text"
-                      value={row[field]}
-                      onChange={(e) =>
-                        handleChange(
-                          index,
-                          field,
-                          e.target.value
-                        )
-                      }
-                      className="
-                        w-full
-                        bg-white
-                        border
-                        border-neutral-200
-                        rounded-xl
-                        px-3
-                        py-2
-                        text-neutral-950
-                        outline-none
-                        focus:border-orange-500
-                      "
-                    />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

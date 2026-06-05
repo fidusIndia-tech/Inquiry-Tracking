@@ -19,7 +19,7 @@ from history_tracker import get_latest_history_id, save_latest_history_id, get_a
 from email_parser import parse_email
 from rfq_filter import is_rfq_candidate
 from attachment_handler import extract_attachment_text
-from llm_extractor import is_rfq_email, extract_rfq_data
+from llm_extractor import is_rfq_email, extract_rfq_data, get_buyer_identity
 from next_api_client import post_rfq_item
 from config import get_settings
 from logging_setup import get_logger
@@ -100,13 +100,29 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
                 logger.warning("No items extracted for %s", msg_id)
                 continue
 
+            buyer_name, buyer_email = get_buyer_identity(parsed)
+
             # 6. Collapse all items into one parser row for the Next.js API.
+            client_name = None
             username = None
+            sender_email = None
             location = None
             for item in line_items:
                 if isinstance(item, dict):
+                    client_name = client_name or item.get("client_name")
                     username = username or item.get("username")
+                    sender_email = sender_email or item.get("sender_email")
                     location = location or item.get("location")
+
+            username = buyer_name or username
+            sender_email = buyer_email or sender_email
+
+            for item in line_items:
+                if isinstance(item, dict):
+                    if buyer_name:
+                        item["username"] = buyer_name
+                    if buyer_email:
+                        item["sender_email"] = buyer_email
 
             brands = ", ".join(
                 str(i.get("brand") or "") for i in line_items if isinstance(i, dict)
@@ -123,13 +139,17 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
 
             result = post_rfq_item({
                 "message_id": msg_id,
+                "thread_id": parsed.get("thread_id"),
                 "user_id": user_id,
+                "client_name": client_name,
                 "username": username,
+                "sender_email": sender_email,
                 "location": location,
                 "brands": brands,
                 "part_numbers": part_numbers,
                 "quantities": quantities,
                 "notes": notes,
+                "line_items": line_items,
                 "sender": parsed.get("sender"),
                 "subject": parsed.get("subject"),
                 "email_date": parsed.get("date_str"),

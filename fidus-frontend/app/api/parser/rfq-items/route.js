@@ -3,6 +3,7 @@ import {
   buildInquiryItems,
   extractEmail,
   extractSenderName,
+  isInternalEmail,
   normalizeParserPayload,
 } from "@/lib/inquiry-normalizer";
 
@@ -10,6 +11,11 @@ export async function POST(request) {
   try {
     const payload = await request.json();
     const rawItem = normalizeParserPayload(payload);
+    const serializedLineItems = rawItem.line_items
+      ? typeof rawItem.line_items === "string"
+        ? rawItem.line_items
+        : JSON.stringify(rawItem.line_items)
+      : null;
 
     if (!rawItem.message_id && !rawItem.subject) {
       return Response.json(
@@ -24,6 +30,7 @@ export async function POST(request) {
           INSERT INTO raw_email_items (
             parser_row_id,
             message_id,
+            thread_id,
             source_user_id,
             username,
             location,
@@ -31,21 +38,24 @@ export async function POST(request) {
             part_numbers,
             quantities,
             notes,
+            line_items,
             sender,
             subject,
             email_date,
             parser_created_at,
             processing_status
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'processing')
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, 'processing')
           ON CONFLICT (message_id) WHERE message_id IS NOT NULL
           DO UPDATE SET
+            thread_id = EXCLUDED.thread_id,
             username = EXCLUDED.username,
             location = EXCLUDED.location,
             brands = EXCLUDED.brands,
             part_numbers = EXCLUDED.part_numbers,
             quantities = EXCLUDED.quantities,
             notes = EXCLUDED.notes,
+            line_items = EXCLUDED.line_items,
             sender = EXCLUDED.sender,
             subject = EXCLUDED.subject,
             email_date = EXCLUDED.email_date,
@@ -57,6 +67,7 @@ export async function POST(request) {
         [
           rawItem.parser_row_id,
           rawItem.message_id,
+          rawItem.thread_id,
           rawItem.source_user_id,
           rawItem.username,
           rawItem.location,
@@ -64,6 +75,7 @@ export async function POST(request) {
           rawItem.part_numbers,
           rawItem.quantities,
           rawItem.notes,
+          serializedLineItems,
           rawItem.sender,
           rawItem.subject,
           rawItem.email_date,
@@ -73,8 +85,9 @@ export async function POST(request) {
 
       const savedRawItem = rawResult.rows[0];
       const uniqueCode = `FIAPL${String(savedRawItem.id).padStart(7, "0")}`;
-      const senderEmail = extractEmail(savedRawItem.sender);
-      const senderName = extractSenderName(savedRawItem.sender, savedRawItem.username);
+      const headerEmail = extractEmail(savedRawItem.sender);
+      const senderEmail = rawItem.sender_email || (isInternalEmail(headerEmail) ? null : headerEmail);
+      const senderName = savedRawItem.username || extractSenderName(savedRawItem.sender, null);
 
       const inquiryResult = await client.query(
         `
@@ -106,7 +119,7 @@ export async function POST(request) {
         [
           uniqueCode,
           savedRawItem.id,
-          savedRawItem.username,
+          rawItem.client_name || null,
           savedRawItem.location,
           senderName,
           senderEmail,
@@ -131,15 +144,17 @@ export async function POST(request) {
               brand,
               part_number,
               quantity,
+              uom,
               item_notes
             )
-            VALUES ($1, $2, $3, $4, $5)
+            VALUES ($1, $2, $3, $4, $5, $6)
           `,
           [
             inquiry.id,
             item.brand,
             item.partNumber,
             item.quantity,
+            item.uom,
             item.itemNotes,
           ]
         );

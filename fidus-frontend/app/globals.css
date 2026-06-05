@@ -1,26 +1,115 @@
 @import "tailwindcss";
 
+/* ── Design tokens ── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-base:    #FFFFFF;
+  --bg-subtle:  #FAFBFC;
+  --bg-muted:   #F3F5F7;
+  --bg-inset:   #EEF2F6;
+  --border-default: #E4E8EE;
+  --border-subtle:  #EEF2F6;
+  --border-strong:  #C9D0DA;
+  --text-primary:   #0F172A;
+  --text-secondary: #475569;
+  --text-tertiary:  #94A3B8;
+  --accent:         #5BA7FF;
+  --accent-hover:   #3D94FF;
+  --accent-muted:   #EFF6FF;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--bg-base);
+  --color-foreground: var(--text-primary);
+  --font-sans: var(--font-inter);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+*, *::before, *::after { box-sizing: border-box; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button, select, input, textarea { font: inherit; }
+
+::selection { background: rgba(91,167,255,0.18); color: #0F172A; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar            { width: 5px; height: 5px; }
+::-webkit-scrollbar-track      { background: transparent; }
+::-webkit-scrollbar-thumb      { background: #C9D0DA; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover{ background: #94A3B8; }
+
+/* ── Core animations ── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes shimmer {
+  from { background-position: -600px 0; }
+  to   { background-position:  600px 0; }
+}
+
+/* ── Login-specific animations ── */
+@keyframes gradient-shift {
+  0%   { background-position: 0%   50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0%   50%; }
+}
+
+@keyframes blob-float {
+  0%,  100% { transform: translate(0,    0)    scale(1);    }
+  25%        { transform: translate(22px, -28px) scale(1.07); }
+  50%        { transform: translate(-12px, 16px) scale(0.94); }
+  75%        { transform: translate(16px,  10px) scale(1.04); }
+}
+
+@keyframes modal-slide-up {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+.animate-fade-up     { animation: fade-up       0.32s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-fade-in     { animation: fade-in        0.2s  ease both; }
+.animate-modal       { animation: modal-slide-up 0.28s cubic-bezier(0.16,1,0.3,1) both; }
+
+/* ── Skeleton ── */
+.skeleton {
+  background: linear-gradient(90deg, #F3F5F7 25%, #E8EDF3 50%, #F3F5F7 75%);
+  background-size: 600px 100%;
+  animation: shimmer 1.5s infinite linear;
+  border-radius: 6px;
+}
+
+/* ── Login page ── */
+.login-animated-bg {
+  background: linear-gradient(-45deg, #EEF2FF, #DBEAFE, #EDE9FE, #CFFAFE, #ECFDF5, #DBEAFE);
+  background-size: 400% 400%;
+  animation: gradient-shift 12s ease infinite;
+}
+
+.login-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(72px);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* ── Shadows ── */
+.card-shadow {
+  box-shadow: 0 0 0 1px #E4E8EE, 0 2px 8px rgba(15,23,42,0.05);
+}
+.card-shadow-lg {
+  box-shadow: 0 0 0 1px #E4E8EE, 0 8px 32px rgba(15,23,42,0.08), 0 2px 8px rgba(15,23,42,0.04);
+}
+.card-shadow-hover {
+  box-shadow: 0 0 0 1px #D0D8E4, 0 12px 36px rgba(15,23,42,0.10), 0 4px 12px rgba(15,23,42,0.05);
 }

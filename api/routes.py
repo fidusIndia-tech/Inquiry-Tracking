@@ -9,7 +9,6 @@ from googleapiclient.discovery import build
 
 from gmail_auth import build_oauth_flow, get_authorization_url, get_gmail_service_for_user
 from gmail_service import (
-    fetch_message_ids,
     fetch_new_message_ids_from_history,
     HistoryExpiredError,
 )
@@ -62,14 +61,14 @@ def oauth_callback(request: Request):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Could not get Gmail profile: {exc}")
 
-        save_user_credentials(
-            email=user_id,
-            refresh_token=credentials.refresh_token,
-            access_token=credentials.token,
-            access_token_expiry=credentials.expiry,
-            history_id=history_id,
-            scopes=list(credentials.scopes or settings.GOOGLE_SCOPES),
-        )
+    save_user_credentials(
+        email=user_id,
+        refresh_token=credentials.refresh_token,
+        access_token=credentials.token,
+        access_token_expiry=credentials.expiry,
+        history_id=history_id,
+        scopes=list(credentials.scopes or settings.GOOGLE_SCOPES),
+    )
 
     # Capture initial historyId — becomes the incremental sync checkpoint
     logger.info("Initial Gmail profile captured | user=%s historyId=%s", user_id, history_id)
@@ -81,13 +80,12 @@ def oauth_callback(request: Request):
 
 
 @router.get("/start-fetch")
-def start_fetch(request: Request, reseed: bool = False):
+def start_fetch(request: Request):
     """
     Incremental fetch using Gmail History API.
 
-    Normal call  → returns only emails that arrived since the last checkpoint.
-    ?reseed=true → full mailbox scan + captures a fresh historyId checkpoint.
-                   Use this on first run or when the checkpoint has expired.
+    This endpoint only captures the current historyId checkpoint.
+    Fresh mail will then be picked up by Celery beat through the History API.
     """
     user_id = request.session.get("user_id")
     if not user_id:
@@ -102,34 +100,20 @@ def start_fetch(request: Request, reseed: bool = False):
 
     stored_id = get_latest_history_id(user_id)
 
-    # ── Reseed: full scan + capture fresh checkpoint ──────────────────────
-    if reseed or not stored_id:
+    # Only seed the current checkpoint. Do not backfill old messages.
+    if not stored_id:
         try:
             profile = service.users().getProfile(userId="me").execute()
             history_id = profile.get("historyId")
             if history_id:
                 save_latest_history_id(user_id, history_id)
         except Exception as exc:
-            logger.warning("Could not capture historyId during reseed: %s", exc)
-
-        try:
-            messages = fetch_message_ids(service)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Gmail API error: {exc}")
-
-        if not messages:
-            return JSONResponse({"status": "no_messages"})
-
-        task_ids = []
-        for msg in messages:
-            task = process_email_message.apply_async(args=[user_id, msg["id"]], queue="emails")
-            task_ids.append(task.id)
+            raise HTTPException(status_code=500, detail=f"Could not capture historyId: {exc}")
 
         return JSONResponse({
-            "status":         "full_fetch_queued",
-            "total_messages": len(messages),
-            "messages_queued": len(task_ids),
-            "note":           "Seed complete. Future calls will use incremental History API.",
+            "status": "checkpoint_saved",
+            "history_id": history_id,
+            "note": "Old mail was not scanned. New mail will be picked up by the 60-second history poll.",
         })
 
     # ── Incremental fetch via History API ─────────────────────────────────

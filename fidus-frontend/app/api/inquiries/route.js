@@ -1,7 +1,9 @@
-import { query } from "@/lib/db";
+import { query, withTransaction } from "@/lib/db";
 
 export async function GET() {
   try {
+    await query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ");
+
     const result = await query(`
       SELECT
         i.id,
@@ -14,7 +16,12 @@ export async function GET() {
         i.notes,
         i.email_date,
         i.status,
+        i.assigned_to,
+        i.assigned_at,
+        u.name AS assigned_to_name,
         i.created_at,
+        r.message_id,
+        r.thread_id,
         COALESCE(
           json_agg(
             json_build_object(
@@ -31,8 +38,10 @@ export async function GET() {
           '[]'::json
         ) AS items
       FROM inquiries i
+      LEFT JOIN raw_email_items r ON r.id = i.raw_email_item_id
       LEFT JOIN inquiry_items ii ON ii.inquiry_id = i.id
-      GROUP BY i.id
+      LEFT JOIN users u ON u.id = i.assigned_to
+      GROUP BY i.id, r.id, u.id
       ORDER BY i.email_date DESC NULLS LAST, i.created_at DESC
     `);
 
@@ -40,6 +49,93 @@ export async function GET() {
   } catch (error) {
     return Response.json(
       { error: error.message || "Failed to load inquiries" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request) {
+  try {
+    const payload = await request.json();
+    const uniqueCode = payload.unique_code || payload.uniqueCode;
+
+    if (!uniqueCode) {
+      return Response.json({ error: "unique_code is required" }, { status: 400 });
+    }
+
+    const result = await query(
+      `
+        UPDATE inquiries
+        SET
+          client_name = $1,
+          location = $2,
+          sender_name = $3,
+          sender_email = $4,
+          subject = $5,
+          notes = $6,
+          updated_at = NOW()
+        WHERE unique_code = $7
+        RETURNING
+          unique_code,
+          client_name,
+          location,
+          sender_name,
+          sender_email,
+          subject,
+          notes
+      `,
+      [
+        payload.client_name || null,
+        payload.location || null,
+        payload.sender_name || null,
+        payload.sender_email || null,
+        payload.subject || null,
+        payload.notes || null,
+        uniqueCode,
+      ]
+    );
+
+    if (result.rowCount === 0) {
+      return Response.json({ error: "Inquiry not found" }, { status: 404 });
+    }
+
+    return Response.json({ inquiry: result.rows[0] });
+  } catch (error) {
+    return Response.json(
+      { error: error.message || "Failed to update inquiry" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const { unique_code } = await request.json();
+
+    if (!unique_code) {
+      return Response.json({ error: "unique_code is required" }, { status: 400 });
+    }
+
+    await withTransaction(async (client) => {
+      const inqResult = await client.query(
+        `SELECT id FROM inquiries WHERE unique_code = $1`,
+        [unique_code]
+      );
+
+      if (!inqResult.rows.length) {
+        throw new Error("Inquiry not found");
+      }
+
+      const inquiryId = inqResult.rows[0].id;
+
+      await client.query(`DELETE FROM inquiry_items WHERE inquiry_id = $1`, [inquiryId]);
+      await client.query(`DELETE FROM inquiries    WHERE id = $1`,          [inquiryId]);
+    });
+
+    return Response.json({ success: true });
+  } catch (error) {
+    return Response.json(
+      { error: error.message || "Failed to delete inquiry" },
       { status: 500 }
     );
   }

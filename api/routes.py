@@ -48,7 +48,9 @@ def oauth_callback(request: Request):
     flow.code_verifier = request.session.get("oauth_code_verifier")
 
     try:
-        flow.fetch_token(authorization_response=str(request.url))
+        # Railway terminates SSL at proxy — internal URL is http:// but must be https://
+        callback_url = str(request.url).replace("http://", "https://", 1)
+        flow.fetch_token(authorization_response=callback_url)
         credentials = flow.credentials
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Token exchange failed: {exc}")

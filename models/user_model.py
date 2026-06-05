@@ -48,7 +48,7 @@ def _decrypt_secret(value: str | None) -> str | None:
 
 
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "gmail_users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String(255), unique=True, nullable=False, index=True)

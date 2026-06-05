@@ -28,16 +28,24 @@ if settings.APP_ENV == "development":
 
 def _oauth_client_config() -> dict:
     path = Path(settings.GOOGLE_CLIENT_SECRETS_FILE)
+    if not path.exists():
+        return {}
     data = json.loads(path.read_text())
     return data.get("web") or data.get("installed") or {}
 
 
 def _client_id() -> str:
-    return settings.GOOGLE_CLIENT_ID or _oauth_client_config().get("client_id", "")
+    value = settings.GOOGLE_CLIENT_ID or _oauth_client_config().get("client_id", "")
+    if not value:
+        raise ValueError("GOOGLE_CLIENT_ID env var is not set")
+    return value
 
 
 def _client_secret() -> str:
-    return settings.GOOGLE_CLIENT_SECRET or _oauth_client_config().get("client_secret", "")
+    value = settings.GOOGLE_CLIENT_SECRET or _oauth_client_config().get("client_secret", "")
+    if not value:
+        raise ValueError("GOOGLE_CLIENT_SECRET env var is not set")
+    return value
 
 
 def build_oauth_flow(state: str | None = None) -> Flow:

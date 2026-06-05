@@ -29,13 +29,25 @@ def home():
     return {"status": "ok", "service": "gmail-rfq-processor"}
 
 
+@router.get("/debug")
+def debug():
+    return {
+        "GOOGLE_CLIENT_ID":     settings.GOOGLE_CLIENT_ID[:8] + "..." if settings.GOOGLE_CLIENT_ID else "NOT SET",
+        "GOOGLE_CLIENT_SECRET": "SET" if settings.GOOGLE_CLIENT_SECRET else "NOT SET",
+        "GOOGLE_REDIRECT_URI":  settings.GOOGLE_REDIRECT_URI or "NOT SET",
+    }
+
+
 @router.get("/login")
 def login(request: Request):
-    flow = build_oauth_flow()
-    authorization_url, state = get_authorization_url(flow)
-    request.session["oauth_state"] = state
-    request.session["oauth_code_verifier"] = flow.code_verifier
-    return RedirectResponse(authorization_url)
+    try:
+        flow = build_oauth_flow()
+        authorization_url, state = get_authorization_url(flow)
+        request.session["oauth_state"] = state
+        request.session["oauth_code_verifier"] = getattr(flow, "code_verifier", None)
+        return RedirectResponse(authorization_url)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/auth/google/callback")

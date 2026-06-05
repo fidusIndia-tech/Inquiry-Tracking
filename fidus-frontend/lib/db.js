@@ -14,6 +14,7 @@ export const pool =
   globalForPg.pgPool ||
   new Pool({
     connectionString,
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
   });
 
 if (process.env.NODE_ENV !== "production") {

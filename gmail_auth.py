@@ -41,14 +41,23 @@ def _client_secret() -> str:
 
 
 def build_oauth_flow(state: str | None = None) -> Flow:
+    client_config = {
+        "web": {
+            "client_id": _client_id(),
+            "client_secret": _client_secret(),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [settings.GOOGLE_REDIRECT_URI],
+        }
+    }
     kwargs: dict = {
-        "client_secrets_file": settings.GOOGLE_CLIENT_SECRETS_FILE,
+        "client_config": client_config,
         "scopes": settings.GOOGLE_SCOPES,
     }
     if state:
         kwargs["state"] = state
 
-    flow = Flow.from_client_secrets_file(**kwargs)
+    flow = Flow.from_client_config(**kwargs)
     flow.redirect_uri = settings.GOOGLE_REDIRECT_URI
     return flow
 

@@ -298,7 +298,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {activeMenu === "sales" && <SalesOverview />}
+            {activeMenu === "sales" && <SalesOverview inquiries={inquiries} users={users} />}
             {activeMenu === "access" && (
               <AccessControlPanel
                 users={users}
@@ -1522,7 +1522,8 @@ const TEAM_COLORS = [
   { grad: "linear-gradient(135deg,#8C9EFF,#A78BFA)", glow: "rgba(140,158,255,0.25)" },
 ];
 
-function SalesOverview() {
+function SalesOverview({ inquiries, users }) {
+  const employees = users.filter((u) => u.role === "employee" && u.is_active);
   return (
     <section className="rounded-2xl overflow-hidden" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
       <div className="border-b border-[#D8E3F8] px-5 py-4" style={{ background: "linear-gradient(90deg,#F5F8FF 0%,#F0F6FF 100%)" }}>
@@ -1530,9 +1531,26 @@ function SalesOverview() {
         <p className="text-[11px] text-slate-400 mt-0.5">Team performance at a glance</p>
       </div>
       <div className="p-4 flex flex-col gap-3">
-        <TeamCard name="Tamanna" initial="T" quoted="5"  active="12" fresh="4" colorIdx={0} />
-        <TeamCard name="Abhinav" initial="A" quoted="3"  active="14" fresh="3" colorIdx={1} />
-        <TeamCard name="Pavan"   initial="P" quoted="7"  active="11" fresh="7" colorIdx={2} />
+        {employees.map((user, idx) => {
+          const mine   = inquiries.filter((i) => i.assigned_to === user.id);
+          const quoted = mine.filter((i) => i.status === "quoted").length;
+          const active = mine.filter((i) => i.status === "in_progress").length;
+          const fresh  = mine.filter((i) => i.status === "assigned").length;
+          return (
+            <TeamCard
+              key={user.id}
+              name={user.name}
+              initial={user.name.charAt(0).toUpperCase()}
+              quoted={quoted}
+              active={active}
+              fresh={fresh}
+              colorIdx={idx}
+            />
+          );
+        })}
+        {!employees.length && (
+          <p className="text-[12px] text-slate-400 text-center py-4">No employees found.</p>
+        )}
       </div>
     </section>
   );

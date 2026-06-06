@@ -72,6 +72,7 @@ export default function AdminDashboard() {
   const [editModal,          setEditModal]          = useState(null);
   const [subjectPreview,     setSubjectPreview]     = useState(null);
   const [detailModal,        setDetailModal]        = useState(null);
+  const [assignToMeModal,    setAssignToMeModal]    = useState(null);
   const [notifBadge,         setNotifBadge]         = useState(0);
   const prevCountRef = useRef(0);
 
@@ -259,6 +260,28 @@ export default function AdminDashboard() {
     router.push("/login");
   };
 
+  const handleAssignToMe = async (uniqueCode) => {
+    const adminId = Number(localStorage.getItem("userId"));
+    if (!adminId) { alert("Admin session not found. Please re-login."); return; }
+    try {
+      const response = await fetch("/api/inquiries/assign", {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ unique_code: uniqueCode, assigned_to: adminId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to assign");
+      setInquiries((current) =>
+        current.map((inq) =>
+          inq.unique_code === uniqueCode
+            ? { ...inq, assigned_to: data.inquiry.assigned_to, assigned_at: data.inquiry.assigned_at, assigned_to_name: data.inquiry.assigned_to_name, status: data.inquiry.status }
+            : inq
+        )
+      );
+      setAssignToMeModal(null);
+    } catch (e) { alert(e.message); }
+  };
+
   const handleDelete = async (uniqueCode) => {
     try {
       const response = await fetch("/api/inquiries", {
@@ -336,10 +359,11 @@ export default function AdminDashboard() {
                   setDateFilter={setDateFilter}
                   totalCount={inquiries.length}
                   now={now}
-                  onDeleteRequest={(inquiry) => setDeleteConfirm(inquiry)}
+                  onDeleteRequest={(inquiry)  => setDeleteConfirm(inquiry)}
                   onEditRequest={(inquiry)   => setEditModal(inquiry)}
                   onSubjectOpen={(inquiry)   => setSubjectPreview(inquiry)}
                   onDetailOpen={(inquiry)    => setDetailModal(inquiry)}
+                  onAssignToMeRequest={(uc)  => setAssignToMeModal(uc)}
                 />
               </div>
             )}
@@ -420,6 +444,14 @@ export default function AdminDashboard() {
         <InquiryDetailModal
           inquiry={detailModal}
           onClose={() => setDetailModal(null)}
+        />
+      )}
+
+      {assignToMeModal && (
+        <AssignToMeModal
+          uniqueCode={assignToMeModal}
+          onClose={() => setAssignToMeModal(null)}
+          onConfirm={() => handleAssignToMe(assignToMeModal)}
         />
       )}
     </div>
@@ -955,10 +987,9 @@ function InquiryTable({
   dateFilter, setDateFilter,
   totalCount,
   now,
-  onDeleteRequest, onEditRequest, onSubjectOpen, onDetailOpen,
+  onDeleteRequest, onEditRequest, onSubjectOpen, onDetailOpen, onAssignToMeRequest,
 }) {
-  const [colWidths,        setColWidths]        = useState(() => ADMIN_COLS.map((c) => c.defaultW));
-  const [assignToMeModal, setAssignToMeModal]  = useState(null); // uniqueCode | null
+  const [colWidths, setColWidths] = useState(() => ADMIN_COLS.map((c) => c.defaultW));
   const dragRef = useRef(null);
 
   const startResize = (colIdx, e) => {
@@ -976,28 +1007,6 @@ function InquiryTable({
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  };
-
-  const handleAssignToMe = async (uniqueCode) => {
-    const adminId = Number(localStorage.getItem("userId"));
-    if (!adminId) { alert("Admin session not found. Please re-login."); return; }
-    try {
-      const response = await fetch("/api/inquiries/assign", {
-        method:  "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ unique_code: uniqueCode, assigned_to: adminId }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to assign");
-      setInquiries((current) =>
-        current.map((inq) =>
-          inq.unique_code === uniqueCode
-            ? { ...inq, assigned_to: data.inquiry.assigned_to, assigned_at: data.inquiry.assigned_at, assigned_to_name: data.inquiry.assigned_to_name, status: data.inquiry.status }
-            : inq
-        )
-      );
-      setAssignToMeModal(null);
-    } catch (e) { alert(e.message); }
   };
 
   const handleAssignChange = async (uniqueCode, assignedTo) => {
@@ -1147,20 +1156,13 @@ function InquiryTable({
                   onEdit={()   => onEditRequest(inquiry)}
                   onSubjectOpen={() => onSubjectOpen(inquiry)}
                   onDetailOpen={() => onDetailOpen(inquiry)}
-                  onAssignToMe={() => setAssignToMeModal(inquiry.unique_code)}
+                  onAssignToMe={() => onAssignToMeRequest(inquiry.unique_code)}
                 />
               ))}
           </tbody>
         </table>
       </div>
 
-      {assignToMeModal && (
-        <AssignToMeModal
-          uniqueCode={assignToMeModal}
-          onClose={() => setAssignToMeModal(null)}
-          onConfirm={() => handleAssignToMe(assignToMeModal)}
-        />
-      )}
     </section>
   );
 }

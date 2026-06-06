@@ -100,6 +100,19 @@ export default function EmployeeDashboard() {
     return () => window.clearInterval(timer);
   }, [employeeId, loadInquiries]);
 
+  /* Auto-request notification permission on mount */
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission().then((perm) => {
+          setNotificationsEnabled(perm === "granted");
+        });
+      } else {
+        setNotificationsEnabled(Notification.permission === "granted");
+      }
+    }
+  }, []);
+
   const enableNotifications = async () => {
     if (typeof window === "undefined" || !("Notification" in window)) {
       setNotice("Browser notifications are not supported here.");
@@ -403,7 +416,39 @@ function MetricCard({ label, value }) {
   );
 }
 
+const EMP_COLS = [
+  { label: "Code",        defaultW: 110 },
+  { label: "Client",      defaultW: 120 },
+  { label: "Location",    defaultW: 100 },
+  { label: "Brand",       defaultW: 90  },
+  { label: "Part number", defaultW: 130 },
+  { label: "Qty",         defaultW: 60  },
+  { label: "UOM",         defaultW: 60  },
+  { label: "Notes",       defaultW: 140 },
+  { label: "Status",      defaultW: 120 },
+];
+
 function EmployeeTable({ rows, loading, statusDrafts, onStatusChange }) {
+  const [colWidths, setColWidths] = useState(() => EMP_COLS.map((c) => c.defaultW));
+  const dragRef = useRef(null);
+
+  const startResize = (colIdx, e) => {
+    e.preventDefault();
+    dragRef.current = { colIdx, startX: e.clientX, startW: colWidths[colIdx] };
+    const onMove = (ev) => {
+      const { colIdx: ci, startX, startW } = dragRef.current;
+      const newW = Math.max(36, startW + ev.clientX - startX);
+      setColWidths((prev) => { const next = [...prev]; next[ci] = newW; return next; });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   if (loading) {
     return (
       <div className="space-y-3 p-5">
@@ -430,38 +475,46 @@ function EmployeeTable({ rows, loading, statusDrafts, onStatusChange }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[900px] border-collapse text-left text-[11px]">
+      <table className="border-collapse text-left text-[11px]" style={{ tableLayout: "fixed", width: colWidths.reduce((a, b) => a + b, 0) }}>
+        <colgroup>
+          {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
+        </colgroup>
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-            <th className="border-r border-slate-200 px-2 py-2">Code</th>
-            <th className="border-r border-slate-200 px-2 py-2">Client</th>
-            <th className="border-r border-slate-200 px-2 py-2">Location</th>
-            <th className="border-r border-slate-200 px-2 py-2">Brand</th>
-            <th className="border-r border-slate-200 px-2 py-2">Part number</th>
-            <th className="border-r border-slate-200 px-2 py-2">Qty</th>
-            <th className="border-r border-slate-200 px-2 py-2">UOM</th>
-            <th className="border-r border-slate-200 px-2 py-2">Notes</th>
-            <th className="px-2 py-2">Status</th>
+            {EMP_COLS.map((col, i) => (
+              <th
+                key={col.label}
+                style={{ width: colWidths[i], position: "relative" }}
+                className="border-r border-slate-200 px-2 py-2 select-none last:border-r-0"
+              >
+                <span className="truncate block pr-2">{col.label}</span>
+                <div
+                  onMouseDown={(e) => startResize(i, e)}
+                  style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 6, cursor: "col-resize", zIndex: 1 }}
+                  className="hover:bg-blue-400/30 transition-colors"
+                />
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.rowKey} className="border-b border-slate-100 transition hover:bg-blue-50/40">
-              <td className="border-r border-slate-100 px-2 py-2 font-semibold text-slate-900">{row.unique_code}</td>
-              <td className="border-r border-slate-100 px-2 py-2 text-slate-700">{row.client_name}</td>
-              <td className="border-r border-slate-100 px-2 py-2 text-slate-600">{row.location}</td>
-              <td className="border-r border-slate-100 px-2 py-2 text-slate-600">{row.brand}</td>
-              <td className="border-r border-slate-100 px-2 py-2 font-medium text-slate-900">{row.part_number}</td>
+              <td className="border-r border-slate-100 px-2 py-2 font-semibold text-slate-900 truncate">{row.unique_code}</td>
+              <td className="border-r border-slate-100 px-2 py-2 text-slate-700 truncate">{row.client_name}</td>
+              <td className="border-r border-slate-100 px-2 py-2 text-slate-600 truncate">{row.location}</td>
+              <td className="border-r border-slate-100 px-2 py-2 text-slate-600 truncate">{row.brand}</td>
+              <td className="border-r border-slate-100 px-2 py-2 font-medium text-slate-900 truncate">{row.part_number}</td>
               <td className="border-r border-slate-100 px-2 py-2 text-slate-600">{row.quantity}</td>
               <td className="border-r border-slate-100 px-2 py-2 text-slate-600">{row.uom}</td>
-              <td className="max-w-44 truncate border-r border-slate-100 px-2 py-2 text-slate-500" title={row.item_notes}>
+              <td className="border-r border-slate-100 px-2 py-2 text-slate-500 truncate" title={row.item_notes}>
                 {row.item_notes}
               </td>
               <td className="px-2 py-2">
                 <select
                   value={statusDrafts[row.unique_code] || row.status}
                   onChange={(e) => onStatusChange(row.unique_code, e.target.value)}
-                  className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  className="h-7 w-full rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 >
                   {STATUS_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -69,6 +69,8 @@ export default function AdminDashboard() {
   const [deleteConfirm,      setDeleteConfirm]      = useState(null);
   const [editModal,          setEditModal]          = useState(null);
   const [subjectPreview,     setSubjectPreview]     = useState(null);
+  const [notifBadge,         setNotifBadge]         = useState(0);
+  const prevCountRef = useRef(0);
 
   async function loadInquiries() {
     try {
@@ -129,6 +131,30 @@ export default function AdminDashboard() {
       window.clearInterval(timer);
     };
   }, []);
+
+  /* Auto-request notification permission on mount */
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  /* Track new inquiries and push browser notifications */
+  useEffect(() => {
+    const prev = prevCountRef.current;
+    const curr = inquiries.length;
+    if (curr > prev && prev > 0) {
+      const added = curr - prev;
+      setNotifBadge((n) => n + added);
+      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+        new Notification("New Inquiries Received", {
+          body: `${added} new inquiry${added > 1 ? " items" : ""} arrived`,
+          icon: "/logo-dark.png",
+        });
+      }
+    }
+    prevCountRef.current = curr;
+  }, [inquiries]);
 
   const filteredInquiries = inquiries.filter((inquiry) => {
     const tokens = searchText
@@ -239,6 +265,8 @@ export default function AdminDashboard() {
             setSearchText={setSearchText}
             onRefresh={loadInquiries}
             onOpenSidebar={() => setMobileSidebarOpen(true)}
+            notifBadge={notifBadge}
+            onClearNotif={() => setNotifBadge(0)}
           />
 
           <div className="flex-1 overflow-auto p-4 lg:p-5">
@@ -734,7 +762,7 @@ function SidebarItem({ icon, title, active, collapsed, onClick }) {
 /* ──────────────────────────────────────────────
    TOP BAR
 ─────────────────────────────────────────────── */
-function TopBar({ activeMenu, searchText, setSearchText, onRefresh, onOpenSidebar }) {
+function TopBar({ activeMenu, searchText, setSearchText, onRefresh, onOpenSidebar, notifBadge, onClearNotif }) {
   const title = {
     dashboard: "Inquiry Dashboard",
     sales: "Sales Overview",
@@ -781,8 +809,17 @@ function TopBar({ activeMenu, searchText, setSearchText, onRefresh, onOpenSideba
           <RefreshCw size={13} />
           <span className="hidden sm:inline">Refresh</span>
         </button>
-        <button className="h-9 w-9 grid place-items-center rounded-xl border border-[#D0D8F0] bg-white/80 text-slate-500 transition hover:bg-[#EEF2FF] hover:text-[#5BA7FF] hover:border-[#BFDBFE]">
+        <button
+          onClick={onClearNotif}
+          className="relative h-9 w-9 grid place-items-center rounded-xl border border-[#D0D8F0] bg-white/80 text-slate-500 transition hover:bg-[#EEF2FF] hover:text-[#5BA7FF] hover:border-[#BFDBFE]"
+          title="Notifications"
+        >
           <Bell size={14} />
+          {notifBadge > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center animate-fade-in" style={{ boxShadow: "0 2px 6px rgba(239,68,68,0.5)" }}>
+              {notifBadge > 9 ? "9+" : notifBadge}
+            </span>
+          )}
         </button>
       </div>
     </header>
@@ -837,6 +874,23 @@ function MetricCard({ icon, label, value, accent, delay }) {
 /* ──────────────────────────────────────────────
    INQUIRY TABLE
 ─────────────────────────────────────────────── */
+const ADMIN_COLS = [
+  { label: "Sr. No.",       defaultW: 52  },
+  { label: "F Unique Code", defaultW: 110 },
+  { label: "Client Name",   defaultW: 120 },
+  { label: "Location",      defaultW: 100 },
+  { label: "User Name",     defaultW: 110 },
+  { label: "PR #",          defaultW: 80  },
+  { label: "Brand",         defaultW: 90  },
+  { label: "Part Number",   defaultW: 120 },
+  { label: "UOM",           defaultW: 60  },
+  { label: "Qty",           defaultW: 55  },
+  { label: "Allocation",    defaultW: 100 },
+  { label: "Timer",         defaultW: 72  },
+  { label: "Status",        defaultW: 90  },
+  { label: "Actions",       defaultW: 72  },
+];
+
 function InquiryTable({
   inquiries, setInquiries,
   employees,
@@ -847,6 +901,26 @@ function InquiryTable({
   now,
   onDeleteRequest, onEditRequest, onSubjectOpen,
 }) {
+  const [colWidths, setColWidths] = useState(() => ADMIN_COLS.map((c) => c.defaultW));
+  const dragRef = useRef(null);
+
+  const startResize = (colIdx, e) => {
+    e.preventDefault();
+    dragRef.current = { colIdx, startX: e.clientX, startW: colWidths[colIdx] };
+    const onMove = (ev) => {
+      const { colIdx: ci, startX, startW } = dragRef.current;
+      const newW = Math.max(36, startW + ev.clientX - startX);
+      setColWidths((prev) => { const next = [...prev]; next[ci] = newW; return next; });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   const handleAssignChange = async (uniqueCode, assignedTo) => {
     try {
       const response = await fetch("/api/inquiries/assign", {
@@ -913,31 +987,24 @@ function InquiryTable({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1040px] table-fixed border-collapse text-[11px]">
+        <table className="border-collapse text-[11px]" style={{ tableLayout: "fixed", width: colWidths.reduce((a, b) => a + b, 0) }}>
+          <colgroup>
+            {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
+          </colgroup>
           <thead>
             <tr className="text-left">
-              {[
-                ["5%",  "Sr. No."],
-                ["10%", "F Unique Code"],
-                ["12%", "Client Name"],
-                ["10%", "Location"],
-                ["11%", "User Name"],
-                ["7%",  "PR #"],
-                ["10%", "Brand"],
-                ["13%", "Part Number"],
-                ["7%",  "UOM"],
-                ["6%",  "Qty"],
-                ["10%", "Allocation"],
-                ["8%",  "Timer"],
-                ["8%",  "Status"],
-                ["7%",  "Actions"],
-              ].map(([w, label]) => (
+              {ADMIN_COLS.map((col, i) => (
                 <th
-                  key={label}
-                  style={{ width: w, background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}
-                  className="sticky top-0 border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-2 py-2.5 text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0"
+                  key={col.label}
+                  style={{ width: colWidths[i], position: "relative", background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}
+                  className="sticky top-0 border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-2 py-2.5 text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0 select-none"
                 >
-                  {label}
+                  <span className="truncate block pr-2">{col.label}</span>
+                  <div
+                    onMouseDown={(e) => startResize(i, e)}
+                    style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 6, cursor: "col-resize", zIndex: 1 }}
+                    className="hover:bg-[#5BA7FF]/30 transition-colors"
+                  />
                 </th>
               ))}
             </tr>

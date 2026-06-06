@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import InquiryDetailModal from "@/app/components/InquiryDetailModal";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -70,6 +71,7 @@ export default function AdminDashboard() {
   const [deleteConfirm,      setDeleteConfirm]      = useState(null);
   const [editModal,          setEditModal]          = useState(null);
   const [subjectPreview,     setSubjectPreview]     = useState(null);
+  const [detailModal,        setDetailModal]        = useState(null);
   const [notifBadge,         setNotifBadge]         = useState(0);
   const prevCountRef = useRef(0);
 
@@ -337,6 +339,7 @@ export default function AdminDashboard() {
                   onDeleteRequest={(inquiry) => setDeleteConfirm(inquiry)}
                   onEditRequest={(inquiry)   => setEditModal(inquiry)}
                   onSubjectOpen={(inquiry)   => setSubjectPreview(inquiry)}
+                  onDetailOpen={(inquiry)    => setDetailModal(inquiry)}
                 />
               </div>
             )}
@@ -410,6 +413,13 @@ export default function AdminDashboard() {
         <SubjectModal
           inquiry={subjectPreview}
           onClose={() => setSubjectPreview(null)}
+        />
+      )}
+
+      {detailModal && (
+        <InquiryDetailModal
+          inquiry={detailModal}
+          onClose={() => setDetailModal(null)}
         />
       )}
     </div>
@@ -945,7 +955,7 @@ function InquiryTable({
   dateFilter, setDateFilter,
   totalCount,
   now,
-  onDeleteRequest, onEditRequest, onSubjectOpen,
+  onDeleteRequest, onEditRequest, onSubjectOpen, onDetailOpen,
 }) {
   const [colWidths, setColWidths] = useState(() => ADMIN_COLS.map((c) => c.defaultW));
   const dragRef = useRef(null);
@@ -1113,6 +1123,7 @@ function InquiryTable({
                   onDelete={() => onDeleteRequest(inquiry)}
                   onEdit={()   => onEditRequest(inquiry)}
                   onSubjectOpen={() => onSubjectOpen(inquiry)}
+                  onDetailOpen={() => onDetailOpen(inquiry)}
                 />
               ))}
           </tbody>
@@ -1150,7 +1161,7 @@ function LoadingRows() {
   ));
 }
 
-function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employees, onAssignChange, onStatusChange, onDelete, onEdit, onSubjectOpen }) {
+function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employees, onAssignChange, onStatusChange, onDelete, onEdit, onSubjectOpen, onDetailOpen }) {
   const status = inquiry.status || "new";
   const part   = item.partNumber || "—";
   const brand  = item.brand      || "-";
@@ -1175,7 +1186,12 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
       </td>
 
       {/* F Unique Code */}
-      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
+      <td
+        className="border-r border-[#DCE6F7] px-2 py-2 align-middle"
+        onDoubleClick={isFirstItem ? onDetailOpen : undefined}
+        style={{ cursor: isFirstItem ? "pointer" : "default" }}
+        title={isFirstItem ? "Double-click to view full details" : undefined}
+      >
         <p className="truncate font-semibold text-slate-900 text-[11px]">{inquiry.unique_code}</p>
         {isFirstItem && groupSize > 1 && (
           <p className="mt-0.5 text-[11px] text-[#5BA7FF] font-medium">{groupSize} items</p>

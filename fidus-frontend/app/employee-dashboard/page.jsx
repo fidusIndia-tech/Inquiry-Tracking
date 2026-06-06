@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import InquiryDetailModal from "@/app/components/InquiryDetailModal";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -38,6 +39,7 @@ export default function EmployeeDashboard() {
   const knownAssignmentsRef = useRef(new Map());
   const firstLoadRef = useRef(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [detailModal,      setDetailModal]      = useState(null);
 
   const loadInquiries = useCallback(async (userId, options = {}) => {
     const silent = Boolean(options.silent);
@@ -209,6 +211,11 @@ export default function EmployeeDashboard() {
     localStorage.removeItem("userId");
     localStorage.removeItem("userName");
     router.push("/login");
+  };
+
+  const openDetail = (uniqueCode) => {
+    const inq = inquiries.find((i) => i.unique_code === uniqueCode);
+    if (inq) setDetailModal(inq);
   };
 
   const updateDraftStatus = (uniqueCode, value) => {
@@ -414,10 +421,18 @@ export default function EmployeeDashboard() {
               loading={loading}
               statusDrafts={statusDrafts}
               onStatusChange={updateDraftStatus}
+              onDetailOpen={openDetail}
             />
           </div>
         </section>
       </main>
+
+      {detailModal && (
+        <InquiryDetailModal
+          inquiry={detailModal}
+          onClose={() => setDetailModal(null)}
+        />
+      )}
     </div>
   );
 }
@@ -443,7 +458,7 @@ const EMP_COLS = [
   { label: "Status",      defaultW: 120 },
 ];
 
-function EmployeeTable({ rows, loading, statusDrafts, onStatusChange }) {
+function EmployeeTable({ rows, loading, statusDrafts, onStatusChange, onDetailOpen }) {
   const [colWidths, setColWidths] = useState(() => EMP_COLS.map((c) => c.defaultW));
   const dragRef = useRef(null);
 
@@ -515,7 +530,11 @@ function EmployeeTable({ rows, loading, statusDrafts, onStatusChange }) {
         <tbody>
           {rows.map((row) => (
             <tr key={row.rowKey} className="border-b border-slate-100 transition hover:bg-blue-50/40">
-              <td className="border-r border-slate-100 px-2 py-2 font-semibold text-slate-900 truncate">{row.unique_code}</td>
+              <td
+                className="border-r border-slate-100 px-2 py-2 font-semibold text-slate-900 truncate cursor-pointer"
+                onDoubleClick={() => onDetailOpen(row.unique_code)}
+                title="Double-click to view full details"
+              >{row.unique_code}</td>
               <td className="border-r border-slate-100 px-2 py-2 text-slate-700 truncate">{row.client_name}</td>
               <td className="border-r border-slate-100 px-2 py-2 text-slate-600 truncate">{row.location}</td>
               <td className="border-r border-slate-100 px-2 py-2 text-slate-600 truncate">{row.brand}</td>

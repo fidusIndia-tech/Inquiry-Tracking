@@ -505,7 +505,7 @@ function EmployeeTable({ rows, loading, statusDrafts, onStatusChange, onDetailOp
 
   return (
     <div className="overflow-x-auto">
-      <table className="border-collapse text-left text-[11px]" style={{ tableLayout: "fixed", width: colWidths.reduce((a, b) => a + b, 0) }}>
+      <table className="border-collapse text-left text-[11px]" style={{ tableLayout: "fixed", width: "100%", minWidth: 600 }}>
         <colgroup>
           {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
         </colgroup>

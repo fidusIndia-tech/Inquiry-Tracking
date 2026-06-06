@@ -3,6 +3,8 @@ import { query, withTransaction } from "@/lib/db";
 export async function GET() {
   try {
     await query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ");
+    await query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS in_progress_at TIMESTAMPTZ");
+    await query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS quoted_at TIMESTAMPTZ");
 
     const result = await query(`
       SELECT
@@ -18,6 +20,8 @@ export async function GET() {
         i.status,
         i.assigned_to,
         i.assigned_at,
+        i.in_progress_at,
+        i.quoted_at,
         u.name AS assigned_to_name,
         i.created_at,
         r.message_id,

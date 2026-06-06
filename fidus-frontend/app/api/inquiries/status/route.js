@@ -39,9 +39,13 @@ export async function PATCH(request) {
       const updated = await client.query(
         `
           UPDATE inquiries
-          SET status = $1, updated_at = NOW()
+          SET
+            status        = $1,
+            updated_at    = NOW(),
+            in_progress_at = CASE WHEN $1 = 'in_progress' THEN NOW() ELSE in_progress_at END,
+            quoted_at      = CASE WHEN $1 = 'quoted'      THEN NOW() ELSE quoted_at      END
           WHERE unique_code = $2
-          RETURNING id, unique_code, status
+          RETURNING id, unique_code, status, in_progress_at, quoted_at
         `,
         [nextStatus, uniqueCode]
       );

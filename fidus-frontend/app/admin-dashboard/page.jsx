@@ -996,7 +996,11 @@ function InquiryTable({
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to update status");
       setInquiries((current) =>
-        current.map((inq) => inq.unique_code === uniqueCode ? { ...inq, status: data.inquiry.status } : inq)
+        current.map((inq) =>
+          inq.unique_code === uniqueCode
+            ? { ...inq, status: data.inquiry.status, in_progress_at: data.inquiry.in_progress_at, quoted_at: data.inquiry.quoted_at }
+            : inq
+        )
       );
     } catch (e) { alert(e.message); }
   };
@@ -1242,9 +1246,23 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
 
       {/* Timer */}
       <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
-        <p className={`text-[11px] font-medium ${timerClass(inquiry.assigned_at, now)}`}>
-          {isFirstItem ? formatAssignmentAge(inquiry.assigned_at, now) : ""}
-        </p>
+        {isFirstItem ? (
+          <>
+            <p className={`text-[11px] font-medium ${timerClass(inquiry.assigned_at, now)}`}>
+              {formatAssignmentAge(inquiry.assigned_at, now)}
+            </p>
+            {inquiry.status === "in_progress" && inquiry.in_progress_at && (
+              <p className="mt-0.5 text-[10px] font-semibold text-emerald-700 tabular-nums whitespace-nowrap">
+                IP: {formatAssignmentAge(inquiry.in_progress_at, now)}
+              </p>
+            )}
+            {inquiry.status === "quoted" && inquiry.quoted_at && (
+              <p className="mt-0.5 text-[10px] font-semibold text-violet-700 tabular-nums whitespace-nowrap">
+                Q: {formatAssignmentAge(inquiry.quoted_at, now)}
+              </p>
+            )}
+          </>
+        ) : null}
       </td>
 
       {/* Status */}

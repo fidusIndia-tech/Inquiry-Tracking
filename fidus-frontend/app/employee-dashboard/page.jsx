@@ -67,10 +67,13 @@ export default function EmployeeDashboard() {
           const previousAssignedAt = knownAssignmentsRef.current.get(item.unique_code);
           const currentAssignedAt = item.assigned_at || "";
           if (!previousAssignedAt || previousAssignedAt !== currentAssignedAt) {
-            new Notification("New inquiry assigned", {
-              body: `${item.unique_code} ${item.client_name || item.sender_name || ""}`.trim(),
-              tag: item.unique_code,
-            });
+            const title = "New inquiry assigned";
+            const opts  = { body: `${item.unique_code} ${item.client_name || item.sender_name || ""}`.trim(), tag: item.unique_code, requireInteraction: true, icon: "/logo-dark.png" };
+            if ("serviceWorker" in navigator) {
+              navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, opts)).catch(() => new Notification(title, opts));
+            } else {
+              new Notification(title, opts);
+            }
           }
         });
       }
@@ -100,9 +103,13 @@ export default function EmployeeDashboard() {
     return () => window.clearInterval(timer);
   }, [employeeId, loadInquiries]);
 
-  /* Auto-request notification permission on mount */
+  /* Register service worker + request notification permission */
   useEffect(() => {
-    if (typeof window !== "undefined" && "Notification" in window) {
+    if (typeof window === "undefined") return;
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+    if ("Notification" in window) {
       if (Notification.permission === "default") {
         Notification.requestPermission().then((perm) => {
           setNotificationsEnabled(perm === "granted");

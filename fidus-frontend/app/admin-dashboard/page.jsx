@@ -145,14 +145,18 @@ export default function AdminDashboard() {
     };
   }, []);
 
-  /* Auto-request notification permission on mount */
+  /* Register service worker + request notification permission */
   useEffect(() => {
-    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+    if (typeof window === "undefined") return;
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+    if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
     }
   }, []);
 
-  /* Track new inquiries and push browser notifications */
+  /* Track new inquiries and push persistent notifications */
   useEffect(() => {
     const prev = prevCountRef.current;
     const curr = inquiries.length;
@@ -160,10 +164,13 @@ export default function AdminDashboard() {
       const added = curr - prev;
       setNotifBadge((n) => n + added);
       if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-        new Notification("New Inquiries Received", {
-          body: `${added} new inquiry${added > 1 ? " items" : ""} arrived`,
-          icon: "/logo-dark.png",
-        });
+        const title = "New Inquiries Received";
+        const opts  = { body: `${added} new inquiry${added > 1 ? " items" : ""} arrived`, icon: "/logo-dark.png", requireInteraction: true };
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, opts)).catch(() => new Notification(title, opts));
+        } else {
+          new Notification(title, opts);
+        }
       }
     }
     prevCountRef.current = curr;

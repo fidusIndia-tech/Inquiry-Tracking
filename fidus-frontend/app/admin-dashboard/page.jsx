@@ -149,7 +149,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     const initial = window.setTimeout(() => setNow(Date.now()), 0);
-    const timer = window.setInterval(() => setNow(Date.now()), 60000);
+    const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => {
       window.clearTimeout(initial);
       window.clearInterval(timer);
@@ -1034,7 +1034,7 @@ function InquiryTable({
         </div>
         <div className="flex flex-wrap gap-1.5">
           <FilterButton active={statusFilter === "all"} onClick={() => setStatusFilter("all")}>All</FilterButton>
-          {STATUS_OPTIONS.slice(0, 6).map((opt) => (
+          {STATUS_OPTIONS.slice(0, 7).map((opt) => (
             <FilterButton key={opt.value} active={statusFilter === opt.value} onClick={() => setStatusFilter(opt.value)}>
               {opt.label}
             </FilterButton>
@@ -1052,8 +1052,8 @@ function InquiryTable({
               {ADMIN_COLS.map((col, i) => (
                 <th
                   key={col.label}
-                  style={{ width: colWidths[i], position: "relative", background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}
-                  className="sticky top-0 border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-2 py-2.5 text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0 select-none"
+                  style={{ position: "relative", background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}
+                  className="sticky top-0 align-top border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-2 py-2 text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0 select-none"
                 >
                   {col.label === "Received" ? (
                     <div className="flex flex-col gap-1 pr-2">

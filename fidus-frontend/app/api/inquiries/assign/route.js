@@ -50,6 +50,8 @@ export async function PATCH(request) {
           )
         : { rows: [] };
 
+      await client.query("SELECT pg_notify('inquiries_changed', '')");
+
       return {
         ...inquiry,
         assigned_to_name: userResult.rows[0]?.name || null,

@@ -99,6 +99,7 @@ export async function PATCH(request) {
       return Response.json({ error: "Inquiry not found" }, { status: 404 });
     }
 
+    await query("SELECT pg_notify('inquiries_changed', '')");
     return Response.json({ inquiry: result.rows[0] });
   } catch (error) {
     return Response.json(
@@ -130,6 +131,7 @@ export async function DELETE(request) {
 
       await client.query(`DELETE FROM inquiry_items WHERE inquiry_id = $1`, [inquiryId]);
       await client.query(`DELETE FROM inquiries    WHERE id = $1`,          [inquiryId]);
+      await client.query("SELECT pg_notify('inquiries_changed', '')");
     });
 
     return Response.json({ success: true });

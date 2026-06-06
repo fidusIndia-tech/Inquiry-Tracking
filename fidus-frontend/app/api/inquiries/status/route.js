@@ -61,6 +61,7 @@ export async function PATCH(request) {
         );
       }
 
+      await client.query("SELECT pg_notify('inquiries_changed', '')");
       return updated.rows[0];
     });
 

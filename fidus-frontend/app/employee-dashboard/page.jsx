@@ -96,11 +96,19 @@ export default function EmployeeDashboard() {
   useEffect(() => {
     if (!employeeId) return undefined;
 
+    // SSE: server pushes instantly on every DB change
+    const es = new EventSource("/api/inquiries/stream");
+    es.onmessage = () => loadInquiries(employeeId, { silent: true });
+
+    // 30 s fallback poll in case SSE reconnects after a network blip
     const timer = window.setInterval(() => {
       loadInquiries(employeeId, { silent: true });
-    }, 1000);
+    }, 30000);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      es.close();
+      window.clearInterval(timer);
+    };
   }, [employeeId, loadInquiries]);
 
   /* Register service worker + request notification permission */

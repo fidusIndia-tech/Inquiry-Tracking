@@ -128,11 +128,19 @@ export default function AdminDashboard() {
     }
     loadInitial();
     const usersTimer = window.setTimeout(() => loadUsers(), 0);
-    const pollTimer  = window.setInterval(pollInquiries, 1000);
+
+    // SSE: server pushes instantly on every DB change
+    const es = new EventSource("/api/inquiries/stream");
+    es.onmessage = () => { if (isMounted) pollInquiries(); };
+
+    // 30 s fallback poll in case SSE reconnects after a network blip
+    const pollTimer = window.setInterval(pollInquiries, 30000);
+
     return () => {
       isMounted = false;
       window.clearTimeout(usersTimer);
       window.clearInterval(pollTimer);
+      es.close();
     };
   }, []);
 

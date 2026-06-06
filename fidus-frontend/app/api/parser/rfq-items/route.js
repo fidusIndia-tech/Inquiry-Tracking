@@ -234,6 +234,8 @@ export async function POST(request) {
         [savedRawItem.id]
       );
 
+      await client.query("SELECT pg_notify('inquiries_changed', '')");
+
       return {
         rawEmailItemId: savedRawItem.id,
         inquiryId: inquiry.id,

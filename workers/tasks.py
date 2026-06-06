@@ -12,6 +12,7 @@ from workers.celery_app import celery_app
 from gmail_auth import get_gmail_service_for_user
 from gmail_service import (
     get_full_message,
+    is_processable_inbox_message,
     fetch_new_message_ids_from_history,
     HistoryExpiredError,
 )
@@ -70,6 +71,15 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
         try:
             # 1. Fetch and flatten the full email from Gmail.
             raw = get_full_message(service, msg_id)
+            if not is_processable_inbox_message(raw):
+                logger.info(
+                    "DROP non-inbox/outgoing Gmail message | %s | labels=%s",
+                    msg_id,
+                    raw.get("labelIds", []),
+                )
+                stats["layer1_dropped"] += 1
+                continue
+
             parsed = parse_email(raw, user_id)
             stats["parsed"] += 1
 

@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS inquiries (
   sender_name TEXT,
   sender_email TEXT,
   subject TEXT,
+  source_fingerprint TEXT,
   notes TEXT,
   email_date TIMESTAMPTZ,
   status TEXT NOT NULL DEFAULT 'new'
@@ -98,6 +99,9 @@ CREATE TABLE IF NOT EXISTS inquiry_status_history (
 
 CREATE INDEX IF NOT EXISTS inquiries_status_idx ON inquiries (status);
 CREATE INDEX IF NOT EXISTS inquiries_email_date_idx ON inquiries (email_date);
+CREATE UNIQUE INDEX IF NOT EXISTS inquiries_source_fingerprint_idx
+  ON inquiries (source_fingerprint)
+  WHERE source_fingerprint IS NOT NULL;
 CREATE INDEX IF NOT EXISTS inquiry_items_inquiry_id_idx ON inquiry_items (inquiry_id);
 
 DROP VIEW IF EXISTS extracted_mail_items;

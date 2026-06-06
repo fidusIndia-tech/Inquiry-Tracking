@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { withTransaction } from "@/lib/db";
 import {
   buildInquiryItems,
@@ -6,6 +7,36 @@ import {
   isInternalEmail,
   normalizeParserPayload,
 } from "@/lib/inquiry-normalizer";
+
+function normalizeFingerprintText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\b(re|fw|fwd)\s*:\s*/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function buildSourceFingerprint({ senderEmail, clientName, subject, items }) {
+  const itemText = (items || [])
+    .map((item) => [
+      item.brand,
+      item.partNumber,
+      item.quantity,
+      item.uom,
+    ].map(normalizeFingerprintText).filter(Boolean).join(":"))
+    .filter(Boolean)
+    .sort()
+    .join("|");
+
+  const base = [
+    normalizeFingerprintText(senderEmail || clientName),
+    normalizeFingerprintText(subject),
+    itemText,
+  ].filter(Boolean).join("||");
+
+  if (!base || !itemText) return null;
+  return crypto.createHash("sha256").update(base).digest("hex");
+}
 
 export async function POST(request) {
   try {
@@ -25,6 +56,13 @@ export async function POST(request) {
     }
 
     const result = await withTransaction(async (client) => {
+      await client.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS source_fingerprint TEXT");
+      await client.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS inquiries_source_fingerprint_idx
+        ON inquiries (source_fingerprint)
+        WHERE source_fingerprint IS NOT NULL
+      `);
+
       const rawResult = await client.query(
         `
           INSERT INTO raw_email_items (
@@ -88,6 +126,35 @@ export async function POST(request) {
       const headerEmail = extractEmail(savedRawItem.sender);
       const senderEmail = rawItem.sender_email || (isInternalEmail(headerEmail) ? null : headerEmail);
       const senderName = savedRawItem.username || extractSenderName(savedRawItem.sender, null);
+      const items = buildInquiryItems(savedRawItem);
+      const sourceFingerprint = buildSourceFingerprint({
+        senderEmail,
+        clientName: rawItem.client_name,
+        subject: savedRawItem.subject,
+        items,
+      });
+
+      if (sourceFingerprint) {
+        const duplicateResult = await client.query(
+          "SELECT id, unique_code FROM inquiries WHERE source_fingerprint = $1 LIMIT 1",
+          [sourceFingerprint]
+        );
+
+        if (duplicateResult.rows[0]) {
+          await client.query(
+            "UPDATE raw_email_items SET processing_status = 'processed', processing_error = NULL WHERE id = $1",
+            [savedRawItem.id]
+          );
+
+          return {
+            rawEmailItemId: savedRawItem.id,
+            inquiryId: duplicateResult.rows[0].id,
+            uniqueCode: duplicateResult.rows[0].unique_code,
+            itemCount: items.length,
+            duplicate: true,
+          };
+        }
+      }
 
       const inquiryResult = await client.query(
         `
@@ -99,11 +166,12 @@ export async function POST(request) {
             sender_name,
             sender_email,
             subject,
+            source_fingerprint,
             notes,
             email_date,
             status
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'new')
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new')
           ON CONFLICT (unique_code)
           DO UPDATE SET
             client_name = EXCLUDED.client_name,
@@ -111,6 +179,7 @@ export async function POST(request) {
             sender_name = EXCLUDED.sender_name,
             sender_email = EXCLUDED.sender_email,
             subject = EXCLUDED.subject,
+            source_fingerprint = EXCLUDED.source_fingerprint,
             notes = EXCLUDED.notes,
             email_date = EXCLUDED.email_date,
             updated_at = NOW()
@@ -124,13 +193,13 @@ export async function POST(request) {
           senderName,
           senderEmail,
           savedRawItem.subject,
+          sourceFingerprint,
           savedRawItem.notes,
           savedRawItem.email_date,
         ]
       );
 
       const inquiry = inquiryResult.rows[0];
-      const items = buildInquiryItems(savedRawItem);
 
       await client.query("DELETE FROM inquiry_items WHERE inquiry_id = $1", [
         inquiry.id,

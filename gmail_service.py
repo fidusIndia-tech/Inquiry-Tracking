@@ -22,6 +22,8 @@ def fetch_message_ids(service, max_results: int | None = None) -> list[dict]:
         kwargs: dict = {
             "userId": "me",
             "maxResults": min(200, max_results - len(messages)),
+            "labelIds": ["INBOX"],
+            "q": "in:inbox -in:sent -in:drafts -in:trash -in:spam",
         }
         if page_token:
             kwargs["pageToken"] = page_token
@@ -56,6 +58,12 @@ def get_full_message(service, msg_id: str) -> dict:
     )
 
 
+def is_processable_inbox_message(raw: dict) -> bool:
+    labels = set(raw.get("labelIds") or [])
+    blocked = {"SENT", "DRAFT", "TRASH", "SPAM"}
+    return "INBOX" in labels and labels.isdisjoint(blocked)
+
+
 class HistoryExpiredError(Exception):
     """Gmail returned 404 for the historyId — it is too old (Gmail keeps ~30 days)."""
 
@@ -86,6 +94,7 @@ def fetch_new_message_ids_from_history(
                 "userId": "me",
                 "startHistoryId": start_history_id,
                 "historyTypes": ["messageAdded"],
+                "labelId": "INBOX",
             }
             if page_token:
                 kwargs["pageToken"] = page_token

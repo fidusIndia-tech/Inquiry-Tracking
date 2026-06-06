@@ -166,6 +166,28 @@ RFQ_BODY_KEYWORDS = [
     "techno commercial offer",          # Polycab-specific opener
 ]
 
+FRESH_REPLY_RFQ_KEYWORDS = [
+    "please quote", "kindly quote", "quote for", "quotation for",
+    "new requirement", "below requirement", "required qty", "required quantity",
+    "please send offer", "send your offer", "share quotation", "share quote",
+]
+
+PART_LIKE_RE = re.compile(
+    r"\b(?:part\s*(?:no|number)|p/n|model\s*(?:no|number)|qty|quantity|uom)\b|"
+    r"\b[A-Z0-9]{2,}[-/][A-Z0-9][A-Z0-9-/]{2,}\b",
+    re.IGNORECASE,
+)
+
+REPLY_FOLLOWUP_RE = re.compile(
+    r"\b("
+    r"follow\s*up|gentle\s+follow|reminder|please\s+confirm|kindly\s+confirm|"
+    r"confirm\s+(?:delivery|lead|price|availability|technical|pumping|working)|"
+    r"delivery\s+(?:date|status|time)|lead\s*time|status\s+update|any\s+update|"
+    r"working\s+temperature|pumping\s+medium"
+    r")\b",
+    re.IGNORECASE,
+)
+
 _REJECT_RE = re.compile("|".join(REJECT_SUBJECT_PATTERNS), re.IGNORECASE)
 _SELLER_RE = re.compile("|".join(re.escape(s) for s in SELLER_BODY_SIGNALS), re.IGNORECASE)
 
@@ -184,6 +206,48 @@ def _extract_text(email_dict: dict) -> tuple[str, str]:
     else:
         stripped = ""
     return plain, stripped
+
+
+def _latest_reply_text(body: str) -> str:
+    markers = [
+        r"(?im)^[-\s]*(forwarded\s+message|begin\s+forwarded\s+message|original\s+message)[-\s]*$",
+        r"(?im)^from:\s*.+$",
+        r"(?im)^on\s+.+\s+wrote:\s*$",
+    ]
+    cut_at = len(body)
+    for pattern in markers:
+        match = re.search(pattern, body)
+        if match:
+            cut_at = min(cut_at, match.start())
+    return body[:cut_at].strip()
+
+
+def is_reply_chain_noise(email_dict: dict) -> bool:
+    subject = (email_dict.get("subject") or "").strip().lower()
+    if not subject.startswith("re:"):
+        return False
+    if subject.startswith(("re: fwd:", "re: fw:")):
+        return False
+
+    plain, html_stripped = _extract_text(email_dict)
+    body = plain if plain.strip() else html_stripped
+    latest = _latest_reply_text(body)
+
+    if not latest:
+        return True
+
+    latest_lower = latest.lower()
+    has_fresh_request = any(keyword in latest_lower for keyword in FRESH_REPLY_RFQ_KEYWORDS)
+    has_part_like_data = bool(PART_LIKE_RE.search(latest))
+    has_followup_noise = bool(REPLY_FOLLOWUP_RE.search(latest))
+
+    if has_fresh_request and has_part_like_data:
+        return False
+
+    if has_followup_noise:
+        return True
+
+    return not has_part_like_data
 
 
 def is_rfq_candidate(email_dict: dict) -> bool:
@@ -224,6 +288,10 @@ def is_rfq_candidate(email_dict: dict) -> bool:
         w in subject for w in ["storage", "gmail will stop", "quota", "working in"]
     ):
         logger.debug("DROP (google system) | %s", subject[:60])
+        return False
+
+    if is_reply_chain_noise(email_dict):
+        logger.debug("DROP (reply-chain noise before LLM) | %s | %s", sender, subject[:60])
         return False
 
     # ── 4. Drop seller / newsletter signals ──────────────────────────────

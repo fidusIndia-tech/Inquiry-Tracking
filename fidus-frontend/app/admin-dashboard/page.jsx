@@ -1212,17 +1212,18 @@ function AssignToMeModal({ uniqueCode, onClose, onConfirm }) {
         </div>
         <h3 className="text-[15px] font-semibold text-slate-900">Assign to Yourself</h3>
         <p className="mt-1.5 text-[13px] text-slate-500">
-          You are assigning{" "}
+          Inquiry{" "}
           <span className="font-semibold text-slate-800">{uniqueCode}</span>{" "}
-          to yourself. Enter your name to confirm.
+          will be assigned to your account. Enter your name for reference.
         </p>
+        <label className="mt-4 block text-[11px] font-semibold uppercase tracking-widest text-slate-400">Your Name (for reference)</label>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && confirm()}
-          placeholder="Enter your name"
+          placeholder="e.g. Rajan, Priya…"
           autoFocus
-          className="mt-4 h-9 w-full rounded-lg border border-[#E4E8EE] bg-white px-3 text-[13px] text-slate-700 outline-none transition focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+          className="mt-1.5 h-9 w-full rounded-lg border border-[#E4E8EE] bg-white px-3 text-[13px] text-slate-700 outline-none transition focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
         />
         <div className="mt-4 flex gap-2">
           <button

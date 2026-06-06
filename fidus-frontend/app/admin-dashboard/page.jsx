@@ -1184,12 +1184,11 @@ function FilterButton({ active, onClick, children }) {
 }
 
 function AssignToMeModal({ uniqueCode, onClose, onConfirm }) {
-  const adminName = typeof window !== "undefined" ? localStorage.getItem("userName") || "Admin" : "Admin";
-  const adminRole = typeof window !== "undefined" ? (localStorage.getItem("role") || "admin") : "admin";
-  const adminRoleLabel = adminRole.charAt(0).toUpperCase() + adminRole.slice(1);
+  const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
   const confirm = async () => {
+    if (!name.trim()) return;
     setBusy(true);
     try { await onConfirm(); }
     finally { setBusy(false); }
@@ -1213,19 +1212,18 @@ function AssignToMeModal({ uniqueCode, onClose, onConfirm }) {
         </div>
         <h3 className="text-[15px] font-semibold text-slate-900">Assign to Yourself</h3>
         <p className="mt-1.5 text-[13px] text-slate-500">
-          This will assign{" "}
+          You are assigning{" "}
           <span className="font-semibold text-slate-800">{uniqueCode}</span>{" "}
-          to you.
+          to yourself. Enter your name to confirm.
         </p>
-        <div className="mt-4 flex items-center gap-3 rounded-xl border border-[#E4E8EE] bg-[#F8FAFC] px-4 py-3">
-          <div className="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-white text-[12px] font-bold" style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)" }}>
-            {adminName.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <p className="text-[12px] font-semibold text-slate-900">{adminName}</p>
-            <p className="text-[11px] text-slate-400">{adminRoleLabel}</p>
-          </div>
-        </div>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && confirm()}
+          placeholder="Enter your name"
+          autoFocus
+          className="mt-4 h-9 w-full rounded-lg border border-[#E4E8EE] bg-white px-3 text-[13px] text-slate-700 outline-none transition focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+        />
         <div className="mt-4 flex gap-2">
           <button
             onClick={onClose}
@@ -1235,7 +1233,7 @@ function AssignToMeModal({ uniqueCode, onClose, onConfirm }) {
           </button>
           <button
             onClick={confirm}
-            disabled={busy}
+            disabled={!name.trim() || busy}
             className="flex-1 h-9 rounded-xl text-[13px] font-semibold text-white transition disabled:opacity-60"
             style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
           >

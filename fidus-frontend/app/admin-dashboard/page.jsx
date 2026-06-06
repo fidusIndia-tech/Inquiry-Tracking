@@ -216,8 +216,7 @@ export default function AdminDashboard() {
     const ageHours = assignedAtMs ? (now - assignedAtMs) / 36e5 : null;
     const matchesAssignmentFilter =
       assignmentFilter === "all" ||
-      (assignmentFilter === "24h" && ageHours !== null && ageHours <= 24) ||
-      (assignmentFilter === "48h" && ageHours !== null && ageHours > 24 && ageHours <= 48) ||
+      (assignmentFilter === "over24h" && ageHours !== null && ageHours > 24) ||
       (assignmentFilter === "over48h" && ageHours !== null && ageHours > 48);
 
     const matchesDateFilter = (() => {
@@ -1031,10 +1030,6 @@ function InquiryTable({
             </FilterButton>
           ))}
           <span className="mx-1 h-7 w-px bg-[#E4E8EE]" />
-          <FilterButton active={assignmentFilter === "24h"} onClick={() => setAssignmentFilter(assignmentFilter === "24h" ? "all" : "24h")}>24h</FilterButton>
-          <FilterButton active={assignmentFilter === "48h"} onClick={() => setAssignmentFilter(assignmentFilter === "48h" ? "all" : "48h")}>48h</FilterButton>
-          <FilterButton active={assignmentFilter === "over48h"} onClick={() => setAssignmentFilter(assignmentFilter === "over48h" ? "all" : "over48h")}>Over 48h</FilterButton>
-          <span className="mx-1 h-7 w-px bg-[#E4E8EE]" />
           <select
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
@@ -1062,7 +1057,24 @@ function InquiryTable({
                   style={{ width: colWidths[i], position: "relative", background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}
                   className="sticky top-0 border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-2 py-2.5 text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0 select-none"
                 >
-                  <span className="truncate block pr-2">{col.label}</span>
+                  {col.label === "Assign Timer" ? (
+                    <div className="flex flex-col gap-1 pr-2">
+                      <span className="truncate text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">Assign Timer</span>
+                      <select
+                        value={assignmentFilter}
+                        onChange={(e) => setAssignmentFilter(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="h-5 w-full rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] font-semibold text-slate-600 outline-none cursor-pointer normal-case tracking-normal"
+                        style={{ letterSpacing: 0 }}
+                      >
+                        <option value="all">All</option>
+                        <option value="over24h">Over 24h</option>
+                        <option value="over48h">Over 48h</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <span className="truncate block pr-2">{col.label}</span>
+                  )}
                   <div
                     onMouseDown={(e) => startResize(i, e)}
                     style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 6, cursor: "col-resize", zIndex: 1 }}

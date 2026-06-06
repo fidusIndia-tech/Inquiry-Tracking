@@ -1657,7 +1657,7 @@ function formatEmailDate(dateStr) {
   if (!dateStr) return null;
   const d = new Date(dateStr);
   const date = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-  const time = d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const time = d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
   return { date, time };
 }
 

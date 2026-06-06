@@ -183,7 +183,13 @@ REPLY_FOLLOWUP_RE = re.compile(
     r"follow\s*up|gentle\s+follow|reminder|please\s+confirm|kindly\s+confirm|"
     r"confirm\s+(?:delivery|lead|price|availability|technical|pumping|working)|"
     r"delivery\s+(?:date|status|time)|lead\s*time|status\s+update|any\s+update|"
-    r"working\s+temperature|pumping\s+medium"
+    r"working\s+temperature|pumping\s+medium|"
+    r"revised\s+quotation|technical\s+datasheet|data\s+sheet|commercial\s+offer|"
+    r"please\s+find\s+(?:the\s+)?(?:attached|enclosed)|attached\s+(?:quotation|quote|offer)|"
+    r"enclosed\s+(?:quotation|quote|offer)|submit\s+our\s+commercial\s+offer|"
+    r"we\s+are\s+pleased\s+to\s+submit|offer\s+for\s+your\s+kind\s+perusal|"
+    r"quotation\s+with\s+technical|quote\s+with\s+technical|revised\s+quote|"
+    r"find\s+the\s+revised\s+quotation|find\s+attached\s+(?:quotation|quote|offer)"
     r")\b",
     re.IGNORECASE,
 )

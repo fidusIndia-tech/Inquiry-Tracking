@@ -128,7 +128,7 @@ export default function AdminDashboard() {
     }
     loadInitial();
     const usersTimer = window.setTimeout(() => loadUsers(), 0);
-    const pollTimer  = window.setInterval(pollInquiries, 15000);
+    const pollTimer  = window.setInterval(pollInquiries, 1000);
     return () => {
       isMounted = false;
       window.clearTimeout(usersTimer);

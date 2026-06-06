@@ -1034,7 +1034,7 @@ function InquiryTable({
         </div>
         <div className="flex flex-wrap gap-1.5">
           <FilterButton active={statusFilter === "all"} onClick={() => setStatusFilter("all")}>All</FilterButton>
-          {STATUS_OPTIONS.slice(0, 5).map((opt) => (
+          {STATUS_OPTIONS.slice(0, 6).map((opt) => (
             <FilterButton key={opt.value} active={statusFilter === opt.value} onClick={() => setStatusFilter(opt.value)}>
               {opt.label}
             </FilterButton>

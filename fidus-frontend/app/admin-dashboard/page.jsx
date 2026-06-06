@@ -1185,6 +1185,8 @@ function FilterButton({ active, onClick, children }) {
 
 function AssignToMeModal({ uniqueCode, onClose, onConfirm }) {
   const adminName = typeof window !== "undefined" ? localStorage.getItem("userName") || "Admin" : "Admin";
+  const adminRole = typeof window !== "undefined" ? (localStorage.getItem("role") || "admin") : "admin";
+  const adminRoleLabel = adminRole.charAt(0).toUpperCase() + adminRole.slice(1);
   const [busy, setBusy] = useState(false);
 
   const confirm = async () => {
@@ -1221,7 +1223,7 @@ function AssignToMeModal({ uniqueCode, onClose, onConfirm }) {
           </div>
           <div>
             <p className="text-[12px] font-semibold text-slate-900">{adminName}</p>
-            <p className="text-[11px] text-slate-400">Admin</p>
+            <p className="text-[11px] text-slate-400">{adminRoleLabel}</p>
           </div>
         </div>
         <div className="mt-4 flex gap-2">

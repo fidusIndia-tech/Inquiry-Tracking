@@ -63,6 +63,7 @@ export default function AdminDashboard() {
   const [searchText,         setSearchText]         = useState("");
   const [statusFilter,       setStatusFilter]       = useState("all");
   const [assignmentFilter,   setAssignmentFilter]   = useState("all");
+  const [dateFilter,         setDateFilter]         = useState("all");
   const [now,                setNow]                = useState(0);
   const [sidebarCollapsed,   setSidebarCollapsed]   = useState(false);
   const [mobileSidebarOpen,  setMobileSidebarOpen]  = useState(false);
@@ -219,10 +220,23 @@ export default function AdminDashboard() {
       (assignmentFilter === "48h" && ageHours !== null && ageHours > 24 && ageHours <= 48) ||
       (assignmentFilter === "over48h" && ageHours !== null && ageHours > 48);
 
+    const matchesDateFilter = (() => {
+      if (dateFilter === "all") return true;
+      if (!inquiry.email_date) return false;
+      const d = new Date(inquiry.email_date);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      if (dateFilter === "today")     return d >= today;
+      if (dateFilter === "yesterday") { const y = new Date(today); y.setDate(y.getDate() - 1); return d >= y && d < today; }
+      if (dateFilter === "7d")        return d >= new Date(today.getTime() - 6 * 864e5);
+      if (dateFilter === "30d")       return d >= new Date(today.getTime() - 29 * 864e5);
+      return true;
+    })();
+
     return (
       tokens.every((token) => text.includes(token)) &&
       (statusFilter === "all" || inquiry.status === statusFilter) &&
-      matchesAssignmentFilter
+      matchesAssignmentFilter &&
+      matchesDateFilter
     );
   });
 
@@ -317,6 +331,8 @@ export default function AdminDashboard() {
                   setStatusFilter={setStatusFilter}
                   assignmentFilter={assignmentFilter}
                   setAssignmentFilter={setAssignmentFilter}
+                  dateFilter={dateFilter}
+                  setDateFilter={setDateFilter}
                   totalCount={inquiries.length}
                   now={now}
                   onDeleteRequest={(inquiry) => setDeleteConfirm(inquiry)}
@@ -904,6 +920,7 @@ function MetricCard({ icon, label, value, accent, delay }) {
 ─────────────────────────────────────────────── */
 const ADMIN_COLS = [
   { label: "Sr. No.",       defaultW: 52  },
+  { label: "Received",      defaultW: 115 },
   { label: "F Unique Code", defaultW: 110 },
   { label: "Client Name",   defaultW: 120 },
   { label: "Location",      defaultW: 100 },
@@ -925,6 +942,7 @@ function InquiryTable({
   isLoading, error,
   statusFilter, setStatusFilter,
   assignmentFilter, setAssignmentFilter,
+  dateFilter, setDateFilter,
   totalCount,
   now,
   onDeleteRequest, onEditRequest, onSubjectOpen,
@@ -1011,6 +1029,18 @@ function InquiryTable({
           <FilterButton active={assignmentFilter === "24h"} onClick={() => setAssignmentFilter(assignmentFilter === "24h" ? "all" : "24h")}>24h</FilterButton>
           <FilterButton active={assignmentFilter === "48h"} onClick={() => setAssignmentFilter(assignmentFilter === "48h" ? "all" : "48h")}>48h</FilterButton>
           <FilterButton active={assignmentFilter === "over48h"} onClick={() => setAssignmentFilter(assignmentFilter === "over48h" ? "all" : "over48h")}>Over 48h</FilterButton>
+          <span className="mx-1 h-7 w-px bg-[#E4E8EE]" />
+          <select
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="h-7 rounded-lg border border-[#D0D8F0] bg-white px-2 text-[11px] font-semibold text-slate-600 outline-none cursor-pointer transition hover:bg-[#EEF4FF] hover:border-[#BFDBFE] focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+          >
+            <option value="all">All Dates</option>
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="7d">Last 7 Days</option>
+            <option value="30d">Last 30 Days</option>
+          </select>
         </div>
       </div>
 
@@ -1040,10 +1070,10 @@ function InquiryTable({
           <tbody>
             {isLoading && <LoadingRows />}
             {!isLoading && error && (
-              <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={14}>{error}</td></tr>
+              <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={15}>{error}</td></tr>
             )}
             {!isLoading && !error && inquiries.length === 0 && (
-              <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={14}>No inquiries found.</td></tr>
+              <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={15}>No inquiries found.</td></tr>
             )}
             {!isLoading && !error &&
               rows.map(({ inquiry, item, isFirstItem, groupSize }, index) => (
@@ -1089,9 +1119,9 @@ function FilterButton({ active, onClick, children }) {
 function LoadingRows() {
   return Array.from({ length: 6 }, (_, rowIndex) => (
     <tr key={rowIndex}>
-      {Array.from({ length: 14 }, (_, cellIndex) => (
+      {Array.from({ length: 15 }, (_, cellIndex) => (
         <td key={cellIndex} className="border-b border-r border-[#DCE6F7] px-2 py-2.5 last:border-r-0">
-          <div className="skeleton h-3.5" style={{ width: cellIndex === 7 ? "75%" : cellIndex === 2 ? "65%" : "55%" }} />
+          <div className="skeleton h-3.5" style={{ width: cellIndex === 8 ? "75%" : cellIndex === 3 ? "65%" : "55%" }} />
         </td>
       ))}
     </tr>
@@ -1115,6 +1145,11 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
       {/* Sr No. */}
       <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         <p className="text-[11px] font-medium text-slate-500 tabular-nums">{srNo}</p>
+      </td>
+
+      {/* Received */}
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
+        {isFirstItem ? <EmailDateCell dateStr={inquiry.email_date} /> : null}
       </td>
 
       {/* F Unique Code */}
@@ -1614,6 +1649,25 @@ function TeamStat({ label, value, grad, color }) {
     <div className="flex items-center gap-2 rounded-xl px-4 py-2 border border-transparent" style={{ background: grad }}>
       <p className="text-[20px] font-bold tabular-nums leading-none" style={{ color }}>{value}</p>
       <p className="text-[10px] font-semibold uppercase tracking-wide leading-tight text-slate-400">{label}</p>
+    </div>
+  );
+}
+
+function formatEmailDate(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  const date = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const time = d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return { date, time };
+}
+
+function EmailDateCell({ dateStr }) {
+  const parts = formatEmailDate(dateStr);
+  if (!parts) return <span className="text-[11px] text-slate-400">—</span>;
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-slate-700 tabular-nums whitespace-nowrap">{parts.date}</p>
+      <p className="text-[10px] text-slate-400 tabular-nums">{parts.time}</p>
     </div>
   );
 }

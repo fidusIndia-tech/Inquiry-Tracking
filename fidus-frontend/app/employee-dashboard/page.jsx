@@ -95,7 +95,7 @@ export default function EmployeeDashboard() {
 
     const timer = window.setInterval(() => {
       loadInquiries(employeeId, { silent: true });
-    }, 60000);
+    }, 15000);
 
     return () => window.clearInterval(timer);
   }, [employeeId, loadInquiries]);

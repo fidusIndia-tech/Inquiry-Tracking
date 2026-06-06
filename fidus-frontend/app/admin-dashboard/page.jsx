@@ -115,11 +115,24 @@ export default function AdminDashboard() {
         if (isMounted) setIsLoadingInquiries(false);
       }
     }
+    async function pollInquiries() {
+      if (!isMounted) return;
+      try {
+        const response = await fetch("/api/inquiries");
+        const data     = await response.json();
+        if (!response.ok || !isMounted) return;
+        setInquiries(data.inquiries || []);
+      } catch {
+        /* silent — don't surface background poll errors */
+      }
+    }
     loadInitial();
     const usersTimer = window.setTimeout(() => loadUsers(), 0);
+    const pollTimer  = window.setInterval(pollInquiries, 15000);
     return () => {
       isMounted = false;
       window.clearTimeout(usersTimer);
+      window.clearInterval(pollTimer);
     };
   }, []);
 

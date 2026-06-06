@@ -113,3 +113,48 @@ button, select, input, textarea { font: inherit; }
 .card-shadow-hover {
   box-shadow: 0 0 0 1px #D0D8E4, 0 12px 36px rgba(15,23,42,0.10), 0 4px 12px rgba(15,23,42,0.05);
 }
+
+/* ── Dashboard animated background ── */
+@keyframes dash-bg {
+  0%   { background-position: 0%   0%;   }
+  33%  { background-position: 100% 50%;  }
+  66%  { background-position: 50%  100%; }
+  100% { background-position: 0%   0%;   }
+}
+
+@keyframes card-float {
+  0%,100% { transform: translateY(0px);  }
+  50%      { transform: translateY(-3px); }
+}
+
+@keyframes btn-shine {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes spin-once {
+  from { transform: rotate(0deg);   }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes row-slide-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0);    }
+}
+
+.dashboard-bg {
+  background: linear-gradient(135deg, #EEF2FF 0%, #E0F2FE 25%, #ECFDF5 55%, #F5F3FF 80%, #EEF2FF 100%);
+  background-size: 400% 400%;
+  animation: dash-bg 18s ease infinite;
+}
+
+.btn-glow:hover {
+  box-shadow: 0 6px 24px rgba(91,167,255,0.45);
+  transform: translateY(-1px);
+}
+
+.btn-glow:active { transform: translateY(0); }
+
+.refresh-spin:hover svg { animation: spin-once 0.5s ease; }
+
+.table-row-animate { animation: row-slide-in 0.18s ease both; }

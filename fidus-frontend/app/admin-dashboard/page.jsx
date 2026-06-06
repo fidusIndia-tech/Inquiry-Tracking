@@ -33,13 +33,23 @@ const STATUS_OPTIONS = [
 ];
 
 const statusClasses = {
-  new:         "bg-[#EFF6FF] text-[#1D6FD8] border-[#BFDBFE]",
-  assigned:    "bg-[#EEF0FF] text-[#4451E8] border-[#C7D2FE]",
-  in_progress: "bg-[#EFFAF6] text-[#0D9369] border-[#A7F3D0]",
-  quoted:      "bg-[#F5F3FF] text-[#6D28D9] border-[#DDD6FE]",
-  converted:   "bg-[#EFFAF6] text-[#0D9369] border-[#A7F3D0]",
-  lost:        "bg-[#FFF1F2] text-[#BE123C] border-[#FECDD3]",
-  dropped:     "bg-[#F8FAFC] text-[#64748B] border-[#E2E8F0]",
+  new:         "text-[#1D6FD8] border-[#BFDBFE]",
+  assigned:    "text-[#4451E8] border-[#A5B4FC]",
+  in_progress: "text-[#059669] border-[#6EE7B7]",
+  quoted:      "text-[#6D28D9] border-[#C4B5FD]",
+  converted:   "text-[#047857] border-[#6EE7B7]",
+  lost:        "text-[#BE123C] border-[#FECDD3]",
+  dropped:     "text-[#64748B] border-[#E2E8F0]",
+};
+
+const statusGrad = {
+  new:         "linear-gradient(135deg,#EFF6FF,#DBEAFE)",
+  assigned:    "linear-gradient(135deg,#EEF0FF,#C7D2FE)",
+  in_progress: "linear-gradient(135deg,#EFFAF6,#A7F3D0)",
+  quoted:      "linear-gradient(135deg,#F5F3FF,#DDD6FE)",
+  converted:   "linear-gradient(135deg,#ECFDF5,#A7F3D0)",
+  lost:        "linear-gradient(135deg,#FFF1F2,#FECDD3)",
+  dropped:     "linear-gradient(135deg,#F8FAFC,#E2E8F0)",
 };
 
 export default function AdminDashboard() {
@@ -200,8 +210,7 @@ export default function AdminDashboard() {
 
   return (
     <div
-      className="min-h-screen text-slate-900"
-      style={{ background: "linear-gradient(145deg, #EEF2FF 0%, #F8FAFC 45%, #EFFAF6 100%)" }}
+      className="min-h-screen text-slate-900 dashboard-bg"
     >
       {/* Mobile overlay */}
       {mobileSidebarOpen && (
@@ -612,7 +621,7 @@ function Sidebar({
       className={`fixed inset-y-0 left-0 z-40 flex shrink-0 flex-col justify-between border-r border-[#E4E8EE] transition-all duration-200 lg:relative ${
         collapsed ? "lg:w-16" : "lg:w-52"
       } ${mobileOpen ? "w-52 translate-x-0" : "-translate-x-full lg:translate-x-0"} w-52`}
-      style={{ background: "linear-gradient(180deg, #FAFBFE 0%, #F4F7FF 100%)" }}
+      style={{ background: "linear-gradient(180deg, #F0F4FF 0%, #E8EFFF 50%, #EDF5FF 100%)" }}
     >
       <div>
         {/* Logo */}
@@ -707,13 +716,14 @@ function SidebarItem({ icon, title, active, collapsed, onClick }) {
     <button
       onClick={onClick}
       title={collapsed ? title : undefined}
-      className={`flex h-9 w-full items-center gap-2.5 rounded-lg text-[13px] font-medium transition-all duration-150 ${
+      className={`flex h-9 w-full items-center gap-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 ${
         active
-          ? "bg-[#EFF6FF] text-[#1D6FD8]"
-          : "text-slate-600 hover:bg-[#F3F5F7] hover:text-slate-900"
+          ? "text-[#1D6FD8]"
+          : "text-slate-600 hover:bg-white/60 hover:text-slate-900"
       } ${collapsed ? "justify-center" : "px-2.5"}`}
+      style={active ? { background: "linear-gradient(135deg,#EFF6FF 0%,#E0EEFF 100%)", boxShadow: "0 2px 8px rgba(91,167,255,0.15)" } : {}}
     >
-      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${active ? "bg-[#DBEAFE] text-[#3B82F6]" : "text-slate-400"}`}>
+      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200 ${active ? "text-white" : "text-slate-400"}`} style={active ? { background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.30)" } : {}}>
         {icon}
       </span>
       {!collapsed && title}
@@ -732,7 +742,7 @@ function TopBar({ activeMenu, searchText, setSearchText, onRefresh, onOpenSideba
   }[activeMenu] || "Inquiry Dashboard";
 
   return (
-    <header className="h-14 flex items-center justify-between border-b border-[#E4E8EE] bg-white/90 px-4 shrink-0 lg:px-5 backdrop-blur-sm">
+    <header className="h-14 flex items-center justify-between border-b border-[#D8E3F8] px-4 shrink-0 lg:px-5 backdrop-blur-md" style={{ background: "linear-gradient(90deg, rgba(255,255,255,0.92) 0%, rgba(240,246,255,0.95) 100%)" }}>
       <div className="flex items-center gap-3">
         <button
           onClick={onOpenSidebar}
@@ -765,12 +775,13 @@ function TopBar({ activeMenu, searchText, setSearchText, onRefresh, onOpenSideba
         </div>
         <button
           onClick={onRefresh}
-          className="flex h-9 items-center gap-1.5 rounded-xl border border-[#E4E8EE] bg-white px-3 text-[11px] font-medium text-slate-600 transition hover:bg-[#F3F5F7]"
+          className="refresh-spin flex h-9 items-center gap-1.5 rounded-xl px-3 text-[11px] font-semibold text-white transition-all duration-200 btn-glow"
+          style={{ background: "linear-gradient(135deg,#5BA7FF 0%,#6D7CFF 100%)", boxShadow: "0 2px 12px rgba(91,167,255,0.30)" }}
         >
           <RefreshCw size={13} />
           <span className="hidden sm:inline">Refresh</span>
         </button>
-        <button className="h-9 w-9 grid place-items-center rounded-xl border border-[#E4E8EE] bg-white text-slate-500 transition hover:bg-[#F3F5F7]">
+        <button className="h-9 w-9 grid place-items-center rounded-xl border border-[#D0D8F0] bg-white/80 text-slate-500 transition hover:bg-[#EEF2FF] hover:text-[#5BA7FF] hover:border-[#BFDBFE]">
           <Bell size={14} />
         </button>
       </div>
@@ -782,33 +793,42 @@ function TopBar({ activeMenu, searchText, setSearchText, onRefresh, onOpenSideba
    METRIC CARD
 ─────────────────────────────────────────────── */
 const ACCENT_PALETTE = {
-  blue:   { bg: "#EFF6FF", icon: "#5BA7FF", border: "#DBEAFE", top: "#5BA7FF" },
-  indigo: { bg: "#EEF0FF", icon: "#6D7CFF", border: "#C7D2FE", top: "#6D7CFF" },
-  mint:   { bg: "#EFFAF6", icon: "#7FD8BE", border: "#A7F3D0", top: "#7FD8BE" },
-  violet: { bg: "#F5F3FF", icon: "#8C9EFF", border: "#DDD6FE", top: "#8C9EFF" },
+  blue:   { bg: "linear-gradient(135deg,#EFF6FF 0%,#DBEAFE 100%)", icon: "#3B82F6", border: "#BFDBFE", top: "#5BA7FF", glow: "rgba(91,167,255,0.22)",  grad: "linear-gradient(135deg,#5BA7FF,#6D7CFF)" },
+  indigo: { bg: "linear-gradient(135deg,#EEF0FF 0%,#C7D2FE 100%)", icon: "#4451E8", border: "#A5B4FC", top: "#6D7CFF", glow: "rgba(109,124,255,0.22)", grad: "linear-gradient(135deg,#6D7CFF,#8C9EFF)" },
+  mint:   { bg: "linear-gradient(135deg,#EFFAF6 0%,#A7F3D0 100%)", icon: "#059669", border: "#6EE7B7", top: "#7FD8BE", glow: "rgba(127,216,190,0.22)", grad: "linear-gradient(135deg,#7FD8BE,#34D399)" },
+  violet: { bg: "linear-gradient(135deg,#F5F3FF 0%,#DDD6FE 100%)", icon: "#6D28D9", border: "#C4B5FD", top: "#8C9EFF", glow: "rgba(140,158,255,0.22)", grad: "linear-gradient(135deg,#8C9EFF,#A78BFA)" },
 };
 
 function MetricCard({ icon, label, value, accent, delay }) {
   const a = ACCENT_PALETTE[accent] || ACCENT_PALETTE.blue;
   return (
     <div
-      className="animate-fade-up flex flex-1 items-center gap-3 rounded-xl bg-white px-4 py-3 transition-all duration-150 cursor-default"
+      className="animate-fade-up flex flex-1 items-center gap-3 rounded-2xl px-4 py-3.5 cursor-default"
       style={{
         animationDelay: delay,
-        boxShadow: `0 0 0 1px #E4E8EE, 0 2px 8px rgba(15,23,42,0.05), inset 0 2px 0 ${a.top}`,
+        background: "rgba(255,255,255,0.72)",
+        backdropFilter: "blur(12px)",
+        boxShadow: `0 0 0 1px ${a.border}, 0 4px 20px ${a.glow}, inset 0 2px 0 ${a.top}`,
+        transition: "transform 0.18s ease, box-shadow 0.18s ease",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.boxShadow = `0 0 0 1px #D0D8E4, 0 4px 16px rgba(15,23,42,0.08), inset 0 2px 0 ${a.top}`)}
-      onMouseLeave={(e) => (e.currentTarget.style.boxShadow = `0 0 0 1px #E4E8EE, 0 2px 8px rgba(15,23,42,0.05), inset 0 2px 0 ${a.top}`)}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = "translateY(-3px) scale(1.02)";
+        e.currentTarget.style.boxShadow = `0 0 0 1px ${a.border}, 0 12px 32px ${a.glow}, inset 0 2px 0 ${a.top}`;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = "translateY(0) scale(1)";
+        e.currentTarget.style.boxShadow = `0 0 0 1px ${a.border}, 0 4px 20px ${a.glow}, inset 0 2px 0 ${a.top}`;
+      }}
     >
       <div
-        className="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center"
-        style={{ background: a.bg, border: `1px solid ${a.border}` }}
+        className="h-10 w-10 shrink-0 rounded-xl flex items-center justify-center text-white"
+        style={{ background: a.grad, boxShadow: `0 4px 12px ${a.glow}` }}
       >
-        <span style={{ color: a.icon }}>{icon}</span>
+        {icon}
       </div>
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 leading-none">{label}</p>
-        <p className="mt-1 text-[22px] font-bold text-slate-900 leading-none tabular-nums">{value}</p>
+        <p className="mt-1 text-[24px] font-bold text-slate-900 leading-none tabular-nums">{value}</p>
       </div>
     </div>
   );
@@ -872,8 +892,8 @@ function InquiryTable({
   });
 
   return (
-    <section className="rounded-2xl bg-white overflow-hidden card-shadow">
-      <div className="flex flex-col gap-3 border-b border-[#EEF2F6] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+    <section className="rounded-2xl overflow-hidden" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
+      <div className="flex flex-col gap-3 border-b border-[#D8E3F8] px-5 py-4 lg:flex-row lg:items-center lg:justify-between" style={{ background: "linear-gradient(90deg,#F5F8FF 0%,#F0F6FF 100%)" }}>
         <div>
           <h3 className="text-[15px] font-semibold text-slate-900">Inquiries</h3>
           <p className="text-[11px] text-slate-400 mt-0.5">{inquiries.length} of {totalCount} groups</p>
@@ -914,8 +934,8 @@ function InquiryTable({
               ].map(([w, label]) => (
                 <th
                   key={label}
-                  style={{ width: w }}
-                  className="sticky top-0 border-b border-r border-[#E6EBF2] bg-[#F8FAFC] px-2 py-2 text-[9px] font-semibold uppercase tracking-widest text-slate-400 last:border-r-0"
+                  style={{ width: w, background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}
+                  className="sticky top-0 border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-2 py-2.5 text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0"
                 >
                   {label}
                 </th>
@@ -959,11 +979,12 @@ function FilterButton({ active, onClick, children }) {
   return (
     <button
       onClick={onClick}
-      className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition-all duration-150 border ${
+      className={`rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all duration-200 border ${
         active
-          ? "bg-[#EFF6FF] text-[#1D6FD8] border-[#BFDBFE]"
-          : "bg-white text-slate-600 border-[#E4E8EE] hover:bg-[#F3F5F7] hover:text-slate-900"
+          ? "text-white border-transparent"
+          : "bg-white/80 text-slate-600 border-[#D0D8F0] hover:bg-[#EEF4FF] hover:text-[#1D6FD8] hover:border-[#BFDBFE]"
       }`}
+      style={active ? { background: "linear-gradient(135deg,#5BA7FF 0%,#6D7CFF 100%)", boxShadow: "0 2px 10px rgba(91,167,255,0.35)", transform: "translateY(-1px)" } : {}}
     >
       {children}
     </button>
@@ -974,7 +995,7 @@ function LoadingRows() {
   return Array.from({ length: 6 }, (_, rowIndex) => (
     <tr key={rowIndex}>
       {Array.from({ length: 14 }, (_, cellIndex) => (
-        <td key={cellIndex} className="border-b border-r border-[#EEF2F6] px-2 py-2.5 last:border-r-0">
+        <td key={cellIndex} className="border-b border-r border-[#DCE6F7] px-2 py-2.5 last:border-r-0">
           <div className="skeleton h-3.5" style={{ width: cellIndex === 7 ? "75%" : cellIndex === 2 ? "65%" : "55%" }} />
         </td>
       ))}
@@ -991,16 +1012,18 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
 
   return (
     <tr
-      className="border-b border-[#EEF2F6] transition-colors duration-100 hover:bg-[#F8FAFC]"
-      style={{ background: isFirstItem ? "#FFFFFF" : "#FAFBFC" }}
+      className="border-b border-[#DCE6F7] transition-all duration-150 table-row-animate"
+      style={{ background: isFirstItem ? "rgba(255,255,255,0.9)" : "rgba(245,248,255,0.7)" }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(90deg,#EEF6FF 0%,#F5F9FF 100%)"; e.currentTarget.style.boxShadow = "inset 3px 0 0 #5BA7FF"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = isFirstItem ? "rgba(255,255,255,0.9)" : "rgba(245,248,255,0.7)"; e.currentTarget.style.boxShadow = "none"; }}
     >
       {/* Sr No. */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         <p className="text-[11px] font-medium text-slate-500 tabular-nums">{srNo}</p>
       </td>
 
       {/* F Unique Code */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         <p className="truncate font-semibold text-slate-900 text-[11px]">{inquiry.unique_code}</p>
         {isFirstItem && groupSize > 1 && (
           <p className="mt-0.5 text-[11px] text-[#5BA7FF] font-medium">{groupSize} items</p>
@@ -1008,19 +1031,19 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
       </td>
 
       {/* Client Name */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         <p className="truncate font-medium text-slate-800 text-[11px]">
           {isFirstItem ? inquiry.client_name || "—" : ""}
         </p>
       </td>
 
       {/* Location */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         <p className="truncate text-[11px] text-slate-600">{isFirstItem ? inquiry.location || "—" : ""}</p>
       </td>
 
       {/* User Name */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         <p className="truncate font-medium text-slate-800 text-[11px]">
           {isFirstItem ? inquiry.sender_name || "—" : ""}
         </p>
@@ -1030,7 +1053,7 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
       </td>
 
       {/* PR # */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         {isFirstItem && inquiry.subject ? (
           <button
             type="button"
@@ -1046,27 +1069,27 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
       </td>
 
       {/* Brand */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         <p className="truncate text-[11px] text-slate-700">{brand}</p>
       </td>
 
       {/* Part Number */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         <p className="truncate font-medium text-slate-900 text-[11px]">{part}</p>
       </td>
 
       {/* UOM */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         <p className="text-[11px] text-slate-700">{uom}</p>
       </td>
 
       {/* Qty */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         <p className="font-medium text-slate-800 text-[11px]">{qty}</p>
       </td>
 
       {/* Allocation */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         {isFirstItem ? (
           <select
             value={inquiry.assigned_to || ""}
@@ -1088,14 +1111,14 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
       </td>
 
       {/* Timer */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         <p className={`text-[11px] font-medium ${timerClass(inquiry.assigned_at, now)}`}>
           {isFirstItem ? formatAssignmentAge(inquiry.assigned_at, now) : ""}
         </p>
       </td>
 
       {/* Status */}
-      <td className="border-r border-[#EEF2F6] px-2 py-2 align-middle">
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         {isFirstItem ? (
           <select
             value={status}
@@ -1140,7 +1163,10 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
 
 function StatusBadge({ status }) {
   return (
-    <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${statusClasses[status] || statusClasses.new}`}>
+    <span
+      className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${statusClasses[status] || statusClasses.new}`}
+      style={{ background: statusGrad[status] || statusGrad.new }}
+    >
       {formatStatus(status)}
     </span>
   );
@@ -1423,46 +1449,58 @@ function UserAccessTable({ title, users, editing, busy, onEdit, onSave, onRemove
   );
 }
 
+const TEAM_COLORS = [
+  { grad: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", glow: "rgba(91,167,255,0.25)"  },
+  { grad: "linear-gradient(135deg,#7FD8BE,#34D399)", glow: "rgba(127,216,190,0.25)" },
+  { grad: "linear-gradient(135deg,#8C9EFF,#A78BFA)", glow: "rgba(140,158,255,0.25)" },
+];
+
 function SalesOverview() {
   return (
-    <section className="rounded-2xl bg-white overflow-hidden card-shadow">
-      <div className="border-b border-[#EEF2F6] px-5 py-4">
+    <section className="rounded-2xl overflow-hidden" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
+      <div className="border-b border-[#D8E3F8] px-5 py-4" style={{ background: "linear-gradient(90deg,#F5F8FF 0%,#F0F6FF 100%)" }}>
         <h3 className="text-[15px] font-semibold text-slate-900">Sales Overview</h3>
         <p className="text-[11px] text-slate-400 mt-0.5">Team performance at a glance</p>
       </div>
-      <div className="p-4 flex flex-col gap-2">
-        <TeamCard name="Tamanna" initial="T" quoted="5"  active="12" fresh="4" />
-        <TeamCard name="Abhinav" initial="A" quoted="3"  active="14" fresh="3" />
-        <TeamCard name="Pavan"   initial="P" quoted="7"  active="11" fresh="7" />
+      <div className="p-4 flex flex-col gap-3">
+        <TeamCard name="Tamanna" initial="T" quoted="5"  active="12" fresh="4" colorIdx={0} />
+        <TeamCard name="Abhinav" initial="A" quoted="3"  active="14" fresh="3" colorIdx={1} />
+        <TeamCard name="Pavan"   initial="P" quoted="7"  active="11" fresh="7" colorIdx={2} />
       </div>
     </section>
   );
 }
 
-function TeamCard({ name, initial, quoted, active, fresh }) {
+function TeamCard({ name, initial, quoted, active, fresh, colorIdx }) {
+  const c = TEAM_COLORS[colorIdx % TEAM_COLORS.length];
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-[#E4E8EE] bg-white px-4 py-3 transition-colors duration-150 hover:bg-[#F8FAFC] cursor-default">
+    <div
+      className="flex items-center gap-4 rounded-xl border px-4 py-3 cursor-default transition-all duration-200"
+      style={{ background: "rgba(255,255,255,0.7)", borderColor: "#D8E3F8" }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(90deg,#F0F6FF,#F5F8FF)"; e.currentTarget.style.transform = "translateX(4px)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.7)"; e.currentTarget.style.transform = "translateX(0)"; }}
+    >
       <div className="flex items-center gap-2.5 w-36 shrink-0">
-        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold" style={{ background: "#EEF0FF", color: "#4451E8" }}>
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[13px] font-bold text-white" style={{ background: c.grad, boxShadow: `0 3px 10px ${c.glow}` }}>
           {initial}
         </span>
-        <p className="text-[13px] font-semibold text-slate-800">{name}</p>
+        <p className="text-[14px] font-semibold text-slate-800">{name}</p>
       </div>
-      <div className="h-8 w-px bg-[#EEF2F6] shrink-0" />
+      <div className="h-8 w-px bg-[#D8E3F8] shrink-0" />
       <div className="flex flex-1 gap-3">
-        <TeamStat label="Quoted" value={quoted} />
-        <TeamStat label="Active" value={active} />
-        <TeamStat label="New"    value={fresh}  />
+        <TeamStat label="Quoted" value={quoted} grad="linear-gradient(135deg,#EFF6FF,#DBEAFE)" color="#1D6FD8" />
+        <TeamStat label="Active" value={active} grad="linear-gradient(135deg,#EFFAF6,#A7F3D0)" color="#059669" />
+        <TeamStat label="New"    value={fresh}  grad="linear-gradient(135deg,#F5F3FF,#DDD6FE)" color="#6D28D9" />
       </div>
     </div>
   );
 }
 
-function TeamStat({ label, value }) {
+function TeamStat({ label, value, grad, color }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-[#F8FAFC] px-4 py-2">
-      <p className="text-[18px] font-bold text-slate-900 tabular-nums leading-none">{value}</p>
-      <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide leading-tight">{label}</p>
+    <div className="flex items-center gap-2 rounded-xl px-4 py-2 border border-transparent" style={{ background: grad }}>
+      <p className="text-[20px] font-bold tabular-nums leading-none" style={{ color }}>{value}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wide leading-tight text-slate-400">{label}</p>
     </div>
   );
 }

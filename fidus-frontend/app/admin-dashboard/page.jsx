@@ -1029,18 +1029,6 @@ function InquiryTable({
               {opt.label}
             </FilterButton>
           ))}
-          <span className="mx-1 h-7 w-px bg-[#E4E8EE]" />
-          <select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="h-7 rounded-lg border border-[#D0D8F0] bg-white px-2 text-[11px] font-semibold text-slate-600 outline-none cursor-pointer transition hover:bg-[#EEF4FF] hover:border-[#BFDBFE] focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
-          >
-            <option value="all">All Dates</option>
-            <option value="today">Today</option>
-            <option value="yesterday">Yesterday</option>
-            <option value="7d">Last 7 Days</option>
-            <option value="30d">Last 30 Days</option>
-          </select>
         </div>
       </div>
 
@@ -1057,7 +1045,24 @@ function InquiryTable({
                   style={{ width: colWidths[i], position: "relative", background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}
                   className="sticky top-0 border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-2 py-2.5 text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0 select-none"
                 >
-                  {col.label === "Assign Timer" ? (
+                  {col.label === "Received" ? (
+                    <div className="flex flex-col gap-1 pr-2">
+                      <span className="truncate text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">Received</span>
+                      <select
+                        value={dateFilter}
+                        onChange={(e) => setDateFilter(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="h-5 w-full rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] font-semibold text-slate-600 outline-none cursor-pointer normal-case tracking-normal"
+                        style={{ letterSpacing: 0 }}
+                      >
+                        <option value="all">All Dates</option>
+                        <option value="today">Today</option>
+                        <option value="yesterday">Yesterday</option>
+                        <option value="7d">Last 7 Days</option>
+                        <option value="30d">Last 30 Days</option>
+                      </select>
+                    </div>
+                  ) : col.label === "Assign Timer" ? (
                     <div className="flex flex-col gap-1 pr-2">
                       <span className="truncate text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">Assign Timer</span>
                       <select

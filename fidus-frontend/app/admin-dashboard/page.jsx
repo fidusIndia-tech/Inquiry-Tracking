@@ -1390,6 +1390,12 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
           >
             <option value="">Unassigned</option>
             <option value="__self__">— Assign to Me —</option>
+            {/* Show admin self-assignment as a selectable option when they're not in the employee list */}
+            {inquiry.assigned_to && !employees.find((e) => e.id === inquiry.assigned_to) && (
+              <option value={inquiry.assigned_to}>
+                {inquiry.assigned_ref_name || inquiry.assigned_to_name || "Admin"}
+              </option>
+            )}
             {employees.map((emp) => (
               <option key={emp.id} value={emp.id}>{emp.name}</option>
             ))}

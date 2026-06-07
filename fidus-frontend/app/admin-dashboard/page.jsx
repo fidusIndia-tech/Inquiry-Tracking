@@ -72,7 +72,7 @@ export default function AdminDashboard() {
   const [editModal,          setEditModal]          = useState(null);
   const [subjectPreview,     setSubjectPreview]     = useState(null);
   const [detailModal,        setDetailModal]        = useState(null);
-  const [assignToMeModal,    setAssignToMeModal]    = useState(null);
+  const [assignToMeModal,    setAssignToMeModal]    = useState(null); // kept for compat, unused
   const [notifBadge,         setNotifBadge]         = useState(0);
   const prevCountRef = useRef(0);
 
@@ -261,25 +261,24 @@ export default function AdminDashboard() {
     router.push("/login");
   };
 
-  const handleAssignToMe = async (uniqueCode, refName) => {
+  const handleAssignToMe = async (uniqueCode) => {
     const adminId = Number(localStorage.getItem("userId"));
     if (!adminId) { alert("Admin session not found. Please re-login."); return; }
     try {
       const response = await fetch("/api/inquiries/assign", {
         method:  "PATCH",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ unique_code: uniqueCode, assigned_to: adminId, ref_name: refName || null }),
+        body:    JSON.stringify({ unique_code: uniqueCode, assigned_to: adminId }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to assign");
       setInquiries((current) =>
         current.map((inq) =>
           inq.unique_code === uniqueCode
-            ? { ...inq, assigned_to: data.inquiry.assigned_to, assigned_at: data.inquiry.assigned_at, assigned_ref_name: data.inquiry.assigned_ref_name, assigned_to_name: data.inquiry.assigned_to_name, status: data.inquiry.status }
+            ? { ...inq, assigned_to: data.inquiry.assigned_to, assigned_at: data.inquiry.assigned_at, assigned_ref_name: null, assigned_to_name: data.inquiry.assigned_to_name, status: data.inquiry.status }
             : inq
         )
       );
-      setAssignToMeModal(null);
     } catch (e) { alert(e.message); }
   };
 
@@ -378,7 +377,7 @@ export default function AdminDashboard() {
                   onEditRequest={(inquiry)   => setEditModal(inquiry)}
                   onSubjectOpen={(inquiry)   => setSubjectPreview(inquiry)}
                   onDetailOpen={(inquiry)    => setDetailModal(inquiry)}
-                  onAssignToMeRequest={(uc)  => setAssignToMeModal(uc)}
+                  onAssignToMeRequest={(uc)  => handleAssignToMe(uc)}
                   onAutoAssign={handleAutoAssign}
                 />
               </div>
@@ -463,13 +462,7 @@ export default function AdminDashboard() {
         />
       )}
 
-      {assignToMeModal && (
-        <AssignToMeModal
-          uniqueCode={assignToMeModal}
-          onClose={() => setAssignToMeModal(null)}
-          onConfirm={(name) => handleAssignToMe(assignToMeModal, name)}
-        />
-      )}
+      {/* AssignToMeModal removed — assignment is now immediate */}
     </div>
   );
 }
@@ -1207,69 +1200,6 @@ function FilterButton({ active, onClick, children }) {
   );
 }
 
-function AssignToMeModal({ uniqueCode, onClose, onConfirm }) {
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const confirm = async () => {
-    if (!name.trim()) return;
-    setBusy(true);
-    try { await onConfirm(name.trim()); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-sm bg-white rounded-2xl p-6 card-shadow-lg animate-modal">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 h-7 w-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-[#F3F5F7] hover:text-slate-700 transition"
-        >
-          <X size={14} />
-        </button>
-        <div
-          className="h-11 w-11 rounded-xl flex items-center justify-center mb-4"
-          style={{ background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)" }}
-        >
-          <Users size={18} className="text-[#1D6FD8]" />
-        </div>
-        <h3 className="text-[15px] font-semibold text-slate-900">Assign to Yourself</h3>
-        <p className="mt-1.5 text-[13px] text-slate-500">
-          Inquiry{" "}
-          <span className="font-semibold text-slate-800">{uniqueCode}</span>{" "}
-          will be assigned to your account. Enter your name for reference.
-        </p>
-        <label className="mt-4 block text-[11px] font-semibold uppercase tracking-widest text-slate-400">Your Name (for reference)</label>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && confirm()}
-          placeholder="e.g. Rajan, Priya…"
-          autoFocus
-          className="mt-1.5 h-9 w-full rounded-lg border border-[#E4E8EE] bg-white px-3 text-[13px] text-slate-700 outline-none transition focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
-        />
-        <div className="mt-4 flex gap-2">
-          <button
-            onClick={onClose}
-            className="flex-1 h-9 rounded-xl border border-[#E4E8EE] bg-white text-[13px] font-medium text-slate-700 transition hover:bg-[#F3F5F7]"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={confirm}
-            disabled={!name.trim() || busy}
-            className="flex-1 h-9 rounded-xl text-[13px] font-semibold text-white transition disabled:opacity-60"
-            style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
-          >
-            {busy ? "Assigning…" : "Assign to Me"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function LoadingRows() {
   return Array.from({ length: 6 }, (_, rowIndex) => (
     <tr key={rowIndex}>
@@ -1390,10 +1320,10 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
           >
             <option value="">Unassigned</option>
             <option value="__self__">— Assign to Me —</option>
-            {/* Show admin self-assignment as a selectable option when they're not in the employee list */}
+            {/* Dynamic option when assigned to admin (not in employee list) */}
             {inquiry.assigned_to && !employees.find((e) => e.id === inquiry.assigned_to) && (
               <option value={inquiry.assigned_to}>
-                {inquiry.assigned_ref_name || inquiry.assigned_to_name || "Admin"}
+                {inquiry.assigned_to_name || "Admin"}
               </option>
             )}
             {employees.map((emp) => (
@@ -1403,7 +1333,7 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
         ) : (
           <div className="flex h-7 items-center">
             <span className="text-[11px] font-medium text-slate-500">
-              {inquiry.assigned_ref_name || inquiry.assigned_to_name || "—"}
+              {inquiry.assigned_to_name || "—"}
             </span>
           </div>
         )}

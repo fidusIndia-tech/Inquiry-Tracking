@@ -7,8 +7,6 @@ import { useRouter } from "next/navigation";
 import {
   Bell,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
   FileText,
   LayoutDashboard,
@@ -46,8 +44,6 @@ export default function EmployeeDashboard() {
   const [error,                 setError]                 = useState("");
   const [notice,                setNotice]                = useState("");
   const [notificationsEnabled,  setNotificationsEnabled]  = useState(false);
-  const [sidebarCollapsed,      setSidebarCollapsed]      = useState(false);
-  const [mobileSidebarOpen,     setMobileSidebarOpen]     = useState(false);
   const [detailModal,           setDetailModal]           = useState(null);
   const knownAssignmentsRef = useRef(new Map());
   const firstLoadRef        = useRef(true);
@@ -209,152 +205,63 @@ export default function EmployeeDashboard() {
   };
 
   return (
-    <div className="min-h-screen text-slate-900 dashboard-bg">
-      {/* Mobile overlay */}
-      {mobileSidebarOpen && (
-        <button
-          aria-label="Close menu"
-          onClick={() => setMobileSidebarOpen(false)}
-          className="fixed inset-0 z-30 bg-slate-950/20 backdrop-blur-[2px] lg:hidden"
-        />
-      )}
-
-      <div className="relative flex h-screen overflow-hidden">
-        {/* ── Sidebar ── */}
-        <aside
-          className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[#D0D8F0] transition-all duration-200 ${
-            sidebarCollapsed ? "w-16" : "w-50"
-          } ${mobileSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
-          style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(16px)" }}
-        >
-          {/* Logo */}
-          <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-[#E6EDF8] px-4">
-            <Image src="/logo-dark.png" alt="FIAPL" width={120} height={40} className={`h-8 w-auto object-contain ${sidebarCollapsed ? "hidden" : ""}`} priority />
-            {sidebarCollapsed && (
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)" }}>
-                <span className="text-[11px] font-bold text-white">F</span>
-              </div>
-            )}
-          </div>
-
-          {/* Nav */}
-          <div className="flex-1 overflow-y-auto px-3 py-4">
-            <button
-              className={`flex h-10 w-full items-center gap-3 rounded-xl px-3 text-[13px] font-semibold transition ${sidebarCollapsed ? "justify-center px-0" : ""}`}
-              style={{ background: "linear-gradient(135deg,#EFF6FF,#E0EDFF)", color: "#1D6FD8" }}
-            >
-              <span
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
-                style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.32)" }}
-              >
-                <LayoutDashboard size={14} className="text-white" />
-              </span>
-              {!sidebarCollapsed && "Dashboard"}
-            </button>
-          </div>
-
-          {/* Collapse button */}
-          <div className="hidden lg:block px-3 pb-2">
-            <button
-              onClick={() => setSidebarCollapsed((v) => !v)}
-              className={`flex h-8 w-full items-center gap-2 rounded-lg border border-[#E4E8EE] bg-white text-[11px] font-medium text-slate-500 transition hover:bg-[#F3F5F7] hover:text-slate-800 ${sidebarCollapsed ? "justify-center px-0" : "px-3"}`}
-            >
-              {sidebarCollapsed ? <ChevronRight size={13} /> : <><ChevronLeft size={13} /><span>Collapse</span></>}
-            </button>
-          </div>
-
-          {/* User + logout */}
-          <div className="shrink-0 border-t border-[#E6EDF8] px-3 py-4">
-            <div className={`mb-3 flex items-center gap-2.5 ${sidebarCollapsed ? "justify-center" : ""}`}>
-              <div
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[13px] font-bold text-white"
-                style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
-              >
-                {employeeName.charAt(0).toUpperCase()}
-              </div>
-              {!sidebarCollapsed && (
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] font-semibold text-slate-900">{employeeName}</p>
-                  <p className="text-[11px] text-slate-400">Employee</p>
-                </div>
-              )}
-            </div>
-            <button
-              onClick={handleLogout}
-              className={`flex h-9 w-full items-center gap-2 rounded-xl text-[12px] font-medium text-slate-600 transition hover:bg-rose-50 hover:text-rose-700 ${sidebarCollapsed ? "justify-center px-0" : "px-3"}`}
-              style={{ border: "1px solid #E4E8EE" }}
-            >
-              <LogOut size={13} />
-              {!sidebarCollapsed && "Sign out"}
-            </button>
-          </div>
-        </aside>
-
-        {/* ── Main ── */}
-        <main className={`flex min-w-0 flex-1 flex-col overflow-hidden transition-all duration-200 ${sidebarCollapsed ? "lg:ml-16" : "lg:ml-50"}`}>
-          {/* Top bar */}
-          <header
-            className="flex h-14 shrink-0 items-center justify-between border-b border-[#D0D8F0] px-5"
-            style={{ background: "rgba(255,255,255,0.88)", backdropFilter: "blur(12px)" }}
+    <div className="min-h-screen text-slate-900 dashboard-bg flex flex-col" style={{ height: "100vh", overflow: "hidden" }}>
+      {/* ── Top bar ── */}
+      <header
+        className="flex h-12 shrink-0 items-center justify-between border-b border-[#D0D8F0] px-4"
+        style={{ background: "rgba(255,255,255,0.88)", backdropFilter: "blur(12px)" }}
+      >
+        <div className="flex items-center gap-3">
+          <Image src="/logo-dark.png" alt="FIAPL" width={110} height={36} className="h-7 w-auto object-contain shrink-0" priority />
+          <div className="h-5 w-px bg-[#D8E3F8]" />
+          <button
+            className="flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold text-white"
+            style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
           >
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setMobileSidebarOpen(true)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E4E8EE] bg-white text-slate-600 transition hover:bg-[#F3F5F7] lg:hidden"
-              >
-                <LayoutDashboard size={14} />
-              </button>
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[#5BA7FF]">Employee Desk</p>
-                <h1 className="text-[15px] font-semibold text-slate-900">Assigned Inquiries</h1>
-              </div>
-            </div>
+            <LayoutDashboard size={12} />
+            Dashboard
+          </button>
+        </div>
 
-            <div className="flex items-center gap-2">
-              {/* Search */}
-              <div
-                className="hidden sm:flex h-9 min-w-52 items-center gap-2 rounded-xl border border-[#E4E8EE] bg-white px-3 transition focus-within:border-[#5BA7FF] focus-within:ring-2 focus-within:ring-[#5BA7FF]/10"
-              >
-                <Search size={14} className="shrink-0 text-slate-400" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search code, client, part…"
-                  className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-slate-400"
-                />
-              </div>
+        <div className="flex items-center gap-2">
+          <div
+            className="hidden sm:flex h-8 min-w-48 items-center gap-2 rounded-lg border border-[#E4E8EE] bg-white px-3 transition focus-within:border-[#5BA7FF] focus-within:ring-2 focus-within:ring-[#5BA7FF]/10"
+          >
+            <Search size={13} className="shrink-0 text-slate-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search code, client, part…"
+              className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-slate-400"
+            />
+          </div>
+          <button
+            onClick={() => employeeId && loadInquiries(employeeId)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E4E8EE] bg-white text-slate-600 transition hover:bg-[#F3F5F7]"
+            title="Refresh"
+          >
+            <RefreshCw size={13} />
+          </button>
+          <button
+            onClick={enableNotifications}
+            className={`flex h-8 w-8 items-center justify-center rounded-lg border border-[#E4E8EE] bg-white transition hover:bg-[#F3F5F7] ${notificationsEnabled ? "text-emerald-600" : "text-slate-500"}`}
+            title={notificationsEnabled ? "Notifications on" : "Enable notifications"}
+          >
+            <Bell size={13} />
+          </button>
+          <div className="h-5 w-px bg-[#D8E3F8]" />
+          <button
+            onClick={handleLogout}
+            className="flex h-7 items-center gap-1.5 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[11px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200"
+          >
+            <LogOut size={12} />
+            <span className="hidden sm:inline">Sign out</span>
+          </button>
+        </div>
+      </header>
 
-              <button
-                onClick={() => employeeId && loadInquiries(employeeId)}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E4E8EE] bg-white text-slate-600 transition hover:bg-[#F3F5F7]"
-                title="Refresh"
-              >
-                <RefreshCw size={14} />
-              </button>
-
-              <button
-                onClick={enableNotifications}
-                className={`flex h-9 w-9 items-center justify-center rounded-xl border border-[#E4E8EE] bg-white transition hover:bg-[#F3F5F7] ${notificationsEnabled ? "text-emerald-600" : "text-slate-500"}`}
-                title={notificationsEnabled ? "Notifications on" : "Enable notifications"}
-              >
-                <Bell size={14} />
-              </button>
-            </div>
-          </header>
-
-          {/* Content */}
-          <div className="flex-1 overflow-auto p-4 lg:p-5">
-            {/* Search on mobile */}
-            <div className="mb-4 flex sm:hidden h-9 items-center gap-2 rounded-xl border border-[#E4E8EE] bg-white px-3">
-              <Search size={14} className="shrink-0 text-slate-400" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search…"
-                className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-slate-400"
-              />
-            </div>
-
+      {/* ── Content ── */}
+      <main className="flex-1 overflow-auto p-4 lg:p-5">
             {/* Metric cards */}
             <section className="mb-4 flex gap-3">
               <MetricCard icon={<FileText size={15} />}     label="Assigned"     value={loading ? "—" : inquiries.length} accent="blue"   />
@@ -410,9 +317,7 @@ export default function EmployeeDashboard() {
                 onDetailOpen={openDetail}
               />
             </section>
-          </div>
-        </main>
-      </div>
+      </main>
 
       {detailModal && (
         <InquiryDetailModal

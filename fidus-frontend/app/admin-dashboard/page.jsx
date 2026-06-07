@@ -66,8 +66,6 @@ export default function AdminDashboard() {
   const [assignmentFilter,   setAssignmentFilter]   = useState("all");
   const [dateFilter,         setDateFilter]         = useState("all");
   const [now,                setNow]                = useState(0);
-  const [sidebarCollapsed,   setSidebarCollapsed]   = useState(false);
-  const [mobileSidebarOpen,  setMobileSidebarOpen]  = useState(false);
   const [deleteConfirm,      setDeleteConfirm]      = useState(null);
   const [editModal,          setEditModal]          = useState(null);
   const [subjectPreview,     setSubjectPreview]     = useState(null);
@@ -315,41 +313,19 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div
-      className="min-h-screen text-slate-900 dashboard-bg"
-    >
-      {/* Mobile overlay */}
-      {mobileSidebarOpen && (
-        <button
-          aria-label="Close menu"
-          onClick={() => setMobileSidebarOpen(false)}
-          className="fixed inset-0 z-30 bg-slate-950/20 backdrop-blur-[2px] lg:hidden"
-        />
-      )}
+    <div className="min-h-screen text-slate-900 dashboard-bg flex flex-col" style={{ height: "100vh", overflow: "hidden" }}>
+      <TopBar
+        activeMenu={activeMenu}
+        setActiveMenu={setActiveMenu}
+        searchText={searchText}
+        setSearchText={setSearchText}
+        onRefresh={loadInquiries}
+        onLogout={handleLogout}
+        notifBadge={notifBadge}
+        onClearNotif={() => setNotifBadge(0)}
+      />
 
-      <div className="relative flex h-screen overflow-hidden">
-        <Sidebar
-          activeMenu={activeMenu}
-          setActiveMenu={setActiveMenu}
-          collapsed={sidebarCollapsed}
-          setCollapsed={setSidebarCollapsed}
-          mobileOpen={mobileSidebarOpen}
-          setMobileOpen={setMobileSidebarOpen}
-          onLogout={handleLogout}
-        />
-
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <TopBar
-            activeMenu={activeMenu}
-            searchText={searchText}
-            setSearchText={setSearchText}
-            onRefresh={loadInquiries}
-            onOpenSidebar={() => setMobileSidebarOpen(true)}
-            notifBadge={notifBadge}
-            onClearNotif={() => setNotifBadge(0)}
-          />
-
-          <div className="flex-1 overflow-auto p-4 lg:p-5">
+      <main className="flex-1 overflow-auto p-4 lg:p-5">
             {activeMenu === "dashboard" && (
               <div className="space-y-4">
                 <section className="flex gap-3">
@@ -391,9 +367,7 @@ export default function AdminDashboard() {
                 onUsersChanged={loadUsers}
               />
             )}
-          </div>
-        </main>
-      </div>
+      </main>
 
       {/* ── Delete confirmation modal ── */}
       {deleteConfirm && (
@@ -856,33 +830,38 @@ function SidebarItem({ icon, title, active, collapsed, onClick }) {
 /* ──────────────────────────────────────────────
    TOP BAR
 ─────────────────────────────────────────────── */
-function TopBar({ activeMenu, searchText, setSearchText, onRefresh, onOpenSidebar, notifBadge, onClearNotif }) {
-  const title = {
-    dashboard: "Inquiry Dashboard",
-    sales: "Sales Overview",
-    access: "Access Control",
-  }[activeMenu] || "Inquiry Dashboard";
+const TOP_NAV = [
+  { key: "dashboard", label: "Dashboard",      icon: <LayoutDashboard size={12} /> },
+  { key: "sales",     label: "Sales",          icon: <Inbox size={12} /> },
+  { key: "access",    label: "Access Control", icon: <Users size={12} /> },
+];
 
+function TopBar({ activeMenu, setActiveMenu, searchText, setSearchText, onRefresh, onLogout, notifBadge, onClearNotif }) {
   return (
-    <header className="h-14 flex items-center justify-between border-b border-[#D8E3F8] px-4 shrink-0 lg:px-5 backdrop-blur-md" style={{ background: "linear-gradient(90deg, rgba(255,255,255,0.92) 0%, rgba(240,246,255,0.95) 100%)" }}>
+    <header className="flex h-12 shrink-0 items-center justify-between border-b border-[#D8E3F8] px-4 backdrop-blur-md" style={{ background: "linear-gradient(90deg, rgba(255,255,255,0.92) 0%, rgba(240,246,255,0.95) 100%)" }}>
       <div className="flex items-center gap-3">
-        <button
-          onClick={onOpenSidebar}
-          className="grid h-8 w-8 place-items-center rounded-lg border border-[#E4E8EE] text-slate-500 transition hover:bg-[#F3F5F7] lg:hidden"
-        >
-          <Menu size={15} />
-        </button>
-        <div>
-          <h2 className="text-[15px] font-semibold text-slate-900 leading-tight">
-            {title}
-          </h2>
-          <p className="text-[11px] text-slate-400">FIAPL workflow desk</p>
+        <Image src="/logo-dark.png" alt="FIAPL" width={110} height={36} className="h-7 w-auto object-contain shrink-0" priority />
+        <div className="h-5 w-px bg-[#D8E3F8]" />
+        <div className="flex items-center gap-0.5">
+          {TOP_NAV.map((item) => (
+            <button
+              key={item.key}
+              onClick={() => setActiveMenu(item.key)}
+              className={`flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-all duration-150 ${
+                activeMenu === item.key ? "text-white" : "text-slate-500 hover:bg-[#EEF2FF] hover:text-[#4451E8]"
+              }`}
+              style={activeMenu === item.key ? { background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" } : {}}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="flex items-center gap-2">
         <div
-          className="hidden sm:flex items-center gap-2 h-9 px-3 rounded-xl border bg-[#F8FAFC] min-w-55 transition-all duration-150 focus-within:bg-white"
+          className="hidden sm:flex items-center gap-2 h-8 px-3 rounded-lg border bg-[#F8FAFC] min-w-48 transition-all duration-150 focus-within:bg-white"
           style={{ borderColor: "#E4E8EE" }}
           onFocusCapture={(e) => { e.currentTarget.style.borderColor = "#5BA7FF"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(91,167,255,0.10)"; }}
           onBlurCapture={(e)  => { e.currentTarget.style.borderColor = "#E4E8EE"; e.currentTarget.style.boxShadow = "none"; }}
@@ -897,23 +876,32 @@ function TopBar({ activeMenu, searchText, setSearchText, onRefresh, onOpenSideba
         </div>
         <button
           onClick={onRefresh}
-          className="refresh-spin flex h-9 items-center gap-1.5 rounded-xl px-3 text-[11px] font-semibold text-white transition-all duration-200 btn-glow"
-          style={{ background: "linear-gradient(135deg,#5BA7FF 0%,#6D7CFF 100%)", boxShadow: "0 2px 12px rgba(91,167,255,0.30)" }}
+          className="refresh-spin flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold text-white transition-all duration-200 btn-glow"
+          style={{ background: "linear-gradient(135deg,#5BA7FF 0%,#6D7CFF 100%)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
         >
           <RefreshCw size={13} />
           <span className="hidden sm:inline">Refresh</span>
         </button>
         <button
           onClick={onClearNotif}
-          className="relative h-9 w-9 grid place-items-center rounded-xl border border-[#D0D8F0] bg-white/80 text-slate-500 transition hover:bg-[#EEF2FF] hover:text-[#5BA7FF] hover:border-[#BFDBFE]"
+          className="relative h-8 w-8 grid place-items-center rounded-lg border border-[#D0D8F0] bg-white/80 text-slate-500 transition hover:bg-[#EEF2FF] hover:text-[#5BA7FF] hover:border-[#BFDBFE]"
           title="Notifications"
         >
-          <Bell size={14} />
+          <Bell size={13} />
           {notifBadge > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center animate-fade-in" style={{ boxShadow: "0 2px 6px rgba(239,68,68,0.5)" }}>
+            <span className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-rose-500 text-white text-[8px] font-bold flex items-center justify-center animate-fade-in" style={{ boxShadow: "0 2px 6px rgba(239,68,68,0.5)" }}>
               {notifBadge > 9 ? "9+" : notifBadge}
             </span>
           )}
+        </button>
+        <div className="h-5 w-px bg-[#D8E3F8]" />
+        <button
+          onClick={onLogout}
+          className="flex h-7 items-center gap-1.5 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[11px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200"
+          title="Sign out"
+        >
+          <LogOut size={12} />
+          <span className="hidden sm:inline">Sign out</span>
         </button>
       </div>
     </header>

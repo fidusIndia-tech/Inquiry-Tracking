@@ -989,8 +989,7 @@ const ADMIN_COLS = [
   { label: "Qty",           defaultW: 55  },
   { label: "Allocation",    defaultW: 100 },
   { label: "Assign Timer",  defaultW: 80  },
-  { label: "Status Timer",  defaultW: 80  },
-  { label: "Status",        defaultW: 90  },
+  { label: "Status",        defaultW: 100 },
   { label: "Actions",       defaultW: 72  },
 ];
 
@@ -1159,10 +1158,10 @@ function InquiryTable({
           <tbody>
             {isLoading && <LoadingRows />}
             {!isLoading && error && (
-              <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={16}>{error}</td></tr>
+              <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={15}>{error}</td></tr>
             )}
             {!isLoading && !error && inquiries.length === 0 && (
-              <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={16}>No inquiries found.</td></tr>
+              <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={15}>No inquiries found.</td></tr>
             )}
             {!isLoading && !error &&
               rows.map(({ inquiry, item, isFirstItem, groupSize }, index) => (
@@ -1274,7 +1273,7 @@ function AssignToMeModal({ uniqueCode, onClose, onConfirm }) {
 function LoadingRows() {
   return Array.from({ length: 6 }, (_, rowIndex) => (
     <tr key={rowIndex}>
-      {Array.from({ length: 16 }, (_, cellIndex) => (
+      {Array.from({ length: 15 }, (_, cellIndex) => (
         <td key={cellIndex} className="border-b border-r border-[#DCE6F7] px-2 py-2.5 last:border-r-0">
           <div className="skeleton h-3.5" style={{ width: cellIndex === 8 ? "75%" : cellIndex === 3 ? "65%" : "55%" }} />
         </td>
@@ -1413,39 +1412,30 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
         )}
       </td>
 
-      {/* Status Timer */}
+      {/* Status */}
       <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
-        {isFirstItem && (
-          <>
+        {isFirstItem ? (
+          <div className="flex flex-col gap-0.5">
+            <select
+              value={status}
+              onChange={(e) => onStatusChange(e.target.value)}
+              className="h-7 w-full rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none cursor-pointer transition focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+            >
+              {STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
             {inquiry.status === "in_progress" && inquiry.in_progress_at && (
-              <p className="text-[11px] font-semibold text-emerald-700 tabular-nums whitespace-nowrap">
+              <p className="text-[10px] font-semibold text-emerald-700 tabular-nums whitespace-nowrap px-0.5">
                 {formatAssignmentAge(inquiry.in_progress_at, now)}
               </p>
             )}
             {inquiry.status === "quoted" && inquiry.quoted_at && (
-              <p className="text-[11px] font-semibold text-violet-700 tabular-nums whitespace-nowrap">
+              <p className="text-[10px] font-semibold text-violet-700 tabular-nums whitespace-nowrap px-0.5">
                 {formatAssignmentAge(inquiry.quoted_at, now)}
               </p>
             )}
-            {(inquiry.status !== "in_progress" && inquiry.status !== "quoted") && (
-              <p className="text-[11px] text-slate-400">—</p>
-            )}
-          </>
-        )}
-      </td>
-
-      {/* Status */}
-      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
-        {isFirstItem ? (
-          <select
-            value={status}
-            onChange={(e) => onStatusChange(e.target.value)}
-            className="h-7 w-full rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none cursor-pointer transition focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
-          >
-            {STATUS_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
+          </div>
         ) : (
           <div className="flex h-7 items-center">
             <StatusBadge status={status} />

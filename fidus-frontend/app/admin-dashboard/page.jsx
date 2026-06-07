@@ -980,8 +980,7 @@ const ADMIN_COLS = [
   { label: "Part Number",   defaultW: 120 },
   { label: "UOM",           defaultW: 60  },
   { label: "Qty",           defaultW: 55  },
-  { label: "Allocation",    defaultW: 100 },
-  { label: "Assign Timer",  defaultW: 80  },
+  { label: "Allocation",    defaultW: 110 },
   { label: "Status",        defaultW: 100 },
   { label: "Actions",       defaultW: 72  },
 ];
@@ -1121,9 +1120,9 @@ function InquiryTable({
                         <option value="30d">Last 30 Days</option>
                       </select>
                     </div>
-                  ) : col.label === "Assign Timer" ? (
+                  ) : col.label === "Allocation" ? (
                     <div className="flex flex-col gap-1 pr-2">
-                      <span className="truncate text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">Assign Timer</span>
+                      <span className="truncate text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">Allocation</span>
                       <select
                         value={assignmentFilter}
                         onChange={(e) => setAssignmentFilter(e.target.value)}
@@ -1151,10 +1150,10 @@ function InquiryTable({
           <tbody>
             {isLoading && <LoadingRows />}
             {!isLoading && error && (
-              <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={15}>{error}</td></tr>
+              <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={14}>{error}</td></tr>
             )}
             {!isLoading && !error && inquiries.length === 0 && (
-              <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={15}>No inquiries found.</td></tr>
+              <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={14}>No inquiries found.</td></tr>
             )}
             {!isLoading && !error &&
               rows.map(({ inquiry, item, isFirstItem, groupSize }, index) => (
@@ -1203,7 +1202,7 @@ function FilterButton({ active, onClick, children }) {
 function LoadingRows() {
   return Array.from({ length: 6 }, (_, rowIndex) => (
     <tr key={rowIndex}>
-      {Array.from({ length: 15 }, (_, cellIndex) => (
+      {Array.from({ length: 14 }, (_, cellIndex) => (
         <td key={cellIndex} className="border-b border-r border-[#DCE6F7] px-2 py-2.5 last:border-r-0">
           <div className="skeleton h-3.5" style={{ width: cellIndex === 8 ? "75%" : cellIndex === 3 ? "65%" : "55%" }} />
         </td>
@@ -1310,41 +1309,38 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
       {/* Allocation */}
       <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         {isFirstItem ? (
-          <select
-            value={inquiry.assigned_to || ""}
-            onChange={(e) => {
-              if (e.target.value === "__self__") { onAssignToMe(); }
-              else { onAssignChange(e.target.value); }
-            }}
-            className="h-7 w-full rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none cursor-pointer transition focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
-          >
-            <option value="">Unassigned</option>
-            <option value="__self__">— Assign to Me —</option>
-            {/* Dynamic option when assigned to admin (not in employee list) */}
-            {inquiry.assigned_to && !employees.find((e) => e.id === inquiry.assigned_to) && (
-              <option value={inquiry.assigned_to}>
-                {inquiry.assigned_to_name || "Admin"}
-              </option>
+          <div className="flex flex-col gap-0.5">
+            <select
+              value={inquiry.assigned_to || ""}
+              onChange={(e) => {
+                if (e.target.value === "__self__") { onAssignToMe(); }
+                else { onAssignChange(e.target.value); }
+              }}
+              className="h-7 w-full rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none cursor-pointer transition focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+            >
+              <option value="">Unassigned</option>
+              <option value="__self__">— Assign to Me —</option>
+              {inquiry.assigned_to && !employees.find((e) => e.id === inquiry.assigned_to) && (
+                <option value={inquiry.assigned_to}>
+                  {inquiry.assigned_to_name || "Admin"}
+                </option>
+              )}
+              {employees.map((emp) => (
+                <option key={emp.id} value={emp.id}>{emp.name}</option>
+              ))}
+            </select>
+            {inquiry.assigned_at && (
+              <p className={`text-[10px] font-medium tabular-nums whitespace-nowrap px-0.5 ${timerClass(inquiry.assigned_at, now)}`}>
+                {formatAssignmentAge(inquiry.assigned_at, now)}
+              </p>
             )}
-            {employees.map((emp) => (
-              <option key={emp.id} value={emp.id}>{emp.name}</option>
-            ))}
-          </select>
+          </div>
         ) : (
           <div className="flex h-7 items-center">
             <span className="text-[11px] font-medium text-slate-500">
               {inquiry.assigned_to_name || "—"}
             </span>
           </div>
-        )}
-      </td>
-
-      {/* Assign Timer */}
-      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
-        {isFirstItem && (
-          <p className={`text-[11px] font-medium tabular-nums ${timerClass(inquiry.assigned_at, now)}`}>
-            {formatAssignmentAge(inquiry.assigned_at, now)}
-          </p>
         )}
       </td>
 

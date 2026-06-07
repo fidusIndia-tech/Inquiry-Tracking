@@ -283,6 +283,20 @@ export default function AdminDashboard() {
     } catch (e) { alert(e.message); }
   };
 
+  const handleAutoAssign = async () => {
+    try {
+      const response = await fetch("/api/inquiries/auto-assign", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Auto-assign failed");
+      if (data.no_mappings) {
+        alert("No client mappings set up yet. Go to Access Control to map clients to employees first.");
+      } else {
+        alert(`Auto-assign done: ${data.assigned} assigned, ${data.unmatched} had no match.`);
+        await loadInquiries();
+      }
+    } catch (e) { alert(e.message); }
+  };
+
   const handleDelete = async (uniqueCode) => {
     try {
       const response = await fetch("/api/inquiries", {
@@ -365,6 +379,7 @@ export default function AdminDashboard() {
                   onSubjectOpen={(inquiry)   => setSubjectPreview(inquiry)}
                   onDetailOpen={(inquiry)    => setDetailModal(inquiry)}
                   onAssignToMeRequest={(uc)  => setAssignToMeModal(uc)}
+                  onAutoAssign={handleAutoAssign}
                 />
               </div>
             )}
@@ -988,7 +1003,7 @@ function InquiryTable({
   dateFilter, setDateFilter,
   totalCount,
   now,
-  onDeleteRequest, onEditRequest, onSubjectOpen, onDetailOpen, onAssignToMeRequest,
+  onDeleteRequest, onEditRequest, onSubjectOpen, onDetailOpen, onAssignToMeRequest, onAutoAssign,
 }) {
   const [colWidths, setColWidths] = useState(() => ADMIN_COLS.map((c) => c.defaultW));
   const dragRef = useRef(null);
@@ -1065,13 +1080,22 @@ function InquiryTable({
           <h3 className="text-[15px] font-semibold text-slate-900">Inquiries</h3>
           <p className="text-[11px] text-slate-400 mt-0.5">{inquiries.length} of {totalCount} groups</p>
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <FilterButton active={statusFilter === "all"} onClick={() => setStatusFilter("all")}>All</FilterButton>
           {STATUS_OPTIONS.slice(0, 7).map((opt) => (
             <FilterButton key={opt.value} active={statusFilter === opt.value} onClick={() => setStatusFilter(opt.value)}>
               {opt.label}
             </FilterButton>
           ))}
+          <div className="ml-1 h-4 w-px bg-slate-200" />
+          <button
+            onClick={onAutoAssign}
+            className="h-7 rounded-lg px-3 text-[11px] font-semibold text-white transition hover:opacity-90"
+            style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", boxShadow: "0 1px 6px rgba(245,158,11,0.32)" }}
+            title="Auto-assign new inquiries by client name mapping"
+          >
+            Auto Assign
+          </button>
         </div>
       </div>
 
@@ -1494,10 +1518,21 @@ function AccessControlPanel({ users, usersError, onUsersChanged }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [clientAssignments, setClientAssignments] = useState([]);
 
   const activeUsers = users.filter((user) => user.is_active);
   const employees = activeUsers.filter((user) => user.role === "employee");
   const admins = activeUsers.filter((user) => user.role === "admin");
+
+  const fetchClientAssignments = async () => {
+    try {
+      const res = await fetch("/api/client-assignments");
+      const data = await res.json();
+      if (res.ok) setClientAssignments(data.assignments || []);
+    } catch { /* silent */ }
+  };
+
+  useEffect(() => { fetchClientAssignments(); }, []);
 
   const updateEdit = (id, field, value) => {
     setEditing((current) => ({
@@ -1657,7 +1692,129 @@ function AccessControlPanel({ users, usersError, onUsersChanged }) {
         onEdit={updateEdit}
         onSave={saveUser}
       />
+
+      <ClientMappingPanel
+        employees={employees}
+        assignments={clientAssignments}
+        onChanged={fetchClientAssignments}
+      />
     </section>
+  );
+}
+
+function ClientMappingPanel({ employees, assignments, onChanged }) {
+  const [inputs, setInputs] = useState({});
+  const [busy,   setBusy]   = useState(false);
+
+  const byEmployee = employees.reduce((acc, emp) => {
+    acc[emp.id] = assignments.filter((a) => a.employee_id === emp.id);
+    return acc;
+  }, {});
+
+  const addClient = async (employeeId) => {
+    const name = (inputs[employeeId] || "").trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/client-assignments", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ employee_id: employeeId, client_name: name }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to add");
+      setInputs((prev) => ({ ...prev, [employeeId]: "" }));
+      await onChanged();
+    } catch (e) { alert(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const removeClient = async (id) => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/client-assignments", {
+        method:  "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to remove");
+      await onChanged();
+    } catch (e) { alert(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="overflow-hidden rounded-2xl bg-white card-shadow">
+      <div className="border-b border-[#EEF2F6] px-5 py-4" style={{ background: "linear-gradient(90deg,#FFFBEB,#FEF3C7)" }}>
+        <h3 className="text-[14px] font-semibold text-slate-900">Client → Employee Routing</h3>
+        <p className="text-[11px] text-slate-400 mt-0.5">
+          Map client names to employees. The <strong>Auto Assign</strong> button on the dashboard will assign new inquiries automatically based on this list.
+        </p>
+      </div>
+
+      {employees.length === 0 ? (
+        <p className="px-5 py-8 text-center text-[12px] text-slate-400">No employees found. Add employees above first.</p>
+      ) : (
+        <div className="divide-y divide-[#EEF2F6]">
+          {employees.map((emp) => {
+            const clients = byEmployee[emp.id] || [];
+            return (
+              <div key={emp.id} className="px-5 py-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <div
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-[12px] font-bold text-white"
+                    style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)" }}
+                  >
+                    {emp.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-[13px] font-semibold text-slate-800">{emp.name}</span>
+                  <span className="ml-auto rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-600">
+                    {clients.length} client{clients.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+
+                <div className="mb-3 flex flex-wrap gap-1.5 min-h-[24px]">
+                  {clients.map((a) => (
+                    <span
+                      key={a.id}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[#E4E8EE] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-medium text-slate-700"
+                    >
+                      {a.client_name}
+                      <button
+                        onClick={() => removeClient(a.id)}
+                        disabled={busy}
+                        className="flex h-4 w-4 items-center justify-center rounded-full text-slate-300 transition hover:bg-rose-100 hover:text-rose-600 disabled:opacity-40"
+                      >
+                        <X size={10} />
+                      </button>
+                    </span>
+                  ))}
+                  {clients.length === 0 && (
+                    <span className="text-[11px] italic text-slate-400">No clients mapped yet</span>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    value={inputs[emp.id] || ""}
+                    onChange={(e) => setInputs((prev) => ({ ...prev, [emp.id]: e.target.value }))}
+                    onKeyDown={(e) => e.key === "Enter" && addClient(emp.id)}
+                    placeholder="Type client name and press Enter…"
+                    className="h-8 flex-1 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[12px] outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                  />
+                  <button
+                    onClick={() => addClient(emp.id)}
+                    disabled={busy || !inputs[emp.id]?.trim()}
+                    className="h-8 rounded-lg bg-[#1D6FD8] px-3 text-[11px] font-semibold text-white transition hover:bg-[#1559B7] disabled:opacity-60"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

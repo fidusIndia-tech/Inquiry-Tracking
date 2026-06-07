@@ -9,6 +9,7 @@ export async function PATCH(request) {
     const payload = await request.json();
     const uniqueCode = payload.unique_code || payload.uniqueCode;
     const assignedTo = payload.assigned_to || payload.assignedTo || null;
+    const refName    = payload.ref_name    || null;
 
     if (!uniqueCode) {
       return Response.json({ error: "unique_code is required" }, { status: 400 });
@@ -19,7 +20,8 @@ export async function PATCH(request) {
         `
           UPDATE inquiries
           SET
-            assigned_to = $1,
+            assigned_to      = $1,
+            assigned_ref_name = $3,
             assigned_at = CASE
               WHEN $1::BIGINT IS NULL THEN NULL
               WHEN assigned_to IS DISTINCT FROM $1::BIGINT THEN NOW()
@@ -33,9 +35,9 @@ export async function PATCH(request) {
             END,
             updated_at = NOW()
           WHERE unique_code = $2
-          RETURNING id, unique_code, assigned_to, assigned_at, status
+          RETURNING id, unique_code, assigned_to, assigned_at, assigned_ref_name, status
         `,
-        [assignedTo, uniqueCode]
+        [assignedTo, uniqueCode, refName]
       );
 
       if (updated.rowCount === 0) {

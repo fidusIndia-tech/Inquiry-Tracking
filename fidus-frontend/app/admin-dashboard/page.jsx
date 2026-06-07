@@ -203,6 +203,7 @@ export default function AdminDashboard() {
       inquiry.subject,
       inquiry.status,
       inquiry.assigned_to_name,
+      inquiry.assigned_ref_name,
       ...(inquiry.items || []).flatMap((item) => [
         item.brand,
         item.partNumber,
@@ -260,21 +261,21 @@ export default function AdminDashboard() {
     router.push("/login");
   };
 
-  const handleAssignToMe = async (uniqueCode) => {
+  const handleAssignToMe = async (uniqueCode, refName) => {
     const adminId = Number(localStorage.getItem("userId"));
     if (!adminId) { alert("Admin session not found. Please re-login."); return; }
     try {
       const response = await fetch("/api/inquiries/assign", {
         method:  "PATCH",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ unique_code: uniqueCode, assigned_to: adminId }),
+        body:    JSON.stringify({ unique_code: uniqueCode, assigned_to: adminId, ref_name: refName || null }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to assign");
       setInquiries((current) =>
         current.map((inq) =>
           inq.unique_code === uniqueCode
-            ? { ...inq, assigned_to: data.inquiry.assigned_to, assigned_at: data.inquiry.assigned_at, assigned_to_name: data.inquiry.assigned_to_name, status: data.inquiry.status }
+            ? { ...inq, assigned_to: data.inquiry.assigned_to, assigned_at: data.inquiry.assigned_at, assigned_ref_name: data.inquiry.assigned_ref_name, assigned_to_name: data.inquiry.assigned_to_name, status: data.inquiry.status }
             : inq
         )
       );
@@ -451,7 +452,7 @@ export default function AdminDashboard() {
         <AssignToMeModal
           uniqueCode={assignToMeModal}
           onClose={() => setAssignToMeModal(null)}
-          onConfirm={() => handleAssignToMe(assignToMeModal)}
+          onConfirm={(name) => handleAssignToMe(assignToMeModal, name)}
         />
       )}
     </div>
@@ -1021,7 +1022,7 @@ function InquiryTable({
       setInquiries((current) =>
         current.map((inq) =>
           inq.unique_code === uniqueCode
-            ? { ...inq, assigned_to: data.inquiry.assigned_to, assigned_at: data.inquiry.assigned_at, assigned_to_name: data.inquiry.assigned_to_name, status: data.inquiry.status }
+            ? { ...inq, assigned_to: data.inquiry.assigned_to, assigned_at: data.inquiry.assigned_at, assigned_ref_name: data.inquiry.assigned_ref_name, assigned_to_name: data.inquiry.assigned_to_name, status: data.inquiry.status }
             : inq
         )
       );
@@ -1190,7 +1191,7 @@ function AssignToMeModal({ uniqueCode, onClose, onConfirm }) {
   const confirm = async () => {
     if (!name.trim()) return;
     setBusy(true);
-    try { await onConfirm(); }
+    try { await onConfirm(name.trim()); }
     finally { setBusy(false); }
   };
 
@@ -1373,7 +1374,7 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
         ) : (
           <div className="flex h-7 items-center">
             <span className="text-[11px] font-medium text-slate-500">
-              {inquiry.assigned_to_name || "—"}
+              {inquiry.assigned_ref_name || inquiry.assigned_to_name || "—"}
             </span>
           </div>
         )}

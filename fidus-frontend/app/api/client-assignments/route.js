@@ -13,13 +13,24 @@ const ENSURE_TABLE = `
 export async function GET() {
   try {
     await query(ENSURE_TABLE);
-    const result = await query(`
-      SELECT ec.id, ec.employee_id, ec.client_name, u.name AS employee_name
-      FROM   employee_clients ec
-      JOIN   users u ON u.id = ec.employee_id
-      ORDER  BY u.name, ec.client_name
-    `);
-    return Response.json({ assignments: result.rows });
+    const [assignments, clientNames] = await Promise.all([
+      query(`
+        SELECT ec.id, ec.employee_id, ec.client_name, u.name AS employee_name
+        FROM   employee_clients ec
+        JOIN   users u ON u.id = ec.employee_id
+        ORDER  BY u.name, ec.client_name
+      `),
+      query(`
+        SELECT DISTINCT TRIM(client_name) AS client_name
+        FROM   inquiries
+        WHERE  client_name IS NOT NULL AND TRIM(client_name) <> ''
+        ORDER  BY 1
+      `),
+    ]);
+    return Response.json({
+      assignments: assignments.rows,
+      clientNames: clientNames.rows.map((r) => r.client_name),
+    });
   } catch (error) {
     return Response.json({ error: error.message || "Failed to load" }, { status: 500 });
   }

@@ -1509,6 +1509,7 @@ function AccessControlPanel({ users, usersError, onUsersChanged }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [clientAssignments, setClientAssignments] = useState([]);
+  const [clientNames,       setClientNames]       = useState([]);
 
   const activeUsers = users.filter((user) => user.is_active);
   const employees = activeUsers.filter((user) => user.role === "employee");
@@ -1518,7 +1519,10 @@ function AccessControlPanel({ users, usersError, onUsersChanged }) {
     try {
       const res = await fetch("/api/client-assignments");
       const data = await res.json();
-      if (res.ok) setClientAssignments(data.assignments || []);
+      if (res.ok) {
+        setClientAssignments(data.assignments || []);
+        setClientNames(data.clientNames || []);
+      }
     } catch { /* silent */ }
   };
 
@@ -1686,20 +1690,32 @@ function AccessControlPanel({ users, usersError, onUsersChanged }) {
       <ClientMappingPanel
         employees={employees}
         assignments={clientAssignments}
+        clientNames={clientNames}
         onChanged={fetchClientAssignments}
       />
     </section>
   );
 }
 
-function ClientMappingPanel({ employees, assignments, onChanged }) {
-  const [inputs, setInputs] = useState({});
-  const [busy,   setBusy]   = useState(false);
+function ClientMappingPanel({ employees, assignments, clientNames = [], onChanged }) {
+  const [inputs,       setInputs]       = useState({});
+  const [busy,         setBusy]         = useState(false);
+  const [focusedEmp,   setFocusedEmp]   = useState(null);
+  const [dropOpen,     setDropOpen]     = useState(false);
 
   const byEmployee = employees.reduce((acc, emp) => {
     acc[emp.id] = assignments.filter((a) => a.employee_id === emp.id);
     return acc;
   }, {});
+
+  const getSuggestions = (empId) => {
+    const val = (inputs[empId] || "").trim().toLowerCase();
+    if (!val) return [];
+    const already = new Set((byEmployee[empId] || []).map((a) => a.client_name.toLowerCase()));
+    return clientNames
+      .filter((n) => n.toLowerCase().includes(val) && !already.has(n.toLowerCase()))
+      .slice(0, 8);
+  };
 
   const addClient = async (employeeId) => {
     const name = (inputs[employeeId] || "").trim();
@@ -1784,13 +1800,30 @@ function ClientMappingPanel({ employees, assignments, onChanged }) {
                 </div>
 
                 <div className="flex gap-2">
-                  <input
-                    value={inputs[emp.id] || ""}
-                    onChange={(e) => setInputs((prev) => ({ ...prev, [emp.id]: e.target.value }))}
-                    onKeyDown={(e) => e.key === "Enter" && addClient(emp.id)}
-                    placeholder="Type client name and press Enter…"
-                    className="h-8 flex-1 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[12px] outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
-                  />
+                  <div className="relative flex-1">
+                    <input
+                      value={inputs[emp.id] || ""}
+                      onChange={(e) => { setInputs((prev) => ({ ...prev, [emp.id]: e.target.value })); setDropOpen(true); }}
+                      onFocus={() => { setFocusedEmp(emp.id); setDropOpen(true); }}
+                      onBlur={() => setTimeout(() => setDropOpen(false), 150)}
+                      onKeyDown={(e) => e.key === "Enter" && addClient(emp.id)}
+                      placeholder="Type client name and press Enter…"
+                      className="h-8 w-full rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[12px] outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                    />
+                    {focusedEmp === emp.id && dropOpen && getSuggestions(emp.id).length > 0 && (
+                      <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-lg border border-[#E4E8EE] bg-white" style={{ boxShadow: "0 8px 24px rgba(0,0,0,0.10)" }}>
+                        {getSuggestions(emp.id).map((name) => (
+                          <button
+                            key={name}
+                            onMouseDown={() => { setInputs((prev) => ({ ...prev, [emp.id]: name })); setDropOpen(false); }}
+                            className="w-full px-3 py-2 text-left text-[12px] text-slate-700 transition hover:bg-[#EFF6FF] hover:text-[#1D6FD8]"
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={() => addClient(emp.id)}
                     disabled={busy || !inputs[emp.id]?.trim()}

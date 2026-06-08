@@ -57,7 +57,13 @@ export default function LoginPage() {
           role,
         }),
       });
-      const data = await response.json();
+
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("Server is unavailable. Please try again in a moment.");
+      }
 
       if (!response.ok) {
         throw new Error(data.error || "Invalid email or password.");

@@ -4,6 +4,8 @@ workers/tasks.py
 Full pipeline — sends ONE parsed RFQ row per email to the Next.js backend.
 """
 
+import hashlib
+import re
 import traceback
 from celery import Task
 from googleapiclient.errors import HttpError
@@ -19,8 +21,8 @@ from history_tracker import get_latest_history_id, save_latest_history_id, get_a
 from email_parser import parse_email
 from rfq_filter import is_rfq_candidate
 from attachment_handler import extract_attachment_text
-from llm_extractor import is_rfq_email, extract_rfq_data
-from next_api_client import post_rfq_item
+from llm_extractor import classify_email, extract_rfq_data
+from next_api_client import post_rfq_item, post_reminder
 from config import get_settings
 from logging_setup import get_logger
 
@@ -78,20 +80,45 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
                 stats["layer1_dropped"] += 1
                 continue
 
-            # 3. Extract text from attachments before LLM extraction.
+            # 3. Extract text from attachments before LLM classification.
             attachment_text = ""
             if parsed.get("has_attachment"):
                 attachment_text = extract_attachment_text(
                     service, msg_id, raw.get("payload", {})
                 )
 
-            # 4. Layer 2: LLM yes/no classifier.
-            if not is_rfq_email(parsed):
+            # 4. Layer 2: 3-way LLM classifier (new_rfq / reminder / not_rfq).
+            classification = classify_email(parsed)
+            email_type = classification["type"]
+
+            if email_type == "not_rfq":
                 stats["layer2_dropped"] += 1
-                logger.debug("L2 DROP | %s | %s", parsed["sender"], parsed["subject"])
+                logger.debug("L2 DROP | %s | %s", parsed.get("sender"), parsed.get("subject"))
                 continue
 
-            logger.info("RFQ | %s | %s", parsed.get("sender", ""), parsed.get("subject", ""))
+            thread_id = parsed.get("thread_id")
+            sender    = parsed.get("sender", "")
+            subject   = parsed.get("subject", "")
+
+            # 4a. Reminder path — store in reminders panel, no new inquiry.
+            if email_type == "reminder":
+                try:
+                    post_reminder({
+                        "message_id":  msg_id,
+                        "thread_id":   thread_id,
+                        "user_id":     user_id,
+                        "sender":      sender,
+                        "subject":     subject,
+                        "llm_summary": classification.get("summary"),
+                        "email_date":  parsed.get("date_str"),
+                    })
+                    logger.info("REMINDER | %s | %s", sender, subject)
+                except Exception as exc:
+                    logger.error("Failed to post reminder %s: %s", msg_id, exc)
+                continue
+
+            # 4b. New RFQ path — extract items and create inquiry.
+            logger.info("RFQ | %s | %s", sender, subject)
 
             # 5. Layer 3: LLM structured extractor.
             line_items = extract_rfq_data(parsed, attachment_text)
@@ -121,18 +148,27 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
                 str(i.get("notes") or "") for i in line_items if isinstance(i, dict)
             )
 
+            # Stable content fingerprint — blocks duplicate inquiries from reply threads.
+            clean_subj = re.sub(r'^(re:|fw:|fwd:)\s*', '', subject.lower().strip())
+            parts_key  = ",".join(sorted(p.strip().lower() for p in part_numbers.split(",") if p.strip()))
+            qtys_key   = ",".join(sorted(q.strip() for q in quantities.split(",") if q.strip()))
+            fp_raw     = f"{sender.lower().strip()}|{clean_subj}|{parts_key}|{qtys_key}"
+            fingerprint = hashlib.sha256(fp_raw.encode()).hexdigest()[:32]
+
             result = post_rfq_item({
-                "message_id": msg_id,
-                "user_id": user_id,
-                "username": username,
-                "location": location,
-                "brands": brands,
-                "part_numbers": part_numbers,
-                "quantities": quantities,
-                "notes": notes,
-                "sender": parsed.get("sender"),
-                "subject": parsed.get("subject"),
-                "email_date": parsed.get("date_str"),
+                "message_id":        msg_id,
+                "thread_id":         thread_id,
+                "user_id":           user_id,
+                "username":          username,
+                "location":          location,
+                "brands":            brands,
+                "part_numbers":      part_numbers,
+                "quantities":        quantities,
+                "notes":             notes,
+                "sender":            sender,
+                "subject":           subject,
+                "email_date":        parsed.get("date_str"),
+                "source_fingerprint": fingerprint,
             })
 
             stats["rfq_exported"] += 1
@@ -140,7 +176,7 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
             logger.info(
                 "Exported RFQ | %s | %s | items=%s",
                 result.get("uniqueCode"),
-                username or parsed.get("sender", ""),
+                username or sender,
                 result.get("itemCount"),
             )
 

@@ -19,11 +19,36 @@ export async function POST(request) {
     }
 
     const result = await withTransaction(async (client) => {
+      // Fingerprint dedup: if same content already exists, skip creating a new inquiry.
+      const fingerprint = payload.source_fingerprint || null;
+      if (fingerprint) {
+        const existing = await client.query(
+          `SELECT r.id, i.unique_code, i.id AS inquiry_id, i.status
+           FROM raw_email_items r
+           JOIN inquiries i ON i.raw_email_item_id = r.id
+           WHERE r.source_fingerprint = $1
+           LIMIT 1`,
+          [fingerprint]
+        );
+        if (existing.rows.length > 0) {
+          const row = existing.rows[0];
+          return {
+            skipped: true,
+            reason: "duplicate_fingerprint",
+            rawEmailItemId: row.id,
+            inquiryId: row.inquiry_id,
+            uniqueCode: row.unique_code,
+            itemCount: 0,
+          };
+        }
+      }
+
       const rawResult = await client.query(
         `
           INSERT INTO raw_email_items (
             parser_row_id,
             message_id,
+            thread_id,
             source_user_id,
             username,
             location,
@@ -35,11 +60,13 @@ export async function POST(request) {
             subject,
             email_date,
             parser_created_at,
+            source_fingerprint,
             processing_status
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'processing')
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'processing')
           ON CONFLICT (message_id) WHERE message_id IS NOT NULL
           DO UPDATE SET
+            thread_id = EXCLUDED.thread_id,
             username = EXCLUDED.username,
             location = EXCLUDED.location,
             brands = EXCLUDED.brands,
@@ -50,6 +77,7 @@ export async function POST(request) {
             subject = EXCLUDED.subject,
             email_date = EXCLUDED.email_date,
             parser_created_at = EXCLUDED.parser_created_at,
+            source_fingerprint = EXCLUDED.source_fingerprint,
             processing_status = 'processing',
             processing_error = NULL
           RETURNING *
@@ -57,6 +85,7 @@ export async function POST(request) {
         [
           rawItem.parser_row_id,
           rawItem.message_id,
+          payload.thread_id || null,
           rawItem.source_user_id,
           rawItem.username,
           rawItem.location,
@@ -68,6 +97,7 @@ export async function POST(request) {
           rawItem.subject,
           rawItem.email_date,
           rawItem.parser_created_at,
+          fingerprint,
         ]
       );
 

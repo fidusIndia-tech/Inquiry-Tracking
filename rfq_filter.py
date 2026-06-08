@@ -35,6 +35,8 @@ SPAM_DOMAINS = {
     "cx.endress.com", "smcelectric.com", "inform.wtwhmedia.com",
     # confirmed marketing/spam senders
     "zitong360.com", "apacfan.com", "china-power-contractor.cn",
+    # bulk e-procurement platforms (spam volume)
+    "vend-x.com", "mail.vend-x.com",
 }
 
 # ── Subject line patterns → NOT an RFQ ──────────────────────────────────────
@@ -132,8 +134,9 @@ RFQ_SUBJECT_KEYWORDS = [
     "requirement", "requirment",
     # more specific spare-part requests (bare "spare" removed — too generic)
     "spare parts required", "spare parts needed", "spare parts enquiry",
-    "re:", "fwd:",
     "quotation req", "rate inquiry", "rate request",
+    # NOTE: "re:" and "fwd:" removed — reply/forward chains go to LLM classifier
+    # which distinguishes genuine new RFQs from reminders/follow-ups.
 ]
 
 RFQ_BODY_KEYWORDS = [
@@ -154,6 +157,27 @@ RFQ_BODY_KEYWORDS = [
 
 _REJECT_RE = re.compile("|".join(REJECT_SUBJECT_PATTERNS), re.IGNORECASE)
 _SELLER_RE = re.compile("|".join(re.escape(s) for s in SELLER_BODY_SIGNALS), re.IGNORECASE)
+
+# Patterns that mark the start of a quoted reply block
+_QUOTE_START_RE = re.compile(
+    r'^(>|\s*on .{5,80} wrote:\s*$|[-_]{4,}|from:.*sent:|-----original message)',
+    re.IGNORECASE,
+)
+
+
+def _strip_quoted_reply(text: str) -> str:
+    """
+    Remove the quoted reply chain from an email body.
+    Returns only the fresh top-of-email content the sender actually wrote.
+    """
+    if not text:
+        return ""
+    clean = []
+    for line in text.split('\n'):
+        if _QUOTE_START_RE.match(line.strip()):
+            break
+        clean.append(line)
+    return '\n'.join(clean).strip()
 
 
 def _extract_text(email_dict: dict) -> tuple[str, str]:
@@ -182,8 +206,15 @@ def is_rfq_candidate(email_dict: dict) -> bool:
 
     plain, html_stripped = _extract_text(email_dict)
 
-    # best single source for keyword matching
-    body = plain if len(plain) >= 100 else html_stripped
+    # For reply/forward chains, strip quoted content so old RFQ data in the
+    # quoted block does not trigger a false fast-accept or a false seller drop.
+    is_reply = subject.startswith(("re:", "fwd:", "fw:"))
+    if is_reply:
+        plain        = _strip_quoted_reply(plain)
+        html_stripped = _strip_quoted_reply(html_stripped)
+
+    # Use whichever source is richer — HTML-table emails have item data only in HTML.
+    body = html_stripped if len(html_stripped) > len(plain) + 200 else (plain if plain else html_stripped)
     # combined source for seller signal detection (catches HTML-only emails)
     body_all = plain + " " + html_stripped
 

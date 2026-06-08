@@ -56,58 +56,75 @@ def _strip_html(html: str) -> str:
     return text.strip()
 
 
-def _best_body(email_dict: dict, max_chars: int = 4000) -> str:
+def _best_body(email_dict: dict, max_chars: int = 8000) -> str:
     """
     Return the best available body text for the LLM.
-    Uses plain text when it's substantial; falls back to stripped HTML
-    (e.g. Polycab-style emails where line items live in an HTML table).
+
+    Key rule: if the HTML body carries significantly more content than the
+    plain-text body, the RFQ line-item table lives only in the HTML (the plain
+    text is just the intro paragraph).  In that case we MUST use the HTML-
+    derived text — otherwise the LLM never sees any part numbers.
+
+    Examples of the failure this prevents:
+      - "Hello Sales, Could you please send us a commercial offer…" (220 chars)
+        followed by a 13-item Schneider/ABB table that is HTML-only.
+      - SAP/ERP purchase-requisition emails where only the header line is plain.
     """
     plain = (email_dict.get("body_plain") or "").strip()
     html  = (email_dict.get("body_html")  or "").strip()
 
-    if len(plain) >= 200 or not html:
+    if not html:
         return plain[:max_chars]
 
     stripped = _strip_html(html)
-    return stripped[:max_chars]
+
+    # If the HTML-derived text is substantially richer than plain text, the
+    # item table lives in HTML — use it regardless of plain text length.
+    if len(stripped) > len(plain) + 300:
+        return stripped[:max_chars]
+
+    # Plain text is rich enough (no hidden table).  Use the cleaner version.
+    return plain[:max_chars]
 
 
 # ── Classifier prompt ─────────────────────────────────────────────────────────
 
 CLASSIFIER_SYSTEM = """You are a strict email classifier for Fidus India, an industrial automation parts SUPPLIER.
 
-TASK: Decide if this email is a genuine inbound RFQ — a real customer asking Fidus India to quote a price for parts they want to purchase.
+TASK: Classify this email into exactly one of three types.
 
-Respond with ONLY valid JSON: {"is_rfq": true} or {"is_rfq": false}
+Respond with ONLY valid JSON — one of:
+  {"type": "new_rfq",  "summary": "one sentence describing what the customer wants"}
+  {"type": "reminder", "summary": "one sentence describing what they are following up on"}
+  {"type": "not_rfq",  "summary": null}
 
-DEFAULT ANSWER IS FALSE. Return true ONLY when you are fully confident ALL three conditions are met:
-  1. The sender is clearly a BUYER or end-customer (a company or person who needs parts)
-  2. They are explicitly asking Fidus India to send them a price or quotation
-  3. The email contains specific items they want to buy (part numbers, model numbers, or product descriptions with quantity)
+TYPE DEFINITIONS:
 
-Return FALSE for ANY of the following — even if the email mentions part numbers or brands:
-  SELLER OUTREACH (most common false positive):
-    - A vendor, supplier, trader, or distributor writing to SELL their products to us
-    - Language like: "our main range", "we can supply", "we stock", "our products include",
-      "if interested contact us", "we can provide competitive price", "pls send us your enquiry"
-    - Chinese or overseas suppliers promoting their catalog or spare parts stock
-    - Anyone saying they "represent" a brand and want us to buy from them
+"new_rfq" — A buyer is asking Fidus India to quote parts for the FIRST TIME.
+  ALL THREE must be true:
+  1. Sender is clearly a BUYER or end-customer (not a vendor selling to us)
+  2. They are asking Fidus India for a price or quotation
+  3. Email contains specific items to buy (part numbers, model numbers, or descriptions with quantity)
 
-  MARKETING / NEWSLETTERS:
-    - Promotional emails, product announcements, price lists being shared
-    - Emails with "unsubscribe", "view in browser", or bulk-email formatting
-    - Event invitations, webinars, trade shows, company news
+"reminder" — A follow-up or reminder on a PREVIOUSLY submitted inquiry. Signs include:
+  - "please provide revised quotation", "please revert", "awaiting your response"
+  - "kindly send quote", "follow up on our previous request", "delivery reminder"
+  - "please confirm delivery", "as discussed", references to a prior RFQ/PO/inquiry number
+  - The email is a reply (Re:) and the new content is only a follow-up, not new items
+  These are NOT new RFQs — they are chasing an existing one.
 
-  UNCLEAR OR GENERIC:
-    - Emails that mention parts but do not clearly ask Fidus India for a quote
-    - Emails where it is ambiguous who is the buyer and who is the seller
-    - General enquiries with no specific part or quantity mentioned
+"not_rfq" — Spam, marketing, seller outreach, newsletters, or unrelated emails:
+  - Vendors writing to SELL their products to us
+  - Promotional emails, product announcements, price lists, newsletters
+  - Google system emails, event invitations, webinars
+  - Any email where it is unclear who is buying and who is selling
 
-WHEN IN DOUBT → return {"is_rfq": false}
+WHEN IN DOUBT → return "not_rfq"
 
-A genuine RFQ looks like: a customer sends a list of part numbers and quantities
-and asks "please quote" or "kindly provide rates" or "request for quotation".
-Everything else is false."""
+For "summary":
+  - "new_rfq": e.g. "Customer requesting quote for 3 OMRON PLC items"
+  - "reminder": e.g. "Client following up on Parker PVP pump quotation — please send revised quote"
+  - "not_rfq": null"""
 
 CLASSIFIER_USER = """Email:
 From: {sender}
@@ -157,10 +174,11 @@ Email body:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def is_rfq_email(email_dict: dict) -> bool:
+def classify_email(email_dict: dict) -> dict:
     """
-    Layer 2: Ask gpt-4o-mini if this is an RFQ.
-    Uses HTML fallback so emails with body in HTML tables are classified correctly.
+    Layer 2: 3-way classifier using gpt-4o-mini.
+    Returns {"type": "new_rfq"|"reminder"|"not_rfq", "summary": str|None}
+    Falls back to {"type": "not_rfq", "summary": None} on any error.
     """
     body_preview = _best_body(email_dict, max_chars=1500)
 
@@ -178,15 +196,23 @@ def is_rfq_email(email_dict: dict) -> bool:
                 {"role": "user",   "content": prompt},
             ],
             temperature=0,
-            max_tokens=20,
+            max_tokens=100,
             response_format={"type": "json_object"},
         )
         result = json.loads(response.choices[0].message.content)
-        return bool(result.get("is_rfq", False))
+        email_type = result.get("type", "not_rfq")
+        if email_type not in ("new_rfq", "reminder", "not_rfq"):
+            email_type = "not_rfq"
+        return {"type": email_type, "summary": result.get("summary")}
 
     except Exception as exc:
         logger.error("LLM classifier error: %s", exc)
-        return False
+        return {"type": "not_rfq", "summary": None}
+
+
+def is_rfq_email(email_dict: dict) -> bool:
+    """Backward-compatible wrapper — returns True only for new_rfq."""
+    return classify_email(email_dict)["type"] == "new_rfq"
 
 
 def extract_rfq_data(email_dict: dict, attachment_text: str = "") -> list[dict]:
@@ -195,11 +221,11 @@ def extract_rfq_data(email_dict: dict, attachment_text: str = "") -> list[dict]:
     Returns a list of line-item dicts (one per part requested).
     Handles HTML-only bodies and multi-item attachments.
     """
-    body = _best_body(email_dict, max_chars=4000)
+    body = _best_body(email_dict, max_chars=15000)
 
     attachment_section = ""
     if attachment_text.strip():
-        attachment_section = f"Attachment text:\n{attachment_text[:4000]}"
+        attachment_section = f"Attachment text:\n{attachment_text[:12000]}"
 
     prompt = EXTRACTOR_USER.format(
         sender             = email_dict.get("sender",  ""),
@@ -218,7 +244,7 @@ def extract_rfq_data(email_dict: dict, attachment_text: str = "") -> list[dict]:
                 {"role": "user",   "content": prompt},
             ],
             temperature=0,
-            max_tokens=2000,
+            max_tokens=12000,
             response_format={"type": "json_object"},
         )
         raw = response.choices[0].message.content

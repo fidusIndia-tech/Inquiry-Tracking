@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -10,18 +10,64 @@ import {
   Search,
   Plus,
   Save,
+  X,
 } from "lucide-react";
 
 export default function EmployeeDashboard() {
   const router = useRouter();
 
-  const [activeMenu, setActiveMenu] = useState("dashboard");
+  const [activeMenu, setActiveMenu]     = useState("dashboard");
+  const [notifOpen, setNotifOpen]       = useState(false);
+  const [reminders, setReminders]       = useState([]);
+  const notifRef                        = useRef(null);
+
+  const unreadCount = reminders.filter((r) => r.status === "unread").length;
+
+  const fetchReminders = useCallback(async () => {
+    try {
+      const res  = await fetch("/api/reminders");
+      const data = await res.json();
+      setReminders(data.reminders || []);
+    } catch (_) {}
+  }, []);
+
+  useEffect(() => {
+    fetchReminders();
+  }, [fetchReminders]);
+
+  // Close panel when clicking outside
+  useEffect(() => {
+    function handleClick(e) {
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setNotifOpen(false);
+      }
+    }
+    if (notifOpen) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [notifOpen]);
+
+  const markSeen = async (id) => {
+    await fetch("/api/reminders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status: "seen" }),
+    });
+    setReminders((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, status: "seen" } : r))
+    );
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("role");
     localStorage.removeItem("userId");
     localStorage.removeItem("userName");
     router.push("/login");
+  };
+
+  const formatDate = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
   };
 
   return (
@@ -94,9 +140,93 @@ export default function EmployeeDashboard() {
             </div>
 
             {/* NOTIFICATION */}
-            <button className="w-12 h-12 rounded-2xl bg-[#fafafa] border border-neutral-200 flex items-center justify-center hover:bg-orange-50 hover:border-orange-200 transition-all">
-              <Bell size={20} />
-            </button>
+            <div className="relative" ref={notifRef}>
+              <button
+                onClick={() => setNotifOpen((o) => !o)}
+                className="relative w-12 h-12 rounded-2xl bg-[#fafafa] border border-neutral-200 flex items-center justify-center hover:bg-orange-50 hover:border-orange-200 transition-all"
+              >
+                <Bell size={20} />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 top-14 w-[420px] bg-white border border-neutral-200 rounded-[24px] shadow-2xl z-50 overflow-hidden">
+                  {/* Panel header */}
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 bg-orange-50">
+                    <div>
+                      <h3 className="text-lg font-bold text-neutral-900">Reminders</h3>
+                      <p className="text-xs text-neutral-500 mt-0.5">
+                        {unreadCount > 0 ? `${unreadCount} unread` : "All caught up"}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setNotifOpen(false)}
+                      className="text-neutral-400 hover:text-neutral-700 transition-colors"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  {/* Reminder list */}
+                  <div className="max-h-[480px] overflow-y-auto divide-y divide-neutral-100">
+                    {reminders.length === 0 ? (
+                      <div className="px-6 py-10 text-center text-neutral-400 text-sm">
+                        No reminders yet
+                      </div>
+                    ) : (
+                      reminders.map((r, i) => (
+                        <div
+                          key={r.id}
+                          onClick={() => r.status === "unread" && markSeen(r.id)}
+                          className={`px-5 py-4 cursor-pointer transition-colors ${
+                            r.status === "unread"
+                              ? "bg-orange-50/60 hover:bg-orange-50"
+                              : "hover:bg-neutral-50"
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            {/* Serial */}
+                            <span className="text-xs font-bold text-neutral-300 mt-0.5 w-5 shrink-0">
+                              {i + 1}
+                            </span>
+
+                            <div className="flex-1 min-w-0">
+                              {/* Linked inquiry code */}
+                              {r.unique_code && (
+                                <span className="inline-block text-[11px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-lg mb-1">
+                                  {r.unique_code}
+                                </span>
+                              )}
+
+                              {/* LLM summary */}
+                              <p className="text-sm font-medium text-neutral-800 leading-snug">
+                                {r.llm_summary || r.subject || "Follow-up reminder"}
+                              </p>
+
+                              {/* Meta */}
+                              <p className="text-xs text-neutral-400 mt-1">
+                                {r.sender_name || r.sender_email}
+                                {" · "}
+                                {formatDate(r.received_at)}
+                              </p>
+                            </div>
+
+                            {/* Unread dot */}
+                            {r.status === "unread" && (
+                              <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0 mt-1.5" />
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

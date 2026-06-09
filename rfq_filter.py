@@ -39,6 +39,23 @@ FORWARDED_HEADER_RE = re.compile(
     r"(?is)\bfrom:\s*.+?\b(?:sent|date):\s*.+?\bto:\s*.+?\b(?:cc:\s*.+?)?\bsubject:\s*",
 )
 
+# ── Hard-drop: numbered/logistics Fidus addresses (never client inquiries) ───
+# fidusindia1-19@gmail.com are internal shared accounts; scm@fidusindia.com is logistics team.
+ALWAYS_DROP_SENDER_ADDRS = frozenset({
+    "scm@fidusindia.com",
+})
+_ALWAYS_DROP_NUMBERED_RE = re.compile(
+    r"(?:^|<|\s)fidusindia(?:[1-9]|1[0-9])@gmail\.com(?:>|\s|$)",
+    re.IGNORECASE,
+)
+
+# ── Priority senders: admin / purchase-head forwarding client RFQs ───────────
+# These bypass all filters and are accepted unconditionally.
+PRIORITY_SENDER_ADDRS = frozenset({
+    "fidusindia@gmail.com",
+    "purchasehead@gmail.com",
+})
+
 # ── Sender domains that are NEVER RFQs ───────────────────────────────────────
 SPAM_DOMAINS = {
     "machinebidder.com", "fluidhandlingpro.com", "netlabindia.com",
@@ -138,6 +155,20 @@ SELLER_BODY_SIGNALS = [
     "reply me now we will",
 ]
 
+# ── Logistics / post-order signals → drop when found in reply new content ────
+# These indicate order-fulfillment/transport operations, not RFQ follow-ups.
+LOGISTICS_BODY_SIGNALS = [
+    "transport id",
+    "transporter id",
+    "e-way bill",
+    "ewaybill",
+    "docket no",
+    "docket number",
+    "arrange the pickup",
+    "pick-up request",
+    "case number is",
+]
+
 # ── Keywords that STRONGLY suggest an inbound RFQ ────────────────────────────
 RFQ_SUBJECT_KEYWORDS = [
     "rfq", "request for quotation", "request for quote",
@@ -194,8 +225,9 @@ REPLY_FOLLOWUP_RE = re.compile(
     re.IGNORECASE,
 )
 
-_REJECT_RE = re.compile("|".join(REJECT_SUBJECT_PATTERNS), re.IGNORECASE)
-_SELLER_RE = re.compile("|".join(re.escape(s) for s in SELLER_BODY_SIGNALS), re.IGNORECASE)
+_REJECT_RE   = re.compile("|".join(REJECT_SUBJECT_PATTERNS), re.IGNORECASE)
+_SELLER_RE   = re.compile("|".join(re.escape(s) for s in SELLER_BODY_SIGNALS), re.IGNORECASE)
+_LOGISTICS_RE = re.compile("|".join(re.escape(s) for s in LOGISTICS_BODY_SIGNALS), re.IGNORECASE)
 
 
 def _extract_text(email_dict: dict) -> tuple[str, str]:
@@ -264,6 +296,18 @@ def is_rfq_candidate(email_dict: dict) -> bool:
     sender  = (email_dict.get("sender")  or "").lower()
     subject = (email_dict.get("subject") or "").lower()
 
+    # ── 0a. Hard-drop specific internal Fidus addresses ──────────────────────
+    _am = re.search(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}", sender)
+    sender_addr = _am.group(0) if _am else ""
+    if sender_addr in ALWAYS_DROP_SENDER_ADDRS or _ALWAYS_DROP_NUMBERED_RE.search(sender):
+        logger.debug("DROP (internal always-drop) | %s | %s", sender, subject[:60])
+        return False
+
+    # ── 0b. Priority senders: accept unconditionally ─────────────────────────
+    if sender_addr in PRIORITY_SENDER_ADDRS:
+        logger.debug("KEEP (priority sender) | %s | %s", sender, subject[:60])
+        return True
+
     plain, html_stripped = _extract_text(email_dict)
 
     # best single source for keyword matching
@@ -299,6 +343,16 @@ def is_rfq_candidate(email_dict: dict) -> bool:
     if is_reply_chain_noise(email_dict):
         logger.debug("DROP (reply-chain noise before LLM) | %s | %s", sender, subject[:60])
         return False
+
+    # ── 4b. Drop logistics/transport signals in reply/fwd new content ─────────
+    # Checks only the new text (before the quoted chain) so an old quoted RFQ
+    # in the thread doesn't block the check.
+    if subject.startswith(("re:", "fwd:", "fw:")):
+        new_body = _latest_reply_text(body)
+        m = _LOGISTICS_RE.search(new_body)
+        if m:
+            logger.debug("DROP (logistics '%s' in reply) | %s | %s", m.group(), sender, subject[:60])
+            return False
 
     # ── 4. Drop seller / newsletter signals ──────────────────────────────
     # Runs BEFORE keyword fast-accepts and checks BOTH plain AND stripped HTML,

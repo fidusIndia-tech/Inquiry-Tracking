@@ -54,6 +54,26 @@ def _forwarded_section_only(text: str) -> str:
     return text[match.start():].strip()
 
 
+def _new_reply_content(text: str) -> str:
+    """
+    Return only the new top-of-reply content — the text BEFORE the quoted chain.
+    Used by the classifier so it judges the CURRENT message, not old quoted history.
+    """
+    if not text:
+        return ""
+    markers = [
+        r"(?im)^[-\s]*(forwarded\s+message|begin\s+forwarded\s+message|original\s+message)[-\s]*$",
+        r"(?im)^from:\s*.+$",
+        r"(?im)^on\s+.+\s+wrote:\s*$",
+    ]
+    cut_at = len(text)
+    for pattern in markers:
+        m = re.search(pattern, text)
+        if m:
+            cut_at = min(cut_at, m.start())
+    return text[:cut_at].strip()
+
+
 # ── HTML → plain text ─────────────────────────────────────────────────────────
 
 def _strip_html(html: str) -> str:
@@ -225,6 +245,10 @@ Return false only when you are confident the email is NOT an RFQ.
 Do not reject a message just because the sender address contains words like "sales" or "info"
 if the content is a real RFQ forwarded from a buyer.
 
+IMPORTANT — for reply/forward chains:
+  You will receive only the LATEST reply text (the new message at the top), not the full quoted history.
+  Base your decision entirely on this new content. Do not assume old quoted RFQ context makes it true.
+
 Return FALSE for ANY of the following — even if the email mentions part numbers or brands:
   SELLER OUTREACH (most common false positive):
     - A vendor, supplier, trader, or distributor writing to SELL their products to us
@@ -237,6 +261,14 @@ Return FALSE for ANY of the following — even if the email mentions part number
     - Promotional emails, product announcements, price lists being shared
     - Emails with "unsubscribe", "view in browser", or bulk-email formatting
     - Event invitations, webinars, trade shows, company news
+
+  LOGISTICS / DELIVERY / POST-ORDER OPERATIONS:
+    - Emails about dispatch status, confirmed dispatch dates, or shipment tracking
+    - Emails sharing transport IDs, transporter IDs, e-way bill numbers, or docket numbers
+    - Emails about pickup arrangements, courier coordination, or transportation logistics
+    - Any email whose purpose is order fulfillment or delivery for an already-placed order
+    - Examples: "please share transport ID for e-way bill", "docket no is XXXX", "arrange pickup",
+      "provide confirmed dispatch date", "case number for pickup request"
 
   UNCLEAR OR GENERIC:
     - Emails that mention parts but do not clearly ask Fidus India for a quote
@@ -318,9 +350,21 @@ Email body:
 def is_rfq_email(email_dict: dict) -> bool:
     """
     Layer 2: Ask gpt-4o-mini if this is an RFQ.
-    Uses HTML fallback so emails with body in HTML tables are classified correctly.
+    For reply/fwd chains, passes only the new top-of-reply content so the LLM
+    judges the current message and not quoted history (which may contain old RFQs).
     """
-    body_preview = _best_body(email_dict, max_chars=1500)
+    subject = (email_dict.get("subject") or "").strip().lower()
+    is_chain = subject.startswith(("re:", "fwd:", "fw:"))
+
+    if is_chain:
+        plain = (email_dict.get("body_plain") or "").strip()
+        html  = (email_dict.get("body_html")  or "").strip()
+        raw   = plain if len(plain) >= 100 else (_strip_html(html) if html else plain)
+        body_preview = _new_reply_content(raw)[:1500]
+        if not body_preview:
+            body_preview = _best_body(email_dict, max_chars=1500)
+    else:
+        body_preview = _best_body(email_dict, max_chars=1500)
 
     prompt = CLASSIFIER_USER.format(
         sender  = email_dict.get("sender",  ""),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import InquiryDetailModal from "@/app/components/InquiryDetailModal";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -16,6 +16,7 @@ import {
   LogOut,
   Menu,
   Pencil,
+  Plus,
   RefreshCw,
   Search,
   Trash2,
@@ -72,7 +73,25 @@ export default function AdminDashboard() {
   const [detailModal,        setDetailModal]        = useState(null);
   const [assignToMeModal,    setAssignToMeModal]    = useState(null); // kept for compat, unused
   const [notifBadge,         setNotifBadge]         = useState(0);
+  const [reminders,          setReminders]          = useState([]);
+  const [isLoadingReminders, setIsLoadingReminders] = useState(false);
+  const [showAddModal,       setShowAddModal]       = useState(false);
+  const [selectedReminder,   setSelectedReminder]   = useState(null);
   const prevCountRef = useRef(0);
+
+  const fetchReminders = useCallback(async () => {
+    setIsLoadingReminders(true);
+    try {
+      const res  = await fetch("/api/reminders");
+      const data = await res.json();
+      setReminders(data.reminders || []);
+    } catch (_) {}
+    finally { setIsLoadingReminders(false); }
+  }, []);
+
+  useEffect(() => { fetchReminders(); }, [fetchReminders]);
+
+  const unreadRemindersCount = reminders.filter((r) => r.status === "unread").length;
 
   async function loadInquiries() {
     try {
@@ -280,6 +299,10 @@ export default function AdminDashboard() {
     } catch (e) { alert(e.message); }
   };
 
+  const handleOpenAddModal = (reminder) => { setSelectedReminder(reminder); setShowAddModal(true); };
+  const handleCloseModal   = () => { setShowAddModal(false); setSelectedReminder(null); };
+  const handleInquiryCreated = () => { handleCloseModal(); loadInquiries(); fetchReminders(); };
+
   const handleAutoAssign = async () => {
     try {
       const response = await fetch("/api/inquiries/auto-assign", { method: "POST" });
@@ -323,6 +346,7 @@ export default function AdminDashboard() {
         onLogout={handleLogout}
         notifBadge={notifBadge}
         onClearNotif={() => setNotifBadge(0)}
+        remindersCount={unreadRemindersCount}
       />
 
       <main className="flex-1 overflow-auto p-4 lg:p-5">
@@ -360,6 +384,15 @@ export default function AdminDashboard() {
             )}
 
             {activeMenu === "sales" && <SalesOverview inquiries={inquiries} users={users} />}
+
+            {activeMenu === "reminders" && (
+              <RemindersPage
+                reminders={reminders}
+                isLoading={isLoadingReminders}
+                onAddInquiry={handleOpenAddModal}
+              />
+            )}
+
             {activeMenu === "access" && (
               <AccessControlPanel
                 users={users}
@@ -437,6 +470,14 @@ export default function AdminDashboard() {
       )}
 
       {/* AssignToMeModal removed — assignment is now immediate */}
+
+      {showAddModal && (
+        <AddInquiryModal
+          reminder={selectedReminder}
+          onClose={handleCloseModal}
+          onSuccess={handleInquiryCreated}
+        />
+      )}
     </div>
   );
 }
@@ -834,9 +875,10 @@ const TOP_NAV = [
   { key: "dashboard", label: "Dashboard",      icon: <LayoutDashboard size={12} /> },
   { key: "sales",     label: "Sales",          icon: <Inbox size={12} /> },
   { key: "access",    label: "Access Control", icon: <Users size={12} /> },
+  { key: "reminders", label: "Reminders",      icon: <Bell size={12} /> },
 ];
 
-function TopBar({ activeMenu, setActiveMenu, searchText, setSearchText, onRefresh, onLogout, notifBadge, onClearNotif }) {
+function TopBar({ activeMenu, setActiveMenu, searchText, setSearchText, onRefresh, onLogout, notifBadge, onClearNotif, remindersCount }) {
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-[#D8E3F8] px-4 backdrop-blur-md" style={{ background: "linear-gradient(90deg, rgba(255,255,255,0.92) 0%, rgba(240,246,255,0.95) 100%)" }}>
       <div className="flex items-center gap-3">
@@ -847,13 +889,18 @@ function TopBar({ activeMenu, setActiveMenu, searchText, setSearchText, onRefres
             <button
               key={item.key}
               onClick={() => setActiveMenu(item.key)}
-              className={`flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-all duration-150 ${
+              className={`relative flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-all duration-150 ${
                 activeMenu === item.key ? "text-white" : "text-slate-500 hover:bg-[#EEF2FF] hover:text-[#4451E8]"
               }`}
               style={activeMenu === item.key ? { background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" } : {}}
             >
               {item.icon}
               {item.label}
+              {item.key === "reminders" && remindersCount > 0 && (
+                <span className="ml-0.5 h-4 min-w-4 rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white flex items-center justify-center" style={{ boxShadow: "0 2px 6px rgba(239,68,68,0.5)" }}>
+                  {remindersCount > 9 ? "9+" : remindersCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -1938,4 +1985,245 @@ function EmailDateCell({ dateStr }) {
 function formatStatus(status) {
   if (!status) return "New";
   return status.split("_").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+}
+
+/* ──────────────────────────────────────────────
+   REMINDERS PAGE
+─────────────────────────────────────────────── */
+function RemindersPage({ reminders, isLoading, onAddInquiry }) {
+  const unread = reminders.filter((r) => r.status === "unread").length;
+
+  const fmtDate = (iso) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
+  };
+
+  const statusMap = {
+    unread  : { label: "Unread",   cls: "text-[#1D6FD8] border-[#BFDBFE] bg-[#EFF6FF]" },
+    seen    : { label: "Seen",     cls: "text-slate-500 border-[#E4E8EE] bg-[#F8FAFC]" },
+    actioned: { label: "Actioned", cls: "text-[#059669] border-[#6EE7B7] bg-[#EFFAF6]" },
+  };
+
+  return (
+    <section className="rounded-2xl overflow-hidden animate-fade-up" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
+      <div className="flex items-center justify-between border-b border-[#D8E3F8] px-5 py-4" style={{ background: "linear-gradient(90deg,#F5F8FF 0%,#F0F6FF 100%)" }}>
+        <div>
+          <h3 className="text-[15px] font-semibold text-slate-900">Follow-up Reminders</h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">Client reply emails — convert to inquiry manually if needed</p>
+        </div>
+        <span className="rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-1 text-[11px] font-semibold text-[#1D6FD8]">
+          {unread > 0 ? `${unread} unread` : "All caught up"}
+        </span>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[820px] border-collapse text-[11px]">
+          <thead>
+            <tr style={{ background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}>
+              {["S.No.", "Date", "FIAPL Code", "Client", "Summary", "Status", "Action"].map((h) => (
+                <th key={h} className="border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading && (
+              <tr><td colSpan={7} className="px-4 py-10 text-[12px] text-slate-400">Loading reminders…</td></tr>
+            )}
+            {!isLoading && reminders.length === 0 && (
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-[12px] text-slate-400">No reminders yet</td></tr>
+            )}
+            {!isLoading && reminders.map((r, i) => {
+              const s = statusMap[r.status] || statusMap.unread;
+              return (
+                <tr
+                  key={r.id}
+                  className="border-b border-[#DCE6F7] transition-all duration-150"
+                  style={{ background: r.status === "unread" ? "rgba(239,246,255,0.6)" : "rgba(255,255,255,0.9)" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(90deg,#EEF6FF 0%,#F5F9FF 100%)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = r.status === "unread" ? "rgba(239,246,255,0.6)" : "rgba(255,255,255,0.9)"; }}
+                >
+                  <td className="border-r border-[#DCE6F7] px-3 py-2.5 text-slate-500">{i + 1}</td>
+                  <td className="border-r border-[#DCE6F7] px-3 py-2.5 text-slate-500 whitespace-nowrap">{fmtDate(r.received_at)}</td>
+                  <td className="border-r border-[#DCE6F7] px-3 py-2.5">
+                    {r.unique_code
+                      ? <span className="rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-2 py-0.5 text-[10px] font-bold text-[#1D6FD8]">{r.unique_code}</span>
+                      : <span className="text-slate-300">—</span>
+                    }
+                  </td>
+                  <td className="border-r border-[#DCE6F7] px-3 py-2.5 font-medium text-slate-800">{r.sender_name || r.sender_email || "—"}</td>
+                  <td className="border-r border-[#DCE6F7] px-3 py-2.5 max-w-[280px]">
+                    <p className="truncate text-slate-600" title={r.llm_summary || r.subject}>{r.llm_summary || r.subject || "—"}</p>
+                  </td>
+                  <td className="border-r border-[#DCE6F7] px-3 py-2.5">
+                    <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${s.cls}`}>{s.label}</span>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {r.status !== "actioned"
+                      ? (
+                        <button
+                          onClick={() => onAddInquiry(r)}
+                          className="flex h-7 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold text-white transition hover:opacity-90"
+                          style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
+                        >
+                          <Plus size={11} /> Add Inquiry
+                        </button>
+                      )
+                      : <span className="text-[10px] font-semibold text-[#059669]">Done ✓</span>
+                    }
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+/* ──────────────────────────────────────────────
+   ADD INQUIRY MODAL
+─────────────────────────────────────────────── */
+function AddInquiryModal({ reminder, onClose, onSuccess }) {
+  const [form, setForm] = useState({
+    client_name  : reminder?.client_name  || reminder?.sender_name  || "",
+    location     : "",
+    sender_name  : reminder?.sender_name  || "",
+    sender_email : reminder?.sender_email || "",
+    subject      : reminder?.subject      || "",
+    notes        : reminder?.llm_summary  || "",
+  });
+  const [items, setItems]           = useState([{ brand: "", part_number: "", quantity: "", notes: "" }]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError]           = useState("");
+
+  const updateField = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+  const updateItem  = (idx, key, val) => setItems((prev) => prev.map((item, i) => i === idx ? { ...item, [key]: val } : item));
+  const addItem     = () => setItems((prev) => [...prev, { brand: "", part_number: "", quantity: "", notes: "" }]);
+  const removeItem  = (idx) => setItems((prev) => prev.filter((_, i) => i !== idx));
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setError("");
+    try {
+      const res = await fetch("/api/inquiries/manual", {
+        method  : "POST",
+        headers : { "Content-Type": "application/json" },
+        body    : JSON.stringify({
+          ...form,
+          items      : items.filter((i) => i.brand || i.part_number),
+          reminder_id: reminder?.id || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create inquiry");
+      onSuccess();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const fieldCls = "h-9 w-full rounded-lg border border-[#E4E8EE] bg-white px-3 text-[13px] text-slate-700 outline-none transition focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-2xl bg-white rounded-2xl card-shadow-lg animate-modal overflow-hidden max-h-[90vh] flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-start justify-between border-b border-[#EEF2F6] p-5" style={{ background: "linear-gradient(90deg,#F5F8FF,#F0F6FF)" }}>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Manual Inquiry</p>
+            <h3 className="text-[16px] font-semibold text-slate-900 mt-0.5">Add from Reminder</h3>
+            {reminder?.unique_code && (
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Linked to <span className="font-semibold text-[#1D6FD8]">{reminder.unique_code}</span>
+              </p>
+            )}
+          </div>
+          <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-[#F3F5F7] hover:text-slate-700 transition">
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* Form */}
+        <div className="overflow-y-auto p-5 space-y-4 flex-1">
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { key: "client_name",  label: "Client Name",  placeholder: "Company" },
+              { key: "location",     label: "Location",     placeholder: "City, State" },
+              { key: "sender_name",  label: "Sender Name",  placeholder: "Contact person" },
+              { key: "sender_email", label: "Sender Email", placeholder: "email@company.com" },
+            ].map(({ key, label, placeholder }) => (
+              <label key={key} className="block">
+                <span className="mb-1.5 block text-[11px] font-medium text-slate-500">{label}</span>
+                <input value={form[key]} onChange={(e) => updateField(key, e.target.value)} placeholder={placeholder} className={fieldCls} />
+              </label>
+            ))}
+            <label className="col-span-2 block">
+              <span className="mb-1.5 block text-[11px] font-medium text-slate-500">Subject</span>
+              <input value={form.subject} onChange={(e) => updateField("subject", e.target.value)} className={fieldCls} />
+            </label>
+            <label className="col-span-2 block">
+              <span className="mb-1.5 block text-[11px] font-medium text-slate-500">Notes</span>
+              <textarea value={form.notes} onChange={(e) => updateField("notes", e.target.value)} rows={2}
+                className="w-full resize-none rounded-lg border border-[#E4E8EE] bg-white px-3 py-2 text-[13px] text-slate-700 outline-none transition focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10" />
+            </label>
+          </div>
+
+          {/* Line Items */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Line Items</p>
+              <button onClick={addItem} className="flex items-center gap-1 text-[11px] font-semibold text-[#1D6FD8] hover:text-[#1559B7] transition">
+                <Plus size={12} /> Add Row
+              </button>
+            </div>
+            <div className="grid grid-cols-[1fr_1fr_64px_1fr_28px] gap-1.5 mb-1.5 px-0.5">
+              {["Brand", "Part No.", "Qty", "Notes", ""].map((h) => (
+                <span key={h} className="text-[10px] font-semibold text-slate-400">{h}</span>
+              ))}
+            </div>
+            <div className="space-y-1.5">
+              {items.map((item, i) => (
+                <div key={i} className="grid grid-cols-[1fr_1fr_64px_1fr_28px] gap-1.5 items-center">
+                  <input value={item.brand}       onChange={(e) => updateItem(i, "brand",       e.target.value)} placeholder="Brand"   className="h-8 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[12px] text-slate-700 outline-none focus:border-[#5BA7FF]" />
+                  <input value={item.part_number} onChange={(e) => updateItem(i, "part_number", e.target.value)} placeholder="Part No." className="h-8 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[12px] text-slate-700 outline-none focus:border-[#5BA7FF]" />
+                  <input value={item.quantity}    onChange={(e) => updateItem(i, "quantity",    e.target.value)} placeholder="Qty" type="number" min="0" className="h-8 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[12px] text-slate-700 outline-none focus:border-[#5BA7FF]" />
+                  <input value={item.notes}       onChange={(e) => updateItem(i, "notes",       e.target.value)} placeholder="Notes"   className="h-8 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[12px] text-slate-700 outline-none focus:border-[#5BA7FF]" />
+                  <button onClick={() => removeItem(i)} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 transition hover:bg-[#FFF1F2] hover:text-rose-500">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {error && (
+            <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-[12px] font-medium text-rose-700">{error}</p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-2 border-t border-[#EEF2F6] p-5">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl border border-[#E4E8EE] bg-white text-[13px] font-medium text-slate-700 transition hover:bg-[#F3F5F7]">
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="flex-1 h-9 rounded-xl text-[13px] font-semibold text-white transition disabled:opacity-60"
+            style={{ background: "linear-gradient(135deg,#5BA7FF 0%,#6D7CFF 100%)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
+          >
+            {submitting ? "Creating…" : "Create Inquiry"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

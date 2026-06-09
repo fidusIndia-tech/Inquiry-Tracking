@@ -241,13 +241,22 @@ Be tolerant of:
 Return true if the email asks Fidus India to quote, provide pricing, share rates, or send a quotation,
 even when the sender name is not obviously a buyer.
 
+Also return true when a client is CHASING an earlier RFQ:
+  - "Awaiting your reply & quotes" / "awaiting your quotation"
+  - "We have not yet received your quotation / response"
+  - "Request you to share your best price at the earliest"
+  - "Kindly treat this as urgent and provide your quotation"
+  - "Following up on our earlier quotation request"
+  These are valid follow-ups — the original items may appear in the quoted chain below.
+
 Return false only when you are confident the email is NOT an RFQ.
 Do not reject a message just because the sender address contains words like "sales" or "info"
 if the content is a real RFQ forwarded from a buyer.
 
 IMPORTANT — for reply/forward chains:
-  You will receive only the LATEST reply text (the new message at the top), not the full quoted history.
-  Base your decision entirely on this new content. Do not assume old quoted RFQ context makes it true.
+  For short follow-up messages you will see the full body including quoted history.
+  If the newest text chases a quotation AND the quoted chain lists items/part numbers,
+  return true — the extractor will pull the items from the chain.
 
 Return FALSE for ANY of the following — even if the email mentions part numbers or brands:
   SELLER OUTREACH (most common false positive):
@@ -360,8 +369,14 @@ def is_rfq_email(email_dict: dict) -> bool:
         plain = (email_dict.get("body_plain") or "").strip()
         html  = (email_dict.get("body_html")  or "").strip()
         raw   = plain if len(plain) >= 100 else (_strip_html(html) if html else plain)
-        body_preview = _new_reply_content(raw)[:1500]
-        if not body_preview:
+        new_content = _new_reply_content(raw)
+        if new_content and len(new_content) >= 150:
+            # Substantial new content — classify on that alone (avoids old quoted
+            # RFQs causing false positives on logistics/delivery replies).
+            body_preview = new_content[:1500]
+        else:
+            # Short new content (e.g. "AWAITING YOUR REPLY & QUOTES THANKS") —
+            # use the full body so the LLM sees the quoted items and can decide.
             body_preview = _best_body(email_dict, max_chars=1500)
     else:
         body_preview = _best_body(email_dict, max_chars=1500)
@@ -421,11 +436,11 @@ def extract_rfq_data(email_dict: dict, attachment_text: str = "") -> list[dict]:
     Returns a list of line-item dicts (one per part requested).
     Handles HTML-only bodies and multi-item attachments.
     """
-    body = _best_body(email_dict, max_chars=4000)
+    body = _best_body(email_dict, max_chars=15000)
 
     attachment_section = ""
     if attachment_text.strip():
-        attachment_section = f"Attachment text:\n{attachment_text[:4000]}"
+        attachment_section = f"Attachment text:\n{attachment_text[:8000]}"
 
     prompt = EXTRACTOR_USER.format(
         sender             = email_dict.get("sender",  ""),
@@ -444,7 +459,7 @@ def extract_rfq_data(email_dict: dict, attachment_text: str = "") -> list[dict]:
                 {"role": "user",   "content": prompt},
             ],
             temperature=0,
-            max_tokens=2000,
+            max_tokens=8000,
             response_format={"type": "json_object"},
         )
         raw = response.choices[0].message.content

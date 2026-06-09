@@ -18,10 +18,10 @@ from gmail_service import (
 )
 from history_tracker import get_latest_history_id, save_latest_history_id, get_all_user_ids
 from email_parser import parse_email
-from rfq_filter import is_rfq_candidate
+from rfq_filter import is_rfq_candidate, is_client_reminder
 from attachment_handler import extract_attachment_text
 from llm_extractor import is_rfq_email, extract_rfq_data, get_buyer_identity
-from next_api_client import post_rfq_item
+from next_api_client import post_rfq_item, post_reminder_item
 from config import get_settings
 from logging_setup import get_logger
 
@@ -85,6 +85,22 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
 
             # 2. Layer 1: fast rule-based filter.
             if not is_rfq_candidate(parsed):
+                if is_client_reminder(parsed):
+                    try:
+                        post_reminder_item({
+                            "message_id": msg_id,
+                            "thread_id": parsed.get("thread_id"),
+                            "sender":     parsed.get("sender"),
+                            "subject":    parsed.get("subject"),
+                            "llm_summary": None,
+                            "email_date": parsed.get("date_str"),
+                        })
+                        logger.info(
+                            "Reminder routed | %s | %s",
+                            parsed.get("sender", ""), parsed.get("subject", ""),
+                        )
+                    except Exception as exc:
+                        logger.error("Failed to post reminder %s: %s", msg_id, exc)
                 stats["layer1_dropped"] += 1
                 continue
 

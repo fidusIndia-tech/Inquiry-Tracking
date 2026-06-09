@@ -220,7 +220,33 @@ REPLY_FOLLOWUP_RE = re.compile(
     r"enclosed\s+(?:quotation|quote|offer)|submit\s+our\s+commercial\s+offer|"
     r"we\s+are\s+pleased\s+to\s+submit|offer\s+for\s+your\s+kind\s+perusal|"
     r"quotation\s+with\s+technical|quote\s+with\s+technical|revised\s+quote|"
-    r"find\s+the\s+revised\s+quotation|find\s+attached\s+(?:quotation|quote|offer)"
+    r"find\s+the\s+revised\s+quotation|find\s+attached\s+(?:quotation|quote|offer)|"
+    r"please\s+revert|kindly\s+revert|"
+    r"please\s+expedite|kindly\s+expedite|"
+    r"still\s+awaiting|pending\s+(?:from\s+your\s+)?(?:side|end)|"
+    r"update\s+(?:required|needed)|no\s+response\s+(?:received|from\s+your\s+side)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# ── Urgent-awaiting patterns: client chasing a quote, new content is short
+# but the quoted chain holds the original 27+ item RFQ. Returning False from
+# is_reply_chain_noise lets these through to the LLM so the extractor can
+# pull the items. Fingerprint dedup in Next.js prevents duplicate inquiries.
+URGENT_AWAITING_RE = re.compile(
+    r"\b("
+    r"awaiting\s+your\s+(?:reply|response|quote|quotation|qoutes?)|"
+    r"awaiting\s+(?:reply|response)|"
+    r"still\s+waiting\s+for\s+your\s+(?:reply|response|quote|quotation)|"
+    r"we\s+(?:are\s+)?still\s+waiting\s+for\s+your|"
+    r"we\s+have\s+not\s+(?:yet\s+)?received\s+your\s+(?:quotation|quote|response)|"
+    r"not\s+yet\s+received\s+your\s+(?:quotation|quote)|"
+    r"quotation\s+(?:still\s+)?awaited|"
+    r"(?:please|kindly)\s+expedite\s+(?:the\s+)?quotation\s+submission|"
+    r"request\s+you\s+to\s+share\s+your\s+best\s+price|"
+    r"kindly\s+treat\s+this\s+as\s+urgent\s+and\s+provide|"
+    r"pending\s+quotation\s+for|"
+    r"urgent\s*[:\-]?\s*quotation\s+(?:still\s+)?awaited"
     r")\b",
     re.IGNORECASE,
 )
@@ -273,6 +299,12 @@ def is_reply_chain_noise(email_dict: dict) -> bool:
 
     if not latest:
         return True
+
+    # Urgent follow-up: client is chasing a quote ("awaiting your reply & quotes").
+    # New content is short but the quoted chain contains the original items.
+    # Return False so the full body reaches the LLM extractor.
+    if URGENT_AWAITING_RE.search(latest):
+        return False
 
     latest_lower = latest.lower()
     has_fresh_request = any(keyword in latest_lower for keyword in FRESH_REPLY_RFQ_KEYWORDS)
@@ -378,3 +410,20 @@ def is_rfq_candidate(email_dict: dict) -> bool:
     # ── 7. Default: uncertain — forward to LLM classifier ────────────────
     logger.debug("UNCERTAIN — forwarding to LLM | %s", subject[:60])
     return True
+
+
+def is_client_reminder(email_dict: dict) -> bool:
+    """
+    Returns True for Re: emails that are client follow-ups but were still rejected
+    by is_rfq_candidate (e.g. no part data, no urgent-awaiting language).
+    Called by tasks.py to route these to the Reminders tab instead of discarding.
+    """
+    subject = (email_dict.get("subject") or "").strip().lower()
+    if not subject.startswith("re:"):
+        return False
+    plain, html_stripped = _extract_text(email_dict)
+    body = plain if plain.strip() else html_stripped
+    latest = _latest_reply_text(body)
+    if not latest:
+        return False
+    return bool(REPLY_FOLLOWUP_RE.search(latest))

@@ -436,11 +436,11 @@ def extract_rfq_data(email_dict: dict, attachment_text: str = "") -> list[dict]:
     Returns a list of line-item dicts (one per part requested).
     Handles HTML-only bodies and multi-item attachments.
     """
-    body = _best_body(email_dict, max_chars=15000)
+    body = _best_body(email_dict, max_chars=20000)
 
     attachment_section = ""
     if attachment_text.strip():
-        attachment_section = f"Attachment text:\n{attachment_text[:8000]}"
+        attachment_section = f"Attachment text:\n{attachment_text[:10000]}"
 
     prompt = EXTRACTOR_USER.format(
         sender             = email_dict.get("sender",  ""),
@@ -459,7 +459,7 @@ def extract_rfq_data(email_dict: dict, attachment_text: str = "") -> list[dict]:
                 {"role": "user",   "content": prompt},
             ],
             temperature=0,
-            max_tokens=8000,
+            max_tokens=15000,
             response_format={"type": "json_object"},
         )
         raw = response.choices[0].message.content

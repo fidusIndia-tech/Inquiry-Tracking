@@ -54,6 +54,7 @@ _ALWAYS_DROP_NUMBERED_RE = re.compile(
 PRIORITY_SENDER_ADDRS = frozenset({
     "fidusindia@gmail.com",
     "purchasehead@gmail.com",
+    "purchase.head@fidusindia.com",
 })
 
 # ── Sender domains that are NEVER RFQs ───────────────────────────────────────

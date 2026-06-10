@@ -909,10 +909,11 @@ function AppSwitcher() {
   }, [open]);
 
   const apps = [
-    { id: "price-desk",  label: "PriceDesk",  emoji: "💹" },
-    { id: "lead-clip",   label: "LeadFlow",   emoji: "🎯" },
-    { id: "tender-ai",   label: "TenderAI",   emoji: "📄" },
-    { id: "crm",         label: "CRM",        emoji: "🤝" },
+    { id: "inquiry-tracker", label: "InquiryTracker", emoji: "📨" },
+    { id: "price-desk",      label: "PriceDesk",      emoji: "💹" },
+    { id: "lead-clip",       label: "LeadFlow",       emoji: "🎯" },
+    { id: "tender-ai",       label: "TenderAI",       emoji: "📄" },
+    { id: "crm",             label: "CRM",            emoji: "🤝" },
   ];
 
   return (

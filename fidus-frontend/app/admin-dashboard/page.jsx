@@ -911,6 +911,7 @@ function AppSwitcher() {
   const apps = [
     { id: "price-desk",  label: "PriceDesk",  emoji: "💹" },
     { id: "lead-clip",   label: "LeadFlow",   emoji: "🎯" },
+    { id: "tender-ai",   label: "TenderAI",   emoji: "📄" },
   ];
 
   return (

@@ -1,11 +1,18 @@
-import { query, withTransaction } from "@/lib/db";
+import { pool, query, withTransaction } from "@/lib/db";
+
+let _inquiriesSchemaReady = false;
+async function ensureInquiriesSchema() {
+  if (_inquiriesSchemaReady) return;
+  await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ");
+  await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS assigned_ref_name TEXT");
+  await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS in_progress_at TIMESTAMPTZ");
+  await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS quoted_at TIMESTAMPTZ");
+  _inquiriesSchemaReady = true;
+}
 
 export async function GET() {
   try {
-    await query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ");
-    await query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS assigned_ref_name TEXT");
-    await query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS in_progress_at TIMESTAMPTZ");
-    await query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS quoted_at TIMESTAMPTZ");
+    await ensureInquiriesSchema();
 
     const result = await query(`
       SELECT

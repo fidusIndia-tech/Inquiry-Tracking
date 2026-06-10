@@ -301,12 +301,6 @@ def is_reply_chain_noise(email_dict: dict) -> bool:
     if not latest:
         return True
 
-    # Urgent follow-up: client is chasing a quote ("awaiting your reply & quotes").
-    # New content is short but the quoted chain contains the original items.
-    # Return False so the full body reaches the LLM extractor.
-    if URGENT_AWAITING_RE.search(latest):
-        return False
-
     latest_lower = latest.lower()
     has_fresh_request = any(keyword in latest_lower for keyword in FRESH_REPLY_RFQ_KEYWORDS)
     has_part_like_data = bool(PART_LIKE_RE.search(latest))
@@ -413,13 +407,32 @@ def is_rfq_candidate(email_dict: dict) -> bool:
     return True
 
 
+_PLATFORM_REMINDER_RFQ_RE = re.compile(
+    r"\b(rfq|quotation|quote|enquiry|inquiry)\b",
+    re.IGNORECASE,
+)
+
+
 def is_client_reminder(email_dict: dict) -> bool:
     """
-    Returns True for Re: emails that are client follow-ups but were still rejected
-    by is_rfq_candidate (e.g. no part data, no urgent-awaiting language).
-    Called by tasks.py to route these to the Reminders tab instead of discarding.
+    Returns True when this email should land in the Reminders panel
+    (admin reviews it and decides whether to create an inquiry).
+
+    Three paths:
+      1. Platform/portal RFQ reminder — subject contains "reminder" AND
+         references rfq/quotation/quote/enquiry (e.g. "Reminder(2) for Group RFQ…")
+      2. RE: reply chain with standard follow-up language (REPLY_FOLLOWUP_RE)
+      3. RE: reply chain with urgent-awaiting language (URGENT_AWAITING_RE) —
+         previously bypassed the noise check to auto-create an inquiry; now
+         always routed to admin review.
     """
     subject = (email_dict.get("subject") or "").strip().lower()
+
+    # Path 1 — platform/portal reminder notification
+    if "reminder" in subject and _PLATFORM_REMINDER_RFQ_RE.search(subject):
+        return True
+
+    # Paths 2 & 3 — RE: reply-chain follow-ups
     if not subject.startswith("re:"):
         return False
     plain, html_stripped = _extract_text(email_dict)
@@ -427,4 +440,4 @@ def is_client_reminder(email_dict: dict) -> bool:
     latest = _latest_reply_text(body)
     if not latest:
         return False
-    return bool(REPLY_FOLLOWUP_RE.search(latest))
+    return bool(REPLY_FOLLOWUP_RE.search(latest) or URGENT_AWAITING_RE.search(latest))

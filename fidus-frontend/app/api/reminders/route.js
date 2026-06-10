@@ -7,6 +7,7 @@ export async function GET() {
         r.id, r.inquiry_id, r.thread_id, r.message_id,
         r.sender_email, r.sender_name, r.subject,
         r.llm_summary, r.received_at, r.status, r.created_at,
+        r.line_items,
         i.unique_code, i.client_name, i.status AS inquiry_status
       FROM inquiry_reminders r
       LEFT JOIN inquiries i ON i.id = r.inquiry_id

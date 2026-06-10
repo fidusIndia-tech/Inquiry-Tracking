@@ -29,6 +29,26 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
+def _route_to_reminder(msg_id: str, parsed: dict, items: list) -> None:
+    """Post an email to the Reminders panel with any extracted line items."""
+    try:
+        post_reminder_item({
+            "message_id":  msg_id,
+            "thread_id":   parsed.get("thread_id"),
+            "sender":      parsed.get("sender"),
+            "subject":     parsed.get("subject"),
+            "llm_summary": None,
+            "email_date":  parsed.get("date_str"),
+            "line_items":  items or [],
+        })
+        logger.info(
+            "Reminder routed | %s | %s | items=%d",
+            parsed.get("sender", ""), parsed.get("subject", ""), len(items or []),
+        )
+    except Exception as exc:
+        logger.error("Failed to post reminder %s: %s", msg_id, exc)
+
+
 class BaseTask(Task):
     abstract = True
     def on_failure(self, exc, task_id, args, kwargs, einfo):
@@ -64,6 +84,7 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
         "layer1_dropped": 0,
         "layer2_dropped": 0,
         "rfq_exported": 0,
+        "reminder_routed": 0,
         "failed": 0,
     }
 
@@ -86,21 +107,23 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
             # 2. Layer 1: fast rule-based filter.
             if not is_rfq_candidate(parsed):
                 if is_client_reminder(parsed):
+                    # Extract attachments + run LLM extractor so the admin
+                    # sees the items when reviewing in the Reminders panel.
+                    att = ""
+                    if parsed.get("has_attachment"):
+                        try:
+                            att = extract_attachment_text(
+                                service, msg_id, raw.get("payload", {})
+                            )
+                        except Exception as e:
+                            logger.warning("Attachment fetch failed for reminder %s: %s", msg_id, e)
                     try:
-                        post_reminder_item({
-                            "message_id": msg_id,
-                            "thread_id": parsed.get("thread_id"),
-                            "sender":     parsed.get("sender"),
-                            "subject":    parsed.get("subject"),
-                            "llm_summary": None,
-                            "email_date": parsed.get("date_str"),
-                        })
-                        logger.info(
-                            "Reminder routed | %s | %s",
-                            parsed.get("sender", ""), parsed.get("subject", ""),
-                        )
-                    except Exception as exc:
-                        logger.error("Failed to post reminder %s: %s", msg_id, exc)
+                        reminder_items = extract_rfq_data(parsed, att)
+                    except Exception as e:
+                        logger.warning("Item extraction failed for reminder %s: %s", msg_id, e)
+                        reminder_items = []
+                    _route_to_reminder(msg_id, parsed, reminder_items)
+                    stats["reminder_routed"] += 1
                 stats["layer1_dropped"] += 1
                 continue
 
@@ -113,6 +136,14 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
 
             # 4. Layer 2: LLM yes/no classifier.
             if not is_rfq_email(parsed):
+                if is_client_reminder(parsed):
+                    try:
+                        reminder_items = extract_rfq_data(parsed, attachment_text)
+                    except Exception as e:
+                        logger.warning("Item extraction failed for reminder %s: %s", msg_id, e)
+                        reminder_items = []
+                    _route_to_reminder(msg_id, parsed, reminder_items)
+                    stats["reminder_routed"] += 1
                 stats["layer2_dropped"] += 1
                 logger.debug("L2 DROP | %s | %s", parsed["sender"], parsed["subject"])
                 continue
@@ -123,6 +154,12 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
             line_items = extract_rfq_data(parsed, attachment_text)
 
             if not line_items:
+                # Extractor found nothing — if this email looks like a reminder
+                # (e.g. portal notification with a link but no inline items),
+                # route to Reminders panel so the admin can act on it.
+                if is_client_reminder(parsed):
+                    _route_to_reminder(msg_id, parsed, [])
+                    stats["reminder_routed"] += 1
                 logger.warning("No items extracted for %s", msg_id)
                 continue
 
@@ -206,10 +243,10 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
             stats["failed"] += 1
 
     logger.info(
-        "Chunk done | total=%d | parsed=%d | L1_drop=%d | L2_drop=%d | exported=%d | failed=%d",
+        "Chunk done | total=%d | parsed=%d | L1_drop=%d | L2_drop=%d | exported=%d | reminders=%d | failed=%d",
         stats["total"], stats["parsed"],
         stats["layer1_dropped"], stats["layer2_dropped"],
-        stats["rfq_exported"], stats["failed"],
+        stats["rfq_exported"], stats["reminder_routed"], stats["failed"],
     )
     return stats
 

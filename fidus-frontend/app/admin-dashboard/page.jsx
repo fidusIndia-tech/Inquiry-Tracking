@@ -2088,15 +2088,32 @@ function RemindersPage({ reminders, isLoading, onAddInquiry }) {
    ADD INQUIRY MODAL
 ─────────────────────────────────────────────── */
 function AddInquiryModal({ reminder, onClose, onSuccess }) {
+  const extractedItems = (reminder?.line_items || [])
+    .filter((i) => i && (i.brand || i.part_number))
+    .map((i) => ({
+      brand       : i.brand        || "",
+      part_number : i.part_number  || "",
+      quantity    : String(i.quantity ?? ""),
+      notes       : i.notes        || "",
+    }));
+
   const [form, setForm] = useState({
-    client_name  : reminder?.client_name  || reminder?.sender_name  || "",
-    location     : "",
-    sender_name  : reminder?.sender_name  || "",
-    sender_email : reminder?.sender_email || "",
+    client_name  : reminder?.client_name
+                   || extractedItems[0]?.client_name
+                   || reminder?.sender_name  || "",
+    location     : extractedItems[0]?.location || "",
+    sender_name  : reminder?.sender_name
+                   || extractedItems[0]?.username || "",
+    sender_email : reminder?.sender_email
+                   || extractedItems[0]?.sender_email || "",
     subject      : reminder?.subject      || "",
     notes        : reminder?.llm_summary  || "",
   });
-  const [items, setItems]           = useState([{ brand: "", part_number: "", quantity: "", notes: "" }]);
+  const [items, setItems] = useState(
+    extractedItems.length > 0
+      ? extractedItems
+      : [{ brand: "", part_number: "", quantity: "", notes: "" }]
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState("");
 

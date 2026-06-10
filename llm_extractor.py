@@ -363,9 +363,15 @@ def is_rfq_email(email_dict: dict) -> bool:
     judges the current message and not quoted history (which may contain old RFQs).
     """
     subject = (email_dict.get("subject") or "").strip().lower()
-    is_chain = subject.startswith(("re:", "fwd:", "fw:"))
+    is_forward = subject.startswith(("fwd:", "fw:")) and not subject.startswith("re:")
+    is_reply   = subject.startswith("re:")
 
-    if is_chain:
+    if is_forward:
+        # Forwarded email: the admin's new text (before the forwarded marker) is
+        # just a greeting/signature — irrelevant for classification. Use
+        # _best_body → _forwarded_section_only so the LLM sees the actual client RFQ.
+        body_preview = _best_body(email_dict, max_chars=1500)
+    elif is_reply:
         plain = (email_dict.get("body_plain") or "").strip()
         html  = (email_dict.get("body_html")  or "").strip()
         raw   = plain if len(plain) >= 100 else (_strip_html(html) if html else plain)

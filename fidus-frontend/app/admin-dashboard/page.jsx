@@ -272,7 +272,7 @@ export default function AdminDashboard() {
     .filter((user) => user.role === "employee" && user.is_active)
     .map((user) => ({ id: user.id, name: user.name, email: user.email }));
 
-  const PORTAL_URL = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://joyful-solace-production-f214.up.railway.app").replace(/\/$/, "");
+  const PORTAL_URL = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://practical-amazement-production-3539.up.railway.app").replace(/\/$/, "");
 
   const handleLogout = () => {
     localStorage.removeItem("role");
@@ -881,7 +881,7 @@ const TOP_NAV = [
   { key: "reminders", label: "Reminders",      icon: <Bell size={12} /> },
 ];
 
-const PORTAL_BASE = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://joyful-solace-production-f214.up.railway.app").replace(/\/$/, "");
+const PORTAL_BASE = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://practical-amazement-production-3539.up.railway.app").replace(/\/$/, "");
 
 function AppSwitcher() {
   const [open, setOpen] = useState(false);

@@ -17,7 +17,7 @@ import {
   Search,
 } from "lucide-react";
 
-const PORTAL_BASE_EMP = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://joyful-solace-production-f214.up.railway.app").replace(/\/$/, "");
+const PORTAL_BASE_EMP = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://practical-amazement-production-3539.up.railway.app").replace(/\/$/, "");
 
 function AppSwitcherEmp() {
   const [open, setOpen] = useState(false);
@@ -246,7 +246,7 @@ export default function EmployeeDashboard() {
     [inquiries, statusDrafts]
   );
 
-  const PORTAL_URL = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://joyful-solace-production-f214.up.railway.app").replace(/\/$/, "");
+  const PORTAL_URL = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://practical-amazement-production-3539.up.railway.app").replace(/\/$/, "");
 
   const handleLogout = () => {
     localStorage.removeItem("role");

@@ -49,6 +49,7 @@ function AppSwitcherEmp() {
     { id: "inquiry-tracker", label: "InquiryTracker",  emoji: "📨" },
     { id: "lead-clip",       label: "LeadFlow",        emoji: "🎯" },
     { id: "tender-ai",       label: "TenderAI",        emoji: "📄" },
+    { id: "crm",             label: "CRM",             emoji: "🤝" },
   ];
 
   return (

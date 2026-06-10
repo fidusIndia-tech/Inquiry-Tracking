@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { withTransaction } from "@/lib/db";
+import { pool, withTransaction } from "@/lib/db";
 import {
   buildInquiryItems,
   extractEmail,
@@ -7,6 +7,18 @@ import {
   isInternalEmail,
   normalizeParserPayload,
 } from "@/lib/inquiry-normalizer";
+
+let _schemaReady = false;
+async function ensureSchema() {
+  if (_schemaReady) return;
+  await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS source_fingerprint TEXT");
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS inquiries_source_fingerprint_idx
+    ON inquiries (source_fingerprint)
+    WHERE source_fingerprint IS NOT NULL
+  `);
+  _schemaReady = true;
+}
 
 function normalizeFingerprintText(value) {
   return String(value || "")
@@ -55,14 +67,8 @@ export async function POST(request) {
       );
     }
 
+    await ensureSchema();
     const result = await withTransaction(async (client) => {
-      await client.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS source_fingerprint TEXT");
-      await client.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS inquiries_source_fingerprint_idx
-        ON inquiries (source_fingerprint)
-        WHERE source_fingerprint IS NOT NULL
-      `);
-
       const rawResult = await client.query(
         `
           INSERT INTO raw_email_items (

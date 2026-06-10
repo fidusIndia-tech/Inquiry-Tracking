@@ -11,6 +11,9 @@ export const pool =
   new Pool({
     connectionString,
     ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    max: 20,
+    connectionTimeoutMillis: 8000,
+    idleTimeoutMillis: 30000,
   });
 
 if (process.env.NODE_ENV !== "production") {

@@ -880,6 +880,75 @@ const TOP_NAV = [
   { key: "reminders", label: "Reminders",      icon: <Bell size={12} /> },
 ];
 
+const PORTAL_BASE = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://joyful-solace-production-f214.up.railway.app").replace(/\/$/, "");
+
+function AppSwitcher() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+
+  const apps = [
+    { id: "price-desk",  label: "PriceDesk",  emoji: "💹" },
+    { id: "lead-clip",   label: "LeadFlow",   emoji: "🎯" },
+  ];
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title="Switch app"
+        className="flex h-7 items-center gap-1.5 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[11px] font-medium text-slate-500 transition hover:bg-[#EEF2FF] hover:text-[#4451E8] hover:border-[#BFDBFE]"
+      >
+        <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
+          {[0,1,2].map(r => [0,1,2].map(c => (
+            <rect key={`${r}-${c}`} x={c*5} y={r*5} width="3" height="3" rx="0.7" fill="currentColor" />
+          )))}
+        </svg>
+        <span className="hidden sm:inline">Apps</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 8px)", right: 0,
+          background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14,
+          padding: "8px 6px", minWidth: 190,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06)",
+          zIndex: 9999,
+        }}>
+          <p style={{ fontSize: 10, color: "#94a3b8", padding: "2px 10px 8px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", margin: 0 }}>
+            Switch app
+          </p>
+          {apps.map((app) => (
+            <a
+              key={app.id}
+              href={`${PORTAL_BASE}/go?app=${app.id}`}
+              style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 10px", borderRadius: 9, textDecoration: "none", color: "#0f172a", fontSize: 13, fontWeight: 600 }}
+              className="hover:bg-slate-50 transition-colors"
+              onClick={() => setOpen(false)}
+            >
+              <span style={{ fontSize: 16 }}>{app.emoji}</span>
+              {app.label}
+            </a>
+          ))}
+          <div style={{ height: 1, background: "#f1f5f9", margin: "6px 4px" }} />
+          <a
+            href={`${PORTAL_BASE}/dashboard`}
+            style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 10px", borderRadius: 9, textDecoration: "none", color: "#64748b", fontSize: 12, fontWeight: 500 }}
+            className="hover:bg-slate-50 transition-colors"
+          >
+            🏠 FidusSource Portal
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TopBar({ activeMenu, setActiveMenu, searchText, setSearchText, onRefresh, onLogout, notifBadge, onClearNotif, remindersCount }) {
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-[#D8E3F8] px-4 backdrop-blur-md" style={{ background: "linear-gradient(90deg, rgba(255,255,255,0.92) 0%, rgba(240,246,255,0.95) 100%)" }}>
@@ -943,6 +1012,7 @@ function TopBar({ activeMenu, setActiveMenu, searchText, setSearchText, onRefres
             </span>
           )}
         </button>
+        <AppSwitcher />
         <div className="h-5 w-px bg-[#D8E3F8]" />
         <button
           onClick={onLogout}

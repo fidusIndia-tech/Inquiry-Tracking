@@ -156,11 +156,13 @@ export default function EmployeeDashboard() {
     [inquiries, statusDrafts]
   );
 
+  const PORTAL_URL = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://joyful-solace-production-f214.up.railway.app").replace(/\/$/, "");
+
   const handleLogout = () => {
     localStorage.removeItem("role");
     localStorage.removeItem("userId");
     localStorage.removeItem("userName");
-    router.push("/login");
+    window.location.href = PORTAL_URL + "/login";
   };
 
   const openDetail = (uniqueCode) => {

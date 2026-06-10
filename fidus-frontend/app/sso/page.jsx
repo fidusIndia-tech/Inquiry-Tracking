@@ -44,7 +44,10 @@ export default function SsoPage() {
         <>
           <ShieldAlert className="text-rose-500" size={32} />
           <p className="text-[15px] font-medium text-slate-800">{error}</p>
-          <a href="https://fidussource.com/login" className="text-sm text-blue-600 underline">
+          <a
+            href={(process.env.NEXT_PUBLIC_PORTAL_URL || "https://joyful-solace-production-f214.up.railway.app").replace(/\/$/, "") + "/login"}
+            className="text-sm text-blue-600 underline"
+          >
             Return to FidusSource sign-in
           </a>
         </>

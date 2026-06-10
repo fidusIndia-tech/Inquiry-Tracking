@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import InquiryDetailModal from "@/app/components/InquiryDetailModal";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -20,13 +21,28 @@ const PORTAL_BASE_EMP = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://joyful-s
 
 function AppSwitcherEmp() {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [pos, setPos] = useState({ top: 0, right: 0 });
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+    }
+    setOpen(o => !o);
+  };
 
   useEffect(() => {
-    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, []);
+    if (!open) return;
+    const handle = (e) => {
+      if (!btnRef.current?.contains(e.target) && !menuRef.current?.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [open]);
 
   const apps = [
     { id: "price-desk",      label: "PriceDesk",      emoji: "💹" },
@@ -35,9 +51,10 @@ function AppSwitcherEmp() {
   ];
 
   return (
-    <div ref={ref} style={{ position: "relative" }}>
+    <>
       <button
-        onClick={() => setOpen((o) => !o)}
+        ref={btnRef}
+        onClick={toggle}
         title="Switch app"
         className="flex h-7 items-center gap-1.5 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[11px] font-medium text-slate-500 transition hover:bg-[#EEF2FF] hover:text-[#4451E8] hover:border-[#BFDBFE]"
       >
@@ -48,15 +65,17 @@ function AppSwitcherEmp() {
         </svg>
         <span className="hidden sm:inline">Apps</span>
       </button>
-
-      {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 8px)", right: 0,
-          background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14,
-          padding: "8px 6px", minWidth: 190,
-          boxShadow: "0 12px 40px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06)",
-          zIndex: 9999,
-        }}>
+      {open && typeof document !== "undefined" && createPortal(
+        <div
+          ref={menuRef}
+          style={{
+            position: "fixed", top: pos.top, right: pos.right,
+            background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14,
+            padding: "8px 6px", minWidth: 190,
+            boxShadow: "0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.07)",
+            zIndex: 99999,
+          }}
+        >
           <p style={{ fontSize: 10, color: "#94a3b8", padding: "2px 10px 8px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", margin: 0 }}>
             Switch app
           </p>
@@ -80,9 +99,10 @@ function AppSwitcherEmp() {
           >
             🏠 FidusSource Portal
           </a>
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 

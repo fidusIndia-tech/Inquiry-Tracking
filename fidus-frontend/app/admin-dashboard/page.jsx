@@ -1112,6 +1112,7 @@ const ADMIN_COLS = [
   { label: "Qty",           defaultW: 55  },
   { label: "Allocation",    defaultW: 110 },
   { label: "Status",        defaultW: 100 },
+  { label: "Remark",        defaultW: 180 },
   { label: "Actions",       defaultW: 72  },
 ];
 
@@ -1182,6 +1183,21 @@ function InquiryTable({
         )
       );
     } catch (e) { alert(e.message); }
+  };
+
+  const handleRemarkSave = async (uniqueCode, remark) => {
+    try {
+      await fetch("/api/inquiries/remark", {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ unique_code: uniqueCode, remark }),
+      });
+      setInquiries((current) =>
+        current.map((inq) =>
+          inq.unique_code === uniqueCode ? { ...inq, remark } : inq
+        )
+      );
+    } catch {}
   };
 
   const rows = inquiries.flatMap((inquiry) => {
@@ -1280,10 +1296,10 @@ function InquiryTable({
           <tbody>
             {isLoading && <LoadingRows />}
             {!isLoading && error && (
-              <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={14}>{error}</td></tr>
+              <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={15}>{error}</td></tr>
             )}
             {!isLoading && !error && inquiries.length === 0 && (
-              <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={14}>No inquiries found.</td></tr>
+              <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={15}>No inquiries found.</td></tr>
             )}
             {!isLoading && !error &&
               rows.map(({ inquiry, item, isFirstItem, groupSize }, index) => (
@@ -1303,6 +1319,7 @@ function InquiryTable({
                   onSubjectOpen={() => onSubjectOpen(inquiry)}
                   onDetailOpen={() => onDetailOpen(inquiry)}
                   onAssignToMe={() => onAssignToMeRequest(inquiry.unique_code)}
+                  onRemarkSave={(remark) => handleRemarkSave(inquiry.unique_code, remark)}
                 />
               ))}
           </tbody>
@@ -1332,7 +1349,7 @@ function FilterButton({ active, onClick, children }) {
 function LoadingRows() {
   return Array.from({ length: 6 }, (_, rowIndex) => (
     <tr key={rowIndex}>
-      {Array.from({ length: 14 }, (_, cellIndex) => (
+      {Array.from({ length: 15 }, (_, cellIndex) => (
         <td key={cellIndex} className="border-b border-r border-[#DCE6F7] px-2 py-2.5 last:border-r-0">
           <div className="skeleton h-3.5" style={{ width: cellIndex === 8 ? "75%" : cellIndex === 3 ? "65%" : "55%" }} />
         </td>
@@ -1341,12 +1358,23 @@ function LoadingRows() {
   ));
 }
 
-function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employees, onAssignChange, onStatusChange, onDelete, onEdit, onSubjectOpen, onDetailOpen, onAssignToMe }) {
+function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employees, onAssignChange, onStatusChange, onDelete, onEdit, onSubjectOpen, onDetailOpen, onAssignToMe, onRemarkSave }) {
   const status = inquiry.status || "new";
   const part   = item.partNumber || "—";
   const brand  = item.brand      || "-";
   const uom    = item.uom        || "-";
   const qty    = item.quantity   || "—";
+
+  const [remarkText, setRemarkText] = useState(inquiry.remark || "");
+  const [remarkSaved, setRemarkSaved] = useState(false);
+  useEffect(() => { setRemarkText(inquiry.remark || ""); }, [inquiry.remark]);
+
+  const handleRemarkBlur = async () => {
+    if (remarkText === (inquiry.remark || "")) return;
+    await onRemarkSave(remarkText);
+    setRemarkSaved(true);
+    setTimeout(() => setRemarkSaved(false), 2000);
+  };
 
   return (
     <tr
@@ -1501,6 +1529,25 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
         ) : (
           <div className="flex h-7 items-center">
             <StatusBadge status={status} />
+          </div>
+        )}
+      </td>
+
+      {/* Remark — editable only on first item row */}
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-top">
+        {isFirstItem && (
+          <div className="relative">
+            <textarea
+              value={remarkText}
+              onChange={(e) => setRemarkText(e.target.value)}
+              onBlur={handleRemarkBlur}
+              rows={2}
+              placeholder="Add remark…"
+              className="w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[11px] text-slate-700 outline-none transition hover:border-[#E4E8EE] focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10 focus:bg-white placeholder:text-slate-300"
+            />
+            {remarkSaved && (
+              <span className="absolute right-1 top-0.5 text-[10px] text-emerald-500 font-semibold">Saved ✓</span>
+            )}
           </div>
         )}
       </td>

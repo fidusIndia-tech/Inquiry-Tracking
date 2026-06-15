@@ -229,6 +229,8 @@ export default function EmployeeDashboard() {
           sender_name: inquiry.sender_name  || "-",
           subject:     inquiry.subject      || "-",
           status:      inquiry.status       || "assigned",
+          remark:      inquiry.remark       || "",
+          isFirstItem: index === 0,
           brand:       item.brand           || "-",
           part_number: item.partNumber      || "-",
           quantity:    item.quantity        ?? "-",
@@ -456,6 +458,49 @@ function MetricCard({ icon, label, value, accent = "blue", delay = "0ms" }) {
 }
 
 /* ── Employee Table ── */
+function EmpRemarkCell({ uniqueCode, initialRemark }) {
+  const [value, setValue] = useState(initialRemark);
+  const savedRef = useRef(initialRemark);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setValue(initialRemark);
+    savedRef.current = initialRemark;
+  }, [initialRemark]);
+
+  const handleBlur = async () => {
+    if (value === savedRef.current) return;
+    try {
+      const res = await fetch("/api/inquiries/remark", {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ unique_code: uniqueCode, remark: value }),
+      });
+      if (res.ok) {
+        savedRef.current = value;
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      }
+    } catch {}
+  };
+
+  return (
+    <div className="relative">
+      <textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        rows={2}
+        placeholder="Add remark…"
+        className="w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[11px] text-slate-700 outline-none transition hover:border-[#E4E8EE] focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10 focus:bg-white placeholder:text-slate-300"
+      />
+      {saved && (
+        <span className="absolute right-1 top-0.5 text-[10px] text-emerald-500 font-semibold">Saved ✓</span>
+      )}
+    </div>
+  );
+}
+
 const EMP_COLS = [
   { label: "Code",        defaultW: 110 },
   { label: "Client",      defaultW: 120 },
@@ -466,6 +511,7 @@ const EMP_COLS = [
   { label: "UOM",         defaultW: 55  },
   { label: "Notes",       defaultW: 130 },
   { label: "Status",      defaultW: 120 },
+  { label: "Remark",      defaultW: 160 },
 ];
 
 function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatusChange, onDetailOpen }) {
@@ -509,7 +555,7 @@ function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatus
           <tbody>
             {Array.from({ length: 5 }, (_, r) => (
               <tr key={r}>
-                {Array.from({ length: 9 }, (_, c) => (
+                {Array.from({ length: 10 }, (_, c) => (
                   <td key={c} className="border-b border-r border-[#DCE6F7] px-2 py-2.5 last:border-r-0">
                     <div className="skeleton h-3.5" style={{ width: c === 4 ? "75%" : "55%" }} />
                   </td>
@@ -598,7 +644,7 @@ function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatus
                 <td className="border-r border-[#DCE6F7] px-2 py-2.5" title={row.item_notes}>
                   <p className="truncate text-slate-500 text-[11px]">{row.item_notes}</p>
                 </td>
-                <td className="px-2 py-2">
+                <td className="border-r border-[#DCE6F7] px-2 py-2">
                   <select
                     value={statusDrafts[row.unique_code] || row.status}
                     onChange={(e) => onStatusChange(row.unique_code, e.target.value)}
@@ -613,6 +659,15 @@ function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatus
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
+                </td>
+                <td className="px-2 py-2 align-top">
+                  {row.isFirstItem ? (
+                    <EmpRemarkCell uniqueCode={row.unique_code} initialRemark={row.remark} />
+                  ) : (
+                    row.remark ? (
+                      <p className="truncate text-[10px] text-slate-400 px-1.5">{row.remark}</p>
+                    ) : null
+                  )}
                 </td>
               </tr>
             );

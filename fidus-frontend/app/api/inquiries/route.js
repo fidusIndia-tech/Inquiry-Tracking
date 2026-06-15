@@ -7,6 +7,7 @@ async function ensureInquiriesSchema() {
   await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS assigned_ref_name TEXT");
   await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS in_progress_at TIMESTAMPTZ");
   await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS quoted_at TIMESTAMPTZ");
+  await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS remark TEXT");
   _inquiriesSchemaReady = true;
 }
 
@@ -31,6 +32,7 @@ export async function GET() {
         i.assigned_ref_name,
         i.in_progress_at,
         i.quoted_at,
+        i.remark,
         u.name AS assigned_to_name,
         i.created_at,
         r.message_id,

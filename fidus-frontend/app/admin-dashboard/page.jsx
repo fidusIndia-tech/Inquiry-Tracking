@@ -352,9 +352,9 @@ export default function AdminDashboard() {
         remindersCount={unreadRemindersCount}
       />
 
-      <main className="flex-1 overflow-hidden flex flex-col p-4 lg:p-5">
+      <main className="flex-1 overflow-auto p-4 lg:p-5">
             {activeMenu === "dashboard" && (
-              <div className="flex flex-col flex-1 min-h-0 gap-4">
+              <div className="flex flex-col gap-4">
                 <section className="flex gap-3">
                   <MetricCard icon={<FileText size={15} />}     label="Total"    value={isLoadingInquiries ? "—" : counts.total}    accent="blue"   delay="0ms"   />
                   <MetricCard icon={<Clock3 size={15} />}       label="New"      value={isLoadingInquiries ? "—" : counts.new}      accent="indigo" delay="60ms"  />
@@ -387,29 +387,23 @@ export default function AdminDashboard() {
             )}
 
             {activeMenu === "sales" && (
-              <div className="flex-1 overflow-auto">
-                <SalesOverview inquiries={inquiries} users={users} />
-              </div>
+              <SalesOverview inquiries={inquiries} users={users} />
             )}
 
             {activeMenu === "reminders" && (
-              <div className="flex-1 overflow-auto">
-                <RemindersPage
-                  reminders={reminders}
-                  isLoading={isLoadingReminders}
-                  onAddInquiry={handleOpenAddModal}
-                />
-              </div>
+              <RemindersPage
+                reminders={reminders}
+                isLoading={isLoadingReminders}
+                onAddInquiry={handleOpenAddModal}
+              />
             )}
 
             {activeMenu === "access" && (
-              <div className="flex-1 overflow-auto">
-                <AccessControlPanel
-                  users={users}
-                  usersError={usersError}
-                  onUsersChanged={loadUsers}
-                />
-              </div>
+              <AccessControlPanel
+                users={users}
+                usersError={usersError}
+                onUsersChanged={loadUsers}
+              />
             )}
       </main>
 
@@ -1219,7 +1213,7 @@ function InquiryTable({
   });
 
   return (
-    <section className="rounded-2xl overflow-hidden flex flex-col flex-1 min-h-0" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
+    <section className="rounded-2xl" style={{ overflow: "clip", background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
       <div className="flex flex-col gap-3 border-b border-[#D8E3F8] px-5 py-4 lg:flex-row lg:items-center lg:justify-between" style={{ background: "linear-gradient(90deg,#F5F8FF 0%,#F0F6FF 100%)" }}>
         <div>
           <h3 className="text-[15px] font-semibold text-slate-900">Inquiries</h3>
@@ -1244,7 +1238,7 @@ function InquiryTable({
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div>
         <table className="border-collapse text-[11px]" style={{ tableLayout: "fixed", width: "100%", minWidth: 900 }}>
           <colgroup>
             {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
@@ -1254,8 +1248,8 @@ function InquiryTable({
               {ADMIN_COLS.map((col, i) => (
                 <th
                   key={col.label}
-                  style={{ position: "relative", background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}
-                  className="sticky top-0 align-top border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-2 py-2 text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0 select-none"
+                  style={{ position: "sticky", top: 0, zIndex: 10, background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}
+                  className="align-top border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-2 py-2 text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0 select-none"
                 >
                   {col.label === "Received" ? (
                     <div className="flex flex-col gap-1 pr-2">

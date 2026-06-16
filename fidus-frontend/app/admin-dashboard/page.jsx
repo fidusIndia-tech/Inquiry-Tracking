@@ -69,6 +69,7 @@ export default function AdminDashboard() {
   const [dateFilter,         setDateFilter]         = useState("all");
   const [now,                setNow]                = useState(0);
   const [deleteConfirm,      setDeleteConfirm]      = useState(null);
+  const [autoAssignPreview,  setAutoAssignPreview]  = useState(null);
   const [editModal,          setEditModal]          = useState(null);
   const [subjectPreview,     setSubjectPreview]     = useState(null);
   const [detailModal,        setDetailModal]        = useState(null);
@@ -307,15 +308,31 @@ export default function AdminDashboard() {
 
   const handleAutoAssign = async () => {
     try {
+      const response = await fetch("/api/inquiries/auto-assign");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Preview failed");
+      if (data.no_mappings) {
+        alert("No client mappings set up yet. Go to Access Control to map clients to employees first.");
+        return;
+      }
+      if (data.preview.length === 0) {
+        alert(data.unmatched > 0
+          ? `No new inquiries matched any mapping. ${data.unmatched} unmatched.`
+          : "No new unassigned inquiries to assign.");
+        return;
+      }
+      setAutoAssignPreview(data);
+    } catch (e) { alert(e.message); }
+  };
+
+  const handleAutoAssignConfirm = async () => {
+    try {
       const response = await fetch("/api/inquiries/auto-assign", { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Auto-assign failed");
-      if (data.no_mappings) {
-        alert("No client mappings set up yet. Go to Access Control to map clients to employees first.");
-      } else {
-        alert(`Auto-assign done: ${data.assigned} assigned, ${data.unmatched} had no match.`);
-        await loadInquiries();
-      }
+      setAutoAssignPreview(null);
+      alert(`Done: ${data.assigned} assigned, ${data.unmatched} had no match.`);
+      await loadInquiries();
     } catch (e) { alert(e.message); }
   };
 
@@ -444,6 +461,69 @@ export default function AdminDashboard() {
                 className="flex-1 h-9 rounded-xl bg-rose-600 text-[13px] font-semibold text-white transition hover:bg-rose-700"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Auto-assign preview modal ── */}
+      {autoAssignPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-sm" onClick={() => setAutoAssignPreview(null)} />
+          <div className="relative z-10 w-full max-w-lg bg-white rounded-2xl card-shadow-lg animate-modal flex flex-col" style={{ maxHeight: "80vh" }}>
+            <div className="px-6 pt-6 pb-4 border-b border-[#EEF2F6]">
+              <button
+                onClick={() => setAutoAssignPreview(null)}
+                className="absolute top-4 right-4 h-7 w-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-[#F3F5F7] hover:text-slate-700 transition"
+              >
+                <X size={14} />
+              </button>
+              <h3 className="text-[15px] font-semibold text-slate-900">Auto-Assign Preview</h3>
+              <p className="mt-1 text-[12px] text-slate-500">
+                <span className="font-semibold text-slate-800">{autoAssignPreview.preview.length}</span> inquiries will be assigned.
+                {autoAssignPreview.unmatched > 0 && (
+                  <span className="ml-1 text-slate-400">{autoAssignPreview.unmatched} have no matching client mapping.</span>
+                )}
+              </p>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              <table className="w-full text-[12px] border-collapse">
+                <thead>
+                  <tr className="text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400 bg-[#F8FAFC] sticky top-0">
+                    <th className="px-4 py-2 border-b border-[#EEF2F6]">Inquiry</th>
+                    <th className="px-4 py-2 border-b border-[#EEF2F6]">Client</th>
+                    <th className="px-4 py-2 border-b border-[#EEF2F6]">→ Assign To</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#F1F5F9]">
+                  {autoAssignPreview.preview.map((row) => (
+                    <tr key={row.unique_code} className="hover:bg-[#F8FAFC]">
+                      <td className="px-4 py-2.5 font-mono text-[11px] text-[#1D6FD8] font-semibold whitespace-nowrap">{row.unique_code}</td>
+                      <td className="px-4 py-2.5 text-slate-700 truncate max-w-[180px]">{row.client_name}</td>
+                      <td className="px-4 py-2.5">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                          {row.employee_name}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-6 py-4 border-t border-[#EEF2F6] flex gap-2">
+              <button
+                onClick={() => setAutoAssignPreview(null)}
+                className="flex-1 h-9 rounded-xl border border-[#E4E8EE] bg-white text-[13px] font-medium text-slate-700 transition hover:bg-[#F3F5F7]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAutoAssignConfirm}
+                className="flex-1 h-9 rounded-xl text-[13px] font-semibold text-white transition hover:opacity-90"
+                style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)" }}
+              >
+                Confirm & Assign {autoAssignPreview.preview.length}
               </button>
             </div>
           </div>
@@ -1841,7 +1921,7 @@ function ClientMappingPanel({ employees, assignments, clientNames = [], onChange
   const [dropOpen,     setDropOpen]     = useState(false);
 
   const byEmployee = employees.reduce((acc, emp) => {
-    acc[emp.id] = assignments.filter((a) => a.employee_id === emp.id);
+    acc[emp.id] = assignments.filter((a) => Number(a.employee_id) === Number(emp.id));
     return acc;
   }, {});
 

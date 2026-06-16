@@ -1236,7 +1236,7 @@ function InquiryTable({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 280px)" }}>
         <table className="border-collapse text-[11px]" style={{ tableLayout: "fixed", width: "100%", minWidth: 900 }}>
           <colgroup>
             {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
@@ -1365,6 +1365,8 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
   const uom    = item.uom        || "-";
   const qty    = item.quantity   || "—";
 
+  const [pendingAssign, setPendingAssign] = useState(null);
+
   const [remarkText, setRemarkText] = useState(inquiry.remark || "");
   const [remarkSaved, setRemarkSaved] = useState(false);
   useEffect(() => { setRemarkText(inquiry.remark || ""); }, [inquiry.remark]);
@@ -1468,25 +1470,44 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
       <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         {isFirstItem ? (
           <div className="flex flex-col gap-0.5">
-            <select
-              value={inquiry.assigned_to || ""}
-              onChange={(e) => {
-                if (e.target.value === "__self__") { onAssignToMe(); }
-                else { onAssignChange(e.target.value); }
-              }}
-              className="h-7 w-full rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none cursor-pointer transition focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
-            >
-              <option value="">Unassigned</option>
-              <option value="__self__">— Assign to Me —</option>
-              {inquiry.assigned_to && !employees.find((e) => e.id === inquiry.assigned_to) && (
-                <option value={inquiry.assigned_to}>
-                  {inquiry.assigned_to_name || "Admin"}
-                </option>
+            <div className="flex items-center gap-1">
+              <select
+                value={pendingAssign !== null ? pendingAssign : (inquiry.assigned_to || "")}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "__self__") { onAssignToMe(); return; }
+                  const current = String(inquiry.assigned_to || "");
+                  if (val === current) { setPendingAssign(null); return; }
+                  setPendingAssign(val);
+                }}
+                className="h-7 w-full rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none cursor-pointer transition focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+              >
+                <option value="">Unassigned</option>
+                <option value="__self__">— Assign to Me —</option>
+                {inquiry.assigned_to && !employees.find((e) => e.id === inquiry.assigned_to) && (
+                  <option value={inquiry.assigned_to}>
+                    {inquiry.assigned_to_name || "Admin"}
+                  </option>
+                )}
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>{emp.name}</option>
+                ))}
+              </select>
+              {pendingAssign !== null && (
+                <>
+                  <button
+                    onClick={() => { onAssignChange(pendingAssign); setPendingAssign(null); }}
+                    title="Confirm"
+                    className="w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-full bg-green-100 hover:bg-green-200 text-green-600 text-[10px] font-bold transition"
+                  >✓</button>
+                  <button
+                    onClick={() => setPendingAssign(null)}
+                    title="Cancel"
+                    className="w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-full bg-red-100 hover:bg-red-200 text-red-500 text-[10px] font-bold transition"
+                  >✕</button>
+                </>
               )}
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>{emp.name}</option>
-              ))}
-            </select>
+            </div>
             {inquiry.assigned_at && (
               <p className={`text-[10px] font-medium tabular-nums whitespace-nowrap px-0.5 ${timerClass(inquiry.assigned_at, now)}`}>
                 {formatAssignmentAge(inquiry.assigned_at, now)}

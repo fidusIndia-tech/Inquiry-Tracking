@@ -22,6 +22,7 @@ from rfq_filter import is_rfq_candidate, is_client_reminder
 from attachment_handler import extract_attachment_text
 from llm_extractor import is_rfq_email, extract_rfq_data, get_buyer_identity
 from next_api_client import post_rfq_item, post_reminder_item
+from vendor_discovery import discover_and_store_vendors
 from config import get_settings
 from logging_setup import get_logger
 
@@ -248,6 +249,15 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
                 result.get("itemCount"),
             )
 
+            # Trigger async vendor discovery for each line item
+            unique_code = result.get("uniqueCode")
+            if unique_code and line_items:
+                discover_vendors_task.apply_async(
+                    args=[unique_code, line_items],
+                    queue="emails",
+                    countdown=10,
+                )
+
         except HttpError as exc:
             status = exc.resp.status if exc.resp else "unknown"
             if status == 404:
@@ -370,3 +380,41 @@ def poll_all_users(self) -> dict:
         logger.info("poll_all_users | dispatched poll for %s task=%s", uid, t.id)
 
     return {"status": "dispatched", "users": len(user_ids), "task_ids": dispatched}
+
+
+@celery_app.task(
+    base=BaseTask,
+    name="workers.tasks.discover_vendors_task",
+    autoretry_for=(ConnectionError, TimeoutError),
+    max_retries=2,
+    retry_backoff=30,
+    retry_jitter=True,
+)
+def discover_vendors_task(unique_code: str, line_items: list[dict]) -> dict:
+    """
+    Discover vendors for every line item in an exported RFQ.
+    Triggered automatically after a successful RFQ export (10s countdown).
+    Results are stored via Next.js API → PostgreSQL vendor tables.
+    """
+    total_stored = 0
+    for item in line_items:
+        if not isinstance(item, dict):
+            continue
+        brand       = (item.get("brand") or "").strip()
+        part_number = (item.get("part_number") or "").strip()
+        if not brand or not part_number:
+            continue
+        try:
+            vendors = discover_and_store_vendors(brand, part_number, unique_code)
+            total_stored += len(vendors)
+        except Exception as exc:
+            logger.error(
+                "Vendor discovery failed | %s | %s %s: %s",
+                unique_code, brand, part_number, exc,
+            )
+
+    logger.info(
+        "Vendor discovery task done | %s | items=%d | vendors_stored=%d",
+        unique_code, len(line_items), total_stored,
+    )
+    return {"unique_code": unique_code, "vendors_stored": total_stored}

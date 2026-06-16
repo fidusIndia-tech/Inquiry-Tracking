@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = ""
 
+    # Vendor Discovery
+    SERPAPI_KEY: str = ""
+    NEXT_VENDORS_API_URL: str = "http://localhost:3000/api/parser/vendors"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

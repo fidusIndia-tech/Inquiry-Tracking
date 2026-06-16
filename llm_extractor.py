@@ -358,7 +358,7 @@ Email body:
 
 def is_rfq_email(email_dict: dict) -> bool:
     """
-    Layer 2: Ask gpt-4o-mini if this is an RFQ.
+    Layer 2: Ask gpt-4o if this is an RFQ.
     For reply/fwd chains, passes only the new top-of-reply content so the LLM
     judges the current message and not quoted history (which may contain old RFQs).
     """
@@ -395,7 +395,7 @@ def is_rfq_email(email_dict: dict) -> bool:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": CLASSIFIER_SYSTEM},
                 {"role": "user",   "content": prompt},

@@ -1218,8 +1218,8 @@ function InquiryTable({
   });
 
   return (
-    <section className="rounded-2xl" style={{ overflow: "clip", background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
-      <div className="flex flex-col gap-3 border-b border-[#D8E3F8] px-5 py-4 lg:flex-row lg:items-center lg:justify-between" style={{ background: "linear-gradient(90deg,#F5F8FF 0%,#F0F6FF 100%)" }}>
+    <section className="rounded-2xl" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
+      <div className="flex flex-col gap-3 border-b border-[#D8E3F8] px-5 py-4 lg:flex-row lg:items-center lg:justify-between rounded-t-2xl overflow-hidden" style={{ background: "linear-gradient(90deg,#F5F8FF 0%,#F0F6FF 100%)" }}>
         <div>
           <h3 className="text-[15px] font-semibold text-slate-900">Inquiries</h3>
           <p className="text-[11px] text-slate-400 mt-0.5">{inquiries.length} of {totalCount} groups</p>
@@ -1243,7 +1243,7 @@ function InquiryTable({
         </div>
       </div>
 
-      <div style={{ overflowX: "auto", overflowY: "clip" }}>
+      <div>
         <table className="border-collapse text-[11px]" style={{ tableLayout: "fixed", width: "100%", minWidth: 900 }}>
           <colgroup>
             {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}

@@ -330,7 +330,7 @@ def debug_vendors(brand: str = "SERO", part_number: str = "SOHB113WG2V10"):
     # Step 2: Raw SerpAPI call (one query, expose full response)
     try:
         search = GoogleSearch({
-            "q":       f'"{brand}" "{part_number}" distributor India',
+            "q":       f'"{brand}" {part_number} distributor India',
             "api_key": settings.SERPAPI_KEY,
             "num":     5,
             "gl":      "in",

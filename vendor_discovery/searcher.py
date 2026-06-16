@@ -12,11 +12,11 @@ from logging_setup import get_logger
 logger = get_logger(__name__)
 settings = get_settings()
 
-# Three angles per part: specific model, India dealer, buy/price
+# Three angles per part — brand quoted (exact brand name), part number unquoted (flexible match)
 _QUERY_TEMPLATES = [
-    '"{brand}" "{part_number}" authorized distributor India',
-    '"{brand}" "{part_number}" supplier dealer India',
-    '"{brand}" "{part_number}" buy price India',
+    '"{brand}" {part_number} authorized distributor India',
+    '"{brand}" {part_number} supplier dealer India',
+    '"{brand}" {part_number} buy price India',
 ]
 
 # Domains that are directories/marketplaces, not direct vendors — skip visiting

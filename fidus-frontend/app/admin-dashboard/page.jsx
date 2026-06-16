@@ -1244,7 +1244,7 @@ function InquiryTable({
         </div>
       </div>
 
-      <div>
+      <div style={{ overflowX: "auto", overflowY: "clip" }}>
         <table className="border-collapse text-[11px]" style={{ tableLayout: "fixed", width: "100%", minWidth: 900 }}>
           <colgroup>
             {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}

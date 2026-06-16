@@ -1,7 +1,51 @@
-import { query } from "@/lib/db";
+import { pool, query } from "@/lib/db";
+
+let _vendorSchemaReady = false;
+async function ensureVendorSchema() {
+  if (_vendorSchemaReady) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vendors (
+      id                  SERIAL PRIMARY KEY,
+      name                TEXT NOT NULL,
+      website             TEXT,
+      domain              TEXT UNIQUE,
+      email               TEXT,
+      phone               TEXT,
+      city                TEXT,
+      country             TEXT,
+      is_authorized_dealer BOOLEAN DEFAULT FALSE,
+      source              TEXT DEFAULT 'serpapi',
+      created_at          TIMESTAMPTZ DEFAULT NOW(),
+      updated_at          TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vendor_brand_coverage (
+      id            SERIAL PRIMARY KEY,
+      vendor_id     INT REFERENCES vendors(id) ON DELETE CASCADE,
+      brand         TEXT NOT NULL,
+      part_number   TEXT,
+      discovered_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(vendor_id, brand, part_number)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inquiry_vendors (
+      id                  SERIAL PRIMARY KEY,
+      inquiry_unique_code TEXT,
+      vendor_id           INT REFERENCES vendors(id) ON DELETE CASCADE,
+      brand               TEXT,
+      part_number         TEXT,
+      created_at          TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(inquiry_unique_code, vendor_id, brand, part_number)
+    )
+  `);
+  _vendorSchemaReady = true;
+}
 
 export async function GET(request) {
   try {
+    await ensureVendorSchema();
     const { searchParams } = new URL(request.url);
     const uniqueCode  = searchParams.get("unique_code");
     const brand       = searchParams.get("brand");

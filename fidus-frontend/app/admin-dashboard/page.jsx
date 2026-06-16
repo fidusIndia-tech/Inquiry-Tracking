@@ -352,9 +352,9 @@ export default function AdminDashboard() {
         remindersCount={unreadRemindersCount}
       />
 
-      <main className="flex-1 overflow-auto p-4 lg:p-5">
+      <main className="flex-1 overflow-hidden flex flex-col p-4 lg:p-5">
             {activeMenu === "dashboard" && (
-              <div className="space-y-4">
+              <div className="flex flex-col flex-1 min-h-0 gap-4">
                 <section className="flex gap-3">
                   <MetricCard icon={<FileText size={15} />}     label="Total"    value={isLoadingInquiries ? "—" : counts.total}    accent="blue"   delay="0ms"   />
                   <MetricCard icon={<Clock3 size={15} />}       label="New"      value={isLoadingInquiries ? "—" : counts.new}      accent="indigo" delay="60ms"  />
@@ -386,22 +386,30 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {activeMenu === "sales" && <SalesOverview inquiries={inquiries} users={users} />}
+            {activeMenu === "sales" && (
+              <div className="flex-1 overflow-auto">
+                <SalesOverview inquiries={inquiries} users={users} />
+              </div>
+            )}
 
             {activeMenu === "reminders" && (
-              <RemindersPage
-                reminders={reminders}
-                isLoading={isLoadingReminders}
-                onAddInquiry={handleOpenAddModal}
-              />
+              <div className="flex-1 overflow-auto">
+                <RemindersPage
+                  reminders={reminders}
+                  isLoading={isLoadingReminders}
+                  onAddInquiry={handleOpenAddModal}
+                />
+              </div>
             )}
 
             {activeMenu === "access" && (
-              <AccessControlPanel
-                users={users}
-                usersError={usersError}
-                onUsersChanged={loadUsers}
-              />
+              <div className="flex-1 overflow-auto">
+                <AccessControlPanel
+                  users={users}
+                  usersError={usersError}
+                  onUsersChanged={loadUsers}
+                />
+              </div>
             )}
       </main>
 
@@ -1211,7 +1219,7 @@ function InquiryTable({
   });
 
   return (
-    <section className="rounded-2xl overflow-hidden" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
+    <section className="rounded-2xl overflow-hidden flex flex-col flex-1 min-h-0" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
       <div className="flex flex-col gap-3 border-b border-[#D8E3F8] px-5 py-4 lg:flex-row lg:items-center lg:justify-between" style={{ background: "linear-gradient(90deg,#F5F8FF 0%,#F0F6FF 100%)" }}>
         <div>
           <h3 className="text-[15px] font-semibold text-slate-900">Inquiries</h3>
@@ -1236,7 +1244,7 @@ function InquiryTable({
         </div>
       </div>
 
-      <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 280px)" }}>
+      <div className="flex-1 overflow-auto">
         <table className="border-collapse text-[11px]" style={{ tableLayout: "fixed", width: "100%", minWidth: 900 }}>
           <colgroup>
             {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}

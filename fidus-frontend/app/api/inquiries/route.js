@@ -48,7 +48,6 @@ export async function GET() {
               'vendor', ii.vendor,
               'itemNotes', ii.item_notes
             )
-            ORDER BY ii.id
           ) FILTER (WHERE ii.id IS NOT NULL),
           '[]'::json
         ) AS items

@@ -98,11 +98,15 @@ CREATE TABLE IF NOT EXISTS inquiry_status_history (
 );
 
 CREATE INDEX IF NOT EXISTS inquiries_status_idx ON inquiries (status);
-CREATE INDEX IF NOT EXISTS inquiries_email_date_idx ON inquiries (email_date);
+CREATE INDEX IF NOT EXISTS inquiries_email_date_idx ON inquiries (email_date DESC);
+CREATE INDEX IF NOT EXISTS inquiries_assigned_to_idx ON inquiries (assigned_to);
+CREATE INDEX IF NOT EXISTS inquiries_created_at_idx ON inquiries (created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS inquiries_source_fingerprint_idx
   ON inquiries (source_fingerprint)
   WHERE source_fingerprint IS NOT NULL;
 CREATE INDEX IF NOT EXISTS inquiry_items_inquiry_id_idx ON inquiry_items (inquiry_id);
+CREATE INDEX IF NOT EXISTS inquiry_status_history_inquiry_id_idx
+  ON inquiry_status_history (inquiry_id, created_at DESC);
 
 DROP VIEW IF EXISTS extracted_mail_items;
 

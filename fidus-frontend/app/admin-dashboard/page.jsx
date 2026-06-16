@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import InquiryDetailModal from "@/app/components/InquiryDetailModal";
 import Image from "next/image";
@@ -72,7 +72,6 @@ export default function AdminDashboard() {
   const [editModal,          setEditModal]          = useState(null);
   const [subjectPreview,     setSubjectPreview]     = useState(null);
   const [detailModal,        setDetailModal]        = useState(null);
-  const [assignToMeModal,    setAssignToMeModal]    = useState(null); // kept for compat, unused
   const [notifBadge,         setNotifBadge]         = useState(0);
   const [reminders,          setReminders]          = useState([]);
   const [isLoadingReminders, setIsLoadingReminders] = useState(false);
@@ -83,7 +82,8 @@ export default function AdminDashboard() {
   const fetchReminders = useCallback(async () => {
     setIsLoadingReminders(true);
     try {
-      const res  = await fetch("/api/reminders");
+      const res = await fetch("/api/reminders");
+      if (!res.ok) return;
       const data = await res.json();
       setReminders(data.reminders || []);
     } catch (_) {}
@@ -123,6 +123,8 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     let isMounted = true;
+    let lastFetchAt = 0;
+
     async function loadInitial() {
       try {
         setIsLoadingInquiries(true);
@@ -130,7 +132,7 @@ export default function AdminDashboard() {
         const response = await fetch("/api/inquiries");
         const data     = await response.json();
         if (!response.ok) throw new Error(data.error || "Failed to load inquiries");
-        if (isMounted) setInquiries(data.inquiries || []);
+        if (isMounted) { lastFetchAt = Date.now(); setInquiries(data.inquiries || []); }
       } catch (error) {
         if (isMounted) setInquiriesError(error.message);
       } finally {
@@ -139,6 +141,8 @@ export default function AdminDashboard() {
     }
     async function pollInquiries() {
       if (!isMounted) return;
+      if (Date.now() - lastFetchAt < 2000) return; // debounce: skip if fetched <2s ago
+      lastFetchAt = Date.now();
       try {
         const response = await fetch("/api/inquiries");
         const data     = await response.json();
@@ -148,19 +152,21 @@ export default function AdminDashboard() {
         /* silent — don't surface background poll errors */
       }
     }
+
+    // Kick off inquiries + users in parallel
     loadInitial();
-    const usersTimer = window.setTimeout(() => loadUsers(), 0);
+    loadUsers();
 
     // SSE: server pushes instantly on every DB change
     const es = new EventSource("/api/inquiries/stream");
     es.onmessage = () => { if (isMounted) pollInquiries(); };
+    es.onerror   = () => {}; // silent — browser auto-reconnects SSE
 
-    // 30 s fallback poll in case SSE reconnects after a network blip
+    // 30 s fallback poll in case SSE misses an update
     const pollTimer = window.setInterval(pollInquiries, 30000);
 
     return () => {
       isMounted = false;
-      window.clearTimeout(usersTimer);
       window.clearInterval(pollTimer);
       es.close();
     };
@@ -206,71 +212,64 @@ export default function AdminDashboard() {
     prevCountRef.current = curr;
   }, [inquiries]);
 
-  const filteredInquiries = inquiries.filter((inquiry) => {
-    const tokens = searchText
-      .trim()
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(Boolean);
-    const text = [
-      inquiry.unique_code,
-      inquiry.client_name,
-      inquiry.location,
-      inquiry.sender_name,
-      inquiry.sender_email,
-      inquiry.subject,
-      inquiry.status,
-      inquiry.assigned_to_name,
-      inquiry.assigned_ref_name,
-      ...(inquiry.items || []).flatMap((item) => [
-        item.brand,
-        item.partNumber,
-        item.quantity,
-        item.uom,
-        item.itemNotes,
-      ]),
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
+  const filteredInquiries = useMemo(() => {
+    const tokens = searchText.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const todayMs = today.getTime();
 
-    const assignedAtMs = inquiry.assigned_at ? new Date(inquiry.assigned_at).getTime() : null;
-    const ageHours = assignedAtMs ? (now - assignedAtMs) / 36e5 : null;
-    const matchesAssignmentFilter =
-      assignmentFilter === "all" ||
-      (assignmentFilter === "over24h" && ageHours !== null && ageHours > 24) ||
-      (assignmentFilter === "over48h" && ageHours !== null && ageHours > 48);
+    return inquiries.filter((inquiry) => {
+      if (statusFilter !== "all" && inquiry.status !== statusFilter) return false;
 
-    const matchesDateFilter = (() => {
-      if (dateFilter === "all") return true;
-      if (!inquiry.email_date) return false;
-      const d = new Date(inquiry.email_date);
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      if (dateFilter === "today")     return d >= today;
-      if (dateFilter === "yesterday") { const y = new Date(today); y.setDate(y.getDate() - 1); return d >= y && d < today; }
-      if (dateFilter === "7d")        return d >= new Date(today.getTime() - 6 * 864e5);
-      if (dateFilter === "30d")       return d >= new Date(today.getTime() - 29 * 864e5);
+      if (assignmentFilter !== "all") {
+        const assignedAtMs = inquiry.assigned_at ? new Date(inquiry.assigned_at).getTime() : null;
+        const ageHours = assignedAtMs ? (now - assignedAtMs) / 36e5 : null;
+        if (assignmentFilter === "over24h" && !(ageHours !== null && ageHours > 24)) return false;
+        if (assignmentFilter === "over48h" && !(ageHours !== null && ageHours > 48)) return false;
+      }
+
+      if (dateFilter !== "all") {
+        if (!inquiry.email_date) return false;
+        const d = new Date(inquiry.email_date).getTime();
+        if (dateFilter === "today"     && d < todayMs) return false;
+        if (dateFilter === "yesterday" && !(d >= todayMs - 864e5 && d < todayMs)) return false;
+        if (dateFilter === "7d"        && d < todayMs - 6 * 864e5) return false;
+        if (dateFilter === "30d"       && d < todayMs - 29 * 864e5) return false;
+      }
+
+      if (tokens.length > 0) {
+        const text = [
+          inquiry.unique_code,
+          inquiry.client_name,
+          inquiry.location,
+          inquiry.sender_name,
+          inquiry.sender_email,
+          inquiry.subject,
+          inquiry.status,
+          inquiry.assigned_to_name,
+          inquiry.assigned_ref_name,
+          ...(inquiry.items || []).flatMap((item) => [
+            item.brand, item.partNumber, item.quantity, item.uom, item.itemNotes,
+          ]),
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (!tokens.every((token) => text.includes(token))) return false;
+      }
+
       return true;
-    })();
+    });
+  }, [inquiries, searchText, statusFilter, assignmentFilter, dateFilter, now]);
 
-    return (
-      tokens.every((token) => text.includes(token)) &&
-      (statusFilter === "all" || inquiry.status === statusFilter) &&
-      matchesAssignmentFilter &&
-      matchesDateFilter
-    );
-  });
-
-  const counts = {
+  const counts = useMemo(() => ({
     total:    inquiries.length,
     new:      inquiries.filter((i) => i.status === "new").length,
     assigned: inquiries.filter((i) => i.status === "assigned").length,
     quoted:   inquiries.filter((i) => i.status === "quoted").length,
-  };
+  }), [inquiries]);
 
-  const employeeOptions = users
-    .filter((user) => user.role === "employee" && user.is_active)
-    .map((user) => ({ id: user.id, name: user.name, email: user.email }));
+  const employeeOptions = useMemo(() =>
+    users
+      .filter((user) => user.role === "employee" && user.is_active)
+      .map((user) => ({ id: user.id, name: user.name, email: user.email })),
+  [users]);
 
   const PORTAL_URL = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://practical-amazement-production-3539.up.railway.app").replace(/\/$/, "");
 

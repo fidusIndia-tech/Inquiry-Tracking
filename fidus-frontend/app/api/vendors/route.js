@@ -49,9 +49,18 @@ export async function GET(request) {
         [brand]
       );
     } else {
-      return Response.json(
-        { error: "Provide unique_code, brand+part_number, or brand" },
-        { status: 400 }
+      // No filter — return full vendor knowledge base (latest 500)
+      result = await query(
+        `SELECT
+           v.id, v.name, v.website, v.domain, v.email, v.phone,
+           v.city, v.country, v.is_authorized_dealer, v.source, v.updated_at,
+           vbc.brand, vbc.part_number,
+           iv.inquiry_unique_code
+         FROM vendor_brand_coverage vbc
+         JOIN vendors v ON v.id = vbc.vendor_id
+         LEFT JOIN inquiry_vendors iv ON iv.vendor_id = v.id AND iv.brand = vbc.brand AND iv.part_number = vbc.part_number
+         ORDER BY v.updated_at DESC
+         LIMIT 500`
       );
     }
 

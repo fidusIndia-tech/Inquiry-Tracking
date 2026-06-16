@@ -20,6 +20,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Store,
   Trash2,
   Users,
   X,
@@ -425,6 +426,12 @@ export default function AdminDashboard() {
                   usersError={usersError}
                   onUsersChanged={loadUsers}
                 />
+              </div>
+            )}
+
+            {activeMenu === "vendors" && (
+              <div className="pt-4 lg:pt-5">
+                <VendorsPanel />
               </div>
             )}
       </main>
@@ -895,6 +902,13 @@ function Sidebar({
             collapsed={collapsed}
             onClick={() => { setActiveMenu("access"); setMobileOpen(false); }}
           />
+          <SidebarItem
+            icon={<Store size={15} />}
+            title="Vendors"
+            active={activeMenu === "vendors"}
+            collapsed={collapsed}
+            onClick={() => { setActiveMenu("vendors"); setMobileOpen(false); }}
+          />
         </nav>
       </div>
 
@@ -966,6 +980,7 @@ const TOP_NAV = [
   { key: "sales",     label: "Sales",          icon: <Inbox size={12} /> },
   { key: "access",    label: "Access Control", icon: <Users size={12} /> },
   { key: "reminders", label: "Reminders",      icon: <Bell size={12} /> },
+  { key: "vendors",   label: "Vendors",        icon: <Store size={12} /> },
 ];
 
 const PORTAL_BASE = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://practical-amazement-production-3539.up.railway.app").replace(/\/$/, "");
@@ -2492,5 +2507,162 @@ function AddInquiryModal({ reminder, onClose, onSuccess }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ──────────────────────────────────────────────
+   VENDORS PANEL
+─────────────────────────────────────────────── */
+function VendorsPanel() {
+  const [vendors, setVendors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState("");
+  const [search,  setSearch]  = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true);
+        const res  = await fetch("/api/vendors");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load vendors");
+        setVendors(data.vendors || []);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const filtered = vendors.filter((v) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return [v.name, v.brand, v.part_number, v.email, v.domain, v.inquiry_unique_code]
+      .join(" ").toLowerCase().includes(q);
+  });
+
+  const totalWithEmail  = vendors.filter((v) => v.email).length;
+  const totalAuthorized = vendors.filter((v) => v.is_authorized_dealer).length;
+
+  return (
+    <section className="rounded-2xl overflow-hidden" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
+
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E4EDFF] px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.30)" }}>
+            <Store size={15} className="text-white" />
+          </div>
+          <div>
+            <h2 className="text-[13px] font-bold text-slate-800">Vendor Knowledge Base</h2>
+            <p className="text-[10px] text-slate-400">Auto-discovered via SerpAPI · stored permanently · reused across all future RFQs</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-0.5 font-semibold text-[#1D6FD8]">{vendors.length} vendors</span>
+          <span className="rounded-full border border-[#6EE7B7] bg-[#ECFDF5] px-2.5 py-0.5 font-semibold text-emerald-700">{totalWithEmail} with email</span>
+          <span className="rounded-full border border-[#C4B5FD] bg-[#F5F3FF] px-2.5 py-0.5 font-semibold text-violet-700">{totalAuthorized} authorized</span>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="border-b border-[#E4EDFF] px-4 py-2.5">
+        <div className="flex items-center gap-2 h-8 px-3 rounded-lg border border-[#E4E8EE] bg-[#F8FAFC] max-w-xs transition focus-within:border-[#5BA7FF] focus-within:bg-white">
+          <Search size={12} className="text-slate-400 shrink-0" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search vendor, brand, part number…"
+            className="flex-1 bg-transparent text-[12px] text-slate-800 outline-none placeholder:text-slate-400"
+          />
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[11px]" style={{ minWidth: 960 }}>
+          <thead>
+            <tr style={{ background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}>
+              {["Brand", "Part Number", "Vendor Name", "Email", "Phone", "Website", "Location", "Authorized", "Inquiry"].map((h) => (
+                <th key={h} className="border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-3 py-2 text-left text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading && Array.from({ length: 6 }, (_, r) => (
+              <tr key={r}>
+                {Array.from({ length: 9 }, (_, c) => (
+                  <td key={c} className="border-b border-r border-[#DCE6F7] px-3 py-2.5 last:border-r-0">
+                    <div className="skeleton h-3" style={{ width: c === 2 ? "70%" : "55%" }} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {!loading && error && (
+              <tr><td colSpan={9} className="px-4 py-8 text-[12px] text-rose-600">{error}</td></tr>
+            )}
+            {!loading && !error && filtered.length === 0 && (
+              <tr>
+                <td colSpan={9} className="px-4 py-14 text-center">
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)" }}>
+                    <Store size={20} className="text-[#1D6FD8]" />
+                  </div>
+                  <p className="text-[13px] font-semibold text-slate-700">No vendors discovered yet</p>
+                  <p className="mt-1 text-[11px] text-slate-400">Vendors are auto-discovered 10 seconds after each RFQ email is processed.</p>
+                </td>
+              </tr>
+            )}
+            {!loading && !error && filtered.map((v, i) => (
+              <tr
+                key={`${v.id}-${v.brand}-${v.part_number}-${i}`}
+                className="border-b border-[#EEF2F6] transition"
+                style={{ background: i % 2 === 0 ? "white" : "#FAFBFF" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#F0F6FF")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = i % 2 === 0 ? "white" : "#FAFBFF")}
+              >
+                <td className="border-r border-[#DCE6F7] px-3 py-2">
+                  <span className="rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-1.5 py-0.5 text-[10px] font-semibold text-[#1D6FD8]">{v.brand || "—"}</span>
+                </td>
+                <td className="border-r border-[#DCE6F7] px-3 py-2">
+                  <p className="font-mono text-[10px] font-semibold text-slate-700">{v.part_number || "—"}</p>
+                </td>
+                <td className="border-r border-[#DCE6F7] px-3 py-2">
+                  <p className="font-medium text-slate-800 truncate max-w-[150px]" title={v.name}>{v.name || "—"}</p>
+                </td>
+                <td className="border-r border-[#DCE6F7] px-3 py-2">
+                  {v.email
+                    ? <a href={`mailto:${v.email}`} className="text-[#1D6FD8] hover:underline truncate block max-w-[160px]" title={v.email}>{v.email}</a>
+                    : <span className="text-slate-300">—</span>}
+                </td>
+                <td className="border-r border-[#DCE6F7] px-3 py-2">
+                  <p className="text-slate-600 whitespace-nowrap">{v.phone || <span className="text-slate-300">—</span>}</p>
+                </td>
+                <td className="border-r border-[#DCE6F7] px-3 py-2">
+                  {v.website
+                    ? <a href={v.website} target="_blank" rel="noopener noreferrer" className="text-[#1D6FD8] hover:underline truncate block max-w-[140px]" title={v.website}>{v.domain || v.website}</a>
+                    : <span className="text-slate-300">—</span>}
+                </td>
+                <td className="border-r border-[#DCE6F7] px-3 py-2">
+                  <p className="text-slate-500 text-[10px] whitespace-nowrap">{[v.city, v.country].filter(Boolean).join(", ") || <span className="text-slate-300">—</span>}</p>
+                </td>
+                <td className="border-r border-[#DCE6F7] px-3 py-2 text-center">
+                  {v.is_authorized_dealer
+                    ? <span className="inline-flex items-center rounded-full border border-[#6EE7B7] bg-[#ECFDF5] px-2 py-0.5 text-[9px] font-bold text-emerald-700">✓ Auth</span>
+                    : <span className="text-slate-300 text-[10px]">—</span>}
+                </td>
+                <td className="px-3 py-2">
+                  {v.inquiry_unique_code
+                    ? <span className="font-mono text-[10px] font-semibold text-[#4451E8]">{v.inquiry_unique_code}</span>
+                    : <span className="text-slate-300 text-[10px]">—</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

@@ -315,12 +315,49 @@ def debug_vendors(brand: str = "SERO", part_number: str = "SOHB113WG2V10"):
         "steps": {},
     }
 
-    # Step 1: SerpAPI search
+    # Step 1: Check if serpapi package is importable
+    try:
+        from serpapi import GoogleSearch
+        report["steps"]["package_import"] = {"status": "ok", "package": "serpapi/GoogleSearch imported"}
+    except ImportError as exc:
+        report["steps"]["package_import"] = {
+            "status": "ERROR — package not installed",
+            "detail": str(exc),
+            "fix": "Add 'google-search-results>=2.4.2' to requirements.txt and redeploy",
+        }
+        return report
+
+    # Step 2: Raw SerpAPI call (one query, expose full response)
+    try:
+        search = GoogleSearch({
+            "q":       f'"{brand}" "{part_number}" distributor India',
+            "api_key": settings.SERPAPI_KEY,
+            "num":     5,
+            "gl":      "in",
+            "hl":      "en",
+        })
+        raw = search.get_dict()
+        organic = raw.get("organic_results", [])
+        error   = raw.get("error", None)
+        report["steps"]["serpapi_raw"] = {
+            "status":          "error" if error else ("ok" if organic else "empty"),
+            "serpapi_error":   error,
+            "results_count":   len(organic),
+            "sample_titles":   [r.get("title") for r in organic[:3]],
+            "account_info":    raw.get("search_metadata", {}).get("status"),
+        }
+        if error or not organic:
+            return report
+    except Exception as exc:
+        report["steps"]["serpapi_raw"] = {"status": "exception", "detail": str(exc)}
+        return report
+
+    # Step 3: Full discovery search
     try:
         from vendor_discovery.searcher import search_vendors
         results = search_vendors(brand, part_number)
         report["steps"]["serpapi_search"] = {
-            "status": "ok",
+            "status": "ok" if results else "empty",
             "results_count": len(results),
             "sample": results[:3],
         }
@@ -329,7 +366,6 @@ def debug_vendors(brand: str = "SERO", part_number: str = "SOHB113WG2V10"):
         return report
 
     if not results:
-        report["steps"]["serpapi_search"]["status"] = "empty — check SERPAPI_KEY in Railway env"
         return report
 
     # Step 2: Contact extraction on first result

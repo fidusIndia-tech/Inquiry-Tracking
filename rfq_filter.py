@@ -71,6 +71,10 @@ SPAM_DOMAINS = {
 
 # ── Subject line patterns → NOT an RFQ ──────────────────────────────────────
 REJECT_SUBJECT_PATTERNS = [
+    # ── Purchase order / order confirmation (not an inbound RFQ) ─────────────
+    r"purchase\s+order",                         # "Purchase Order #1234"
+    r"\bpo\s*(?:no\.?|number|#|num\.?)[\s.:/#-]*\d",  # "PO No. 5678"
+    r"order\s+confirmation",                     # "Order Confirmation"
     # generic non-RFQ content
     r"unsubscribe", r"newsletter", r"webinar", r"auction",
     r"sale closes",
@@ -174,7 +178,7 @@ LOGISTICS_BODY_SIGNALS = [
 RFQ_SUBJECT_KEYWORDS = [
     "rfq", "request for quotation", "request for quote",
     "quotation", "quote", "pricing", "price inquiry",
-    "purchase order", "po ", " po#", "enquiry", "inquiry",
+    "enquiry", "inquiry",
     "requirement", "requirment",
     # more specific spare-part requests (bare "spare" removed — too generic)
     "spare parts required", "spare parts needed", "spare parts enquiry",
@@ -418,13 +422,11 @@ def is_client_reminder(email_dict: dict) -> bool:
     Returns True when this email should land in the Reminders panel
     (admin reviews it and decides whether to create an inquiry).
 
-    Three paths:
+    Two paths:
       1. Platform/portal RFQ reminder — subject contains "reminder" AND
          references rfq/quotation/quote/enquiry (e.g. "Reminder(2) for Group RFQ…")
-      2. RE: reply chain with standard follow-up language (REPLY_FOLLOWUP_RE)
-      3. RE: reply chain with urgent-awaiting language (URGENT_AWAITING_RE) —
-         previously bypassed the noise check to auto-create an inquiry; now
-         always routed to admin review.
+      2. ANY RE: reply chain — admin always reviews reply threads regardless of
+         content; Layer 1 already dropped logistics/spam re: emails before this runs.
     """
     subject = (email_dict.get("subject") or "").strip().lower()
 
@@ -432,12 +434,5 @@ def is_client_reminder(email_dict: dict) -> bool:
     if "reminder" in subject and _PLATFORM_REMINDER_RFQ_RE.search(subject):
         return True
 
-    # Paths 2 & 3 — RE: reply-chain follow-ups
-    if not subject.startswith("re:"):
-        return False
-    plain, html_stripped = _extract_text(email_dict)
-    body = plain if plain.strip() else html_stripped
-    latest = _latest_reply_text(body)
-    if not latest:
-        return False
-    return bool(REPLY_FOLLOWUP_RE.search(latest) or URGENT_AWAITING_RE.search(latest))
+    # Path 2 — all RE: reply chains go to admin review
+    return subject.startswith("re:")

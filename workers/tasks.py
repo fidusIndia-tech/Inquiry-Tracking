@@ -127,14 +127,35 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
                 stats["layer1_dropped"] += 1
                 continue
 
-            # 3. Extract text from attachments before LLM extraction.
+            # 3. Reminder interception — runs BEFORE Layer 2 so re: chains
+            #    never auto-create an inquiry regardless of quoted RFQ content.
+            #    Layer 1 already dropped logistics/spam/noise re: emails.
+            if is_client_reminder(parsed):
+                att = ""
+                if parsed.get("has_attachment"):
+                    try:
+                        att = extract_attachment_text(
+                            service, msg_id, raw.get("payload", {})
+                        )
+                    except Exception as e:
+                        logger.warning("Attachment fetch failed for reminder %s: %s", msg_id, e)
+                try:
+                    reminder_items = extract_rfq_data(parsed, att)
+                except Exception as e:
+                    logger.warning("Item extraction failed for reminder %s: %s", msg_id, e)
+                    reminder_items = []
+                _route_to_reminder(msg_id, parsed, reminder_items)
+                stats["reminder_routed"] += 1
+                continue
+
+            # 4. Extract text from attachments before LLM extraction.
             attachment_text = ""
             if parsed.get("has_attachment"):
                 attachment_text = extract_attachment_text(
                     service, msg_id, raw.get("payload", {})
                 )
 
-            # 4. Layer 2: LLM yes/no classifier.
+            # 5. Layer 2: LLM yes/no classifier.
             if not is_rfq_email(parsed):
                 if is_client_reminder(parsed):
                     try:

@@ -297,3 +297,77 @@ def stats(request: Request):
 def logout(request: Request):
     request.session.clear()
     return {"status": "logged_out"}
+
+
+@router.get("/debug/vendors")
+def debug_vendors(brand: str = "SERO", part_number: str = "SOHB113WG2V10"):
+    """
+    Manually run the full vendor discovery pipeline and return step-by-step results.
+    Use ?brand=XXX&part_number=YYY to test any specific part.
+    """
+    report = {
+        "config": {
+            "SERPAPI_KEY": "SET" if settings.SERPAPI_KEY else "NOT SET — discovery will be skipped",
+            "NEXT_VENDORS_API_URL": settings.NEXT_VENDORS_API_URL or "NOT SET",
+        },
+        "brand": brand,
+        "part_number": part_number,
+        "steps": {},
+    }
+
+    # Step 1: SerpAPI search
+    try:
+        from vendor_discovery.searcher import search_vendors
+        results = search_vendors(brand, part_number)
+        report["steps"]["serpapi_search"] = {
+            "status": "ok",
+            "results_count": len(results),
+            "sample": results[:3],
+        }
+    except Exception as exc:
+        report["steps"]["serpapi_search"] = {"status": "error", "detail": str(exc)}
+        return report
+
+    if not results:
+        report["steps"]["serpapi_search"]["status"] = "empty — check SERPAPI_KEY in Railway env"
+        return report
+
+    # Step 2: Contact extraction on first result
+    try:
+        from vendor_discovery.scraper import fetch_vendor_page, extract_contacts
+        first = results[0]
+        snippet_contacts = extract_contacts(first.get("snippet", ""))
+        page_text = fetch_vendor_page(first["url"])
+        page_contacts = extract_contacts(page_text) if page_text else {}
+        report["steps"]["contact_extraction"] = {
+            "url": first["url"],
+            "snippet_contacts": snippet_contacts,
+            "page_fetched": bool(page_text),
+            "page_contacts": page_contacts,
+        }
+    except Exception as exc:
+        report["steps"]["contact_extraction"] = {"status": "error", "detail": str(exc)}
+
+    # Step 3: POST to Next.js vendor API
+    try:
+        from vendor_discovery.client import post_vendor
+        test_payload = {
+            "name": "DEBUG TEST VENDOR",
+            "website": "https://example.com",
+            "domain": "debug-test-vendor-do-not-keep.example.com",
+            "email": "test@example.com",
+            "phone": None,
+            "city": None,
+            "country": None,
+            "is_authorized_dealer": False,
+            "brand": brand,
+            "part_number": part_number,
+            "inquiry_unique_code": "DEBUG",
+            "source": "debug",
+        }
+        post_result = post_vendor(test_payload)
+        report["steps"]["post_to_nextjs"] = {"status": "ok", "result": post_result}
+    except Exception as exc:
+        report["steps"]["post_to_nextjs"] = {"status": "error", "detail": str(exc)}
+
+    return report

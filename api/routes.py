@@ -299,6 +299,35 @@ def logout(request: Request):
     return {"status": "logged_out"}
 
 
+@router.get("/trigger-vendors")
+def trigger_vendors(unique_code: str, brand: str, part_number: str):
+    """
+    Manually run vendor discovery for a specific inquiry line item.
+    Runs synchronously (bypasses Celery) so you can see the result immediately.
+    Example: /trigger-vendors?unique_code=FIAPL0000357&brand=3M&part_number=CT4BK18-C
+    """
+    from vendor_discovery import discover_and_store_vendors
+
+    report = {
+        "unique_code": unique_code,
+        "brand": brand,
+        "part_number": part_number,
+        "NEXT_VENDORS_API_URL": settings.NEXT_VENDORS_API_URL,
+        "SERPAPI_KEY": "SET" if settings.SERPAPI_KEY else "NOT SET",
+    }
+
+    try:
+        vendors = discover_and_store_vendors(brand, part_number, unique_code)
+        report["status"] = "ok"
+        report["vendors_stored"] = len(vendors)
+        report["vendors"] = vendors
+    except Exception as exc:
+        report["status"] = "error"
+        report["detail"] = str(exc)
+
+    return report
+
+
 @router.get("/debug/vendors")
 def debug_vendors(brand: str = "SERO", part_number: str = "SOHB113WG2V10"):
     """

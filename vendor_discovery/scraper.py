@@ -19,8 +19,8 @@ _INDIAN_MOBILE_RE = re.compile(r"(?:(?:\+91|0091|91)[\s\-]?)?([6-9]\d{9})")
 _PHONE_RAW_RE = re.compile(r"(?<![.\d])(\+?[\d][\d\s\-()]{6,18}[\d])(?![.\d])")
 # Date patterns to reject — DD-MM-YYYY, YYYY-MM-DD, or any string with a 4-digit year
 _DATE_RE = re.compile(r"(19|20)\d{2}")
-_TAG_RE       = re.compile(r"<[^>]+>")
-_WS_RE        = re.compile(r"\s+")
+_TAG_RE  = re.compile(r"<[^>]+>")
+_WS_RE   = re.compile(r"\s+")
 
 # Emails that are never real vendor contacts
 _SKIP_EMAIL_WORDS = frozenset([
@@ -46,6 +46,35 @@ _SKIP_VISIT_DOMAINS = frozenset([
     "alldatasheet.com", "datasheetcatalog.com", "octopart.com",
 ])
 
+# Contact page paths tried in order when main page has no email
+_CONTACT_PATHS = [
+    # Standard contact pages
+    "/contact", "/contact-us", "/contactus", "/contact_us", "/contacts",
+    # About pages (often have contact info)
+    "/about-us", "/about", "/aboutus", "/about_us",
+    # Reach / connect
+    "/reach-us", "/reach-out", "/get-in-touch", "/connect", "/connect-with-us",
+    # Enquiry / query (common on Indian sites)
+    "/enquiry", "/enquire", "/inquiry", "/query",
+    # Support / help
+    "/support", "/help", "/helpdesk",
+    # Info
+    "/info", "/information", "/corporate-info",
+    # Forms / feedback
+    "/contact-form", "/enquiry-form", "/feedback",
+    # Write / touch
+    "/write-to-us", "/touch", "/talk-to-us",
+]
+
+_FETCH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 
 def _domain(url: str) -> str:
     m = re.search(r"https?://(?:www\.)?([^/?#]+)", url)
@@ -59,36 +88,48 @@ def _clean_emails(raw: list[str]) -> list[str]:
     ]
 
 
-def fetch_vendor_page(url: str, timeout: int = 6) -> str:
-    """
-    Fetch URL and return stripped plain text (max 6000 chars).
-    Returns '' on network failure, 403, timeout, or skipped domain.
-    """
-    if _domain(url) in _SKIP_VISIT_DOMAINS:
-        return ""
+def _fetch_url(url: str, timeout: int = 6) -> str:
+    """Fetch a single URL and return plain text. Returns '' on any failure."""
     try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0 Safari/537.36"
-                ),
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-        )
+        req = urllib.request.Request(url, headers=_FETCH_HEADERS)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if resp.status != 200:
                 return ""
             raw = resp.read(300_000).decode("utf-8", errors="ignore")
             text = _TAG_RE.sub(" ", raw)
-            text = _WS_RE.sub(" ", text).strip()
-            # Return up to 40 000 chars so footer contact info is included
-            return text[:40000]
+            return _WS_RE.sub(" ", text).strip()[:40000]
     except Exception as exc:
         logger.debug("Page fetch failed %s: %s", url, type(exc).__name__)
         return ""
+
+
+def fetch_vendor_page(url: str, timeout: int = 6) -> str:
+    """
+    Fetch URL and return stripped plain text.
+    Returns '' on network failure, 403, timeout, or skipped domain.
+    """
+    if _domain(url) in _SKIP_VISIT_DOMAINS:
+        return ""
+    return _fetch_url(url, timeout)
+
+
+def fetch_contact_page(base_url: str, timeout: int = 6) -> str:
+    """
+    Try 30 common contact page paths on the vendor's domain.
+    Returns the first page text that contains an email, or ''.
+    Called when the main page has no email.
+    """
+    dom = _domain(base_url)
+    if not dom or dom in _SKIP_VISIT_DOMAINS:
+        return ""
+
+    base = f"https://{dom}"
+    for path in _CONTACT_PATHS:
+        text = _fetch_url(base + path, timeout)
+        if text and _EMAIL_RE.search(text):
+            logger.debug("Contact page found email | %s%s", dom, path)
+            return text
+    return ""
 
 
 def _extract_phones(text: str) -> list[str]:

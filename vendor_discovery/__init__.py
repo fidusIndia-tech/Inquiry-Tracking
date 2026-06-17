@@ -20,7 +20,7 @@ Public API:
 
 import re
 from .searcher import search_vendors
-from .scraper  import fetch_vendor_page, extract_contacts
+from .scraper  import fetch_vendor_page, fetch_contact_page, extract_contacts
 from .parser   import parse_vendor_with_llm
 from .client   import post_vendor
 from logging_setup import get_logger
@@ -174,6 +174,19 @@ def discover_and_store_vendors(
                     contacts["email"] = page_contacts["email"]
                 if page_contacts["phone"] and not contacts["phone"]:
                     contacts["phone"] = page_contacts["phone"]
+
+        # ── Step 2b: no email yet — try /contact, /about-us, etc. ────────────
+        if not contacts["email"]:
+            contact_text = fetch_contact_page(url)
+            if contact_text:
+                cp = extract_contacts(contact_text)
+                if cp["email"]:
+                    contacts["email"] = cp["email"]
+                    logger.info("Email found via contact page | %s | %s", domain, cp["email"])
+                if cp["phone"] and not contacts["phone"]:
+                    contacts["phone"] = cp["phone"]
+                if not page_text:
+                    page_text = contact_text
 
         # ── Step 3: LLM when page available AND auth not yet confirmed ────────
         llm_extras: dict = {}

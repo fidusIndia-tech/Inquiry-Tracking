@@ -164,16 +164,15 @@ def discover_and_store_vendors(
         contacts = extract_contacts(snippet)
         auth_confirmed_by_snippet = _snippet_confirms_auth(title, snippet)
 
-        # ── Step 2: fetch page when email OR auth still unconfirmed ──────────
+        # ── Step 2: always fetch page (needed for vendor_name extraction) ───────
         page_text = ""
-        if not contacts["email"] or not auth_confirmed_by_snippet:
-            page_text = fetch_vendor_page(url)
-            if page_text:
-                page_contacts = extract_contacts(page_text)
-                if page_contacts["email"] and not contacts["email"]:
-                    contacts["email"] = page_contacts["email"]
-                if page_contacts["phone"] and not contacts["phone"]:
-                    contacts["phone"] = page_contacts["phone"]
+        page_text = fetch_vendor_page(url)
+        if page_text:
+            page_contacts = extract_contacts(page_text)
+            if page_contacts["email"] and not contacts["email"]:
+                contacts["email"] = page_contacts["email"]
+            if page_contacts["phone"] and not contacts["phone"]:
+                contacts["phone"] = page_contacts["phone"]
 
         # ── Step 2b: no email yet — try /contact, /about-us, etc. ────────────
         if not contacts["email"]:
@@ -188,9 +187,9 @@ def discover_and_store_vendors(
                 if not page_text:
                     page_text = contact_text
 
-        # ── Step 3: LLM when page available AND auth not yet confirmed ────────
+        # ── Step 3: LLM when page available — always run to extract vendor_name
         llm_extras: dict = {}
-        if page_text and not auth_confirmed_by_snippet:
+        if page_text:
             llm_extras = parse_vendor_with_llm(url, title, page_text, brand=brand)
             if llm_extras.get("email") and not contacts["email"]:
                 contacts["email"] = llm_extras["email"]

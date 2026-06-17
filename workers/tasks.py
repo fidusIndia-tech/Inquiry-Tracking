@@ -249,24 +249,27 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
                 result.get("itemCount"),
             )
 
-            # Trigger async vendor discovery for each line item
+            # Trigger async vendor discovery on the dedicated "vendors" queue.
+            # Runs 10s after RFQ export so the inquiry is fully committed to DB first.
             unique_code = result.get("uniqueCode")
-            logger.info(
-                "Vendor trigger check | unique_code=%s | line_items=%d",
-                unique_code, len(line_items) if line_items else 0,
-            )
             if unique_code and line_items:
                 try:
                     task = discover_vendors_task.apply_async(
                         args=[unique_code, line_items],
-                        queue="emails",
                         countdown=10,
+                        # queue is set by task_routes in celery_app.py → "vendors"
                     )
-                    logger.info("Vendor discovery queued | task_id=%s | unique_code=%s", task.id, unique_code)
+                    logger.info(
+                        "Vendor discovery queued | task_id=%s | unique_code=%s | items=%d",
+                        task.id, unique_code, len(line_items),
+                    )
                 except Exception as exc:
                     logger.error("Failed to queue vendor discovery for %s: %s", unique_code, exc)
             else:
-                logger.warning("Vendor discovery skipped | unique_code=%s | line_items=%s", unique_code, line_items)
+                logger.warning(
+                    "Vendor discovery skipped | unique_code=%s | line_items=%s",
+                    unique_code, line_items,
+                )
 
         except HttpError as exc:
             status = exc.resp.status if exc.resp else "unknown"
@@ -402,12 +405,22 @@ def poll_all_users(self) -> dict:
 )
 def discover_vendors_task(unique_code: str, line_items: list[dict]) -> dict:
     """
-    Discover vendors for every line item in an exported RFQ.
+    Discover vendors for every unique brand in an exported RFQ.
     Triggered automatically after a successful RFQ export (10s countdown).
+    Runs on the dedicated "vendors" queue so it never blocks email processing.
     Results are stored via Next.js API → PostgreSQL vendor tables.
     """
-    logger.info("discover_vendors_task START | unique_code=%s | items=%d", unique_code, len(line_items))
+    logger.info(
+        "discover_vendors_task START | unique_code=%s | items=%d",
+        unique_code, len(line_items),
+    )
+
+    # Deduplicate by brand — queries are brand-focused so running the same
+    # brand multiple times (e.g. 5 Siemens parts in one RFQ) wastes SerpAPI
+    # credits and produces identical results. One run per unique brand.
+    seen_brands: set[str] = set()
     total_stored = 0
+
     for item in line_items:
         if not isinstance(item, dict):
             continue
@@ -415,17 +428,34 @@ def discover_vendors_task(unique_code: str, line_items: list[dict]) -> dict:
         part_number = (item.get("part_number") or "").strip()
         if not brand or not part_number:
             continue
+
+        brand_key = brand.lower()
+        if brand_key in seen_brands:
+            logger.info(
+                "Vendor discovery skipping duplicate brand | %s | %s", unique_code, brand
+            )
+            continue
+        seen_brands.add(brand_key)
+
         try:
             vendors = discover_and_store_vendors(brand, part_number, unique_code)
             total_stored += len(vendors)
+            logger.info(
+                "Vendor discovery brand done | %s | brand=%s | found=%d",
+                unique_code, brand, len(vendors),
+            )
         except Exception as exc:
             logger.error(
-                "Vendor discovery failed | %s | %s %s: %s",
-                unique_code, brand, part_number, exc,
+                "Vendor discovery failed | %s | brand=%s: %s",
+                unique_code, brand, exc,
             )
 
     logger.info(
-        "Vendor discovery task done | %s | items=%d | vendors_stored=%d",
-        unique_code, len(line_items), total_stored,
+        "Vendor discovery task done | %s | brands=%d | vendors_stored=%d",
+        unique_code, len(seen_brands), total_stored,
     )
-    return {"unique_code": unique_code, "vendors_stored": total_stored}
+    return {
+        "unique_code":    unique_code,
+        "brands_searched": len(seen_brands),
+        "vendors_stored": total_stored,
+    }

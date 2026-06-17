@@ -57,7 +57,7 @@ def _clean_emails(raw: list[str]) -> list[str]:
     ]
 
 
-def fetch_vendor_page(url: str, timeout: int = 12) -> str:
+def fetch_vendor_page(url: str, timeout: int = 6) -> str:
     """
     Fetch URL and return stripped plain text (max 6000 chars).
     Returns '' on network failure, 403, timeout, or skipped domain.

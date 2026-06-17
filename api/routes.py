@@ -2,9 +2,6 @@
 api/routes.py
 """
 
-import base64
-import json
-
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse, JSONResponse
 
@@ -300,105 +297,6 @@ def stats(request: Request):
 def logout(request: Request):
     request.session.clear()
     return {"status": "logged_out"}
-
-
-# ── Gmail Push Notifications (real-time) ─────────────────────────────────────
-
-@router.post("/gmail/webhook")
-async def gmail_webhook(request: Request):
-    """
-    Receives Gmail push notifications from Google Cloud Pub/Sub.
-    Gmail calls this endpoint the moment a new email arrives — no polling delay.
-
-    Setup (one-time in Google Cloud Console):
-    1. Create a Pub/Sub topic e.g. "gmail-rfq-push"
-    2. Grant gmail-api-push@system.gserviceaccount.com pubsub.publisher on that topic
-    3. Create a push subscription → URL: https://YOUR_FASTAPI_URL/gmail/webhook
-    4. Set GMAIL_PUBSUB_TOPIC=projects/PROJECT_ID/topics/gmail-rfq-push in Railway env
-    5. Hit POST /gmail/watch once to register the Gmail watch
-    """
-    try:
-        body = await request.json()
-    except Exception:
-        # Pub/Sub retries on non-2xx — return 200 to stop retries on bad payloads
-        return JSONResponse({"status": "ignored_bad_json"})
-
-    message  = body.get("message", {})
-    data_b64 = message.get("data", "")
-
-    if not data_b64:
-        return JSONResponse({"status": "no_data"})
-
-    try:
-        decoded      = json.loads(base64.b64decode(data_b64).decode("utf-8"))
-        email_address = decoded.get("emailAddress")
-        history_id    = decoded.get("historyId")
-    except Exception as exc:
-        logger.warning("gmail_webhook | failed to decode message: %s", exc)
-        return JSONResponse({"status": "decode_error"})
-
-    if not email_address:
-        return JSONResponse({"status": "no_email_address"})
-
-    logger.info(
-        "Gmail push received | user=%s historyId=%s", email_address, history_id
-    )
-
-    from workers.tasks import poll_inbox
-    task = poll_inbox.apply_async(args=[email_address], queue="emails")
-
-    return JSONResponse({
-        "status":   "queued",
-        "user":     email_address,
-        "task_id":  task.id,
-    })
-
-
-@router.post("/gmail/watch")
-async def gmail_watch(request: Request):
-    """
-    Register Gmail push notifications for the authenticated user.
-    Call this once after login — auto-renewed every 6 days by Celery beat.
-    Requires GMAIL_PUBSUB_TOPIC env var to be set.
-    """
-    user_id = request.session.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Not authenticated.")
-
-    topic = settings.GMAIL_PUBSUB_TOPIC
-    if not topic:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "GMAIL_PUBSUB_TOPIC not set. "
-                "Set it to: projects/YOUR_GCP_PROJECT_ID/topics/YOUR_TOPIC_NAME"
-            ),
-        )
-
-    try:
-        service  = get_gmail_service_for_user(user_id)
-        response = service.users().watch(
-            userId="me",
-            body={"topicName": topic, "labelIds": ["INBOX"]},
-        ).execute()
-
-        history_id = response.get("historyId")
-        if history_id:
-            save_latest_history_id(user_id, history_id)
-
-        logger.info(
-            "Gmail watch registered | user=%s | historyId=%s | expires=%s",
-            user_id, history_id, response.get("expiration"),
-        )
-        return JSONResponse({
-            "status":     "watch_registered",
-            "user":       user_id,
-            "history_id": history_id,
-            "expiration": response.get("expiration"),
-            "note":       "Watch auto-renews every 6 days via Celery beat.",
-        })
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Gmail watch failed: {exc}")
 
 
 @router.get("/trigger-vendors")

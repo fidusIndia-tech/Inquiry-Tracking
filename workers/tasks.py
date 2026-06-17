@@ -397,49 +397,6 @@ def poll_all_users(self) -> dict:
 
 @celery_app.task(
     base=BaseTask,
-    name="workers.tasks.renew_gmail_watches",
-)
-def renew_gmail_watches() -> dict:
-    """
-    Renew Gmail push-notification watch subscriptions for all users.
-    Gmail watch expires after 7 days — this runs every 6 days via beat so
-    real-time email delivery never lapses.
-    Falls back silently if GMAIL_PUBSUB_TOPIC is not configured (beat-poll
-    mode still works in that case).
-    """
-    topic = getattr(settings, "GMAIL_PUBSUB_TOPIC", "")
-    if not topic:
-        logger.debug("renew_gmail_watches | GMAIL_PUBSUB_TOPIC not set — skipping")
-        return {"status": "skipped", "reason": "GMAIL_PUBSUB_TOPIC not configured"}
-
-    user_ids = get_all_user_ids()
-    renewed: list[str] = []
-    failed:  list[str] = []
-
-    for user_id in user_ids:
-        try:
-            service  = get_gmail_service_for_user(user_id)
-            response = service.users().watch(
-                userId="me",
-                body={"topicName": topic, "labelIds": ["INBOX"]},
-            ).execute()
-            history_id = response.get("historyId")
-            if history_id:
-                save_latest_history_id(user_id, history_id)
-            renewed.append(user_id)
-            logger.info(
-                "Gmail watch renewed | user=%s | historyId=%s | expires=%s",
-                user_id, history_id, response.get("expiration"),
-            )
-        except Exception as exc:
-            failed.append(user_id)
-            logger.error("Gmail watch renewal failed | user=%s: %s", user_id, exc)
-
-    return {"renewed": len(renewed), "failed": len(failed), "users": renewed}
-
-
-@celery_app.task(
-    base=BaseTask,
     name="workers.tasks.discover_vendors_task",
     autoretry_for=(ConnectionError, TimeoutError),
     max_retries=2,

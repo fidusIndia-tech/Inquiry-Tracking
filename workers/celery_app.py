@@ -34,7 +34,6 @@ celery_app.conf.update(
         # blocks email processing. Run a second Celery worker for this queue:
         #   celery -A workers.celery_app worker -Q vendors -n vendors@%h
         "workers.tasks.discover_vendors_task": {"queue": "vendors"},
-        "workers.tasks.renew_gmail_watches":   {"queue": "emails"},
     },
     task_acks_late=True,
     worker_prefetch_multiplier=1,
@@ -44,16 +43,9 @@ celery_app.conf.update(
     enable_utc=True,
     # ── Beat scheduler ────────────────────────────────────────────────────────
     beat_schedule={
-        # Fallback poll every 60 s — catches any emails missed by push notifications
-        # (push notifications are the primary real-time trigger; this is the safety net)
         "poll-gmail-every-minute": {
             "task":     "workers.tasks.poll_all_users",
             "schedule": 60.0,
-        },
-        # Gmail push watch expires after 7 days — renew every 6 days
-        "renew-gmail-watch-6-days": {
-            "task":     "workers.tasks.renew_gmail_watches",
-            "schedule": 6 * 24 * 3600,
         },
     },
 )

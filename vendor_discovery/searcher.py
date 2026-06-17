@@ -57,23 +57,72 @@ _QUERIES: list[tuple[str, dict]] = [
 # scrape time (scraper._SKIP_VISIT_DOMAINS) because they block bots, but
 # Google snippets from those pages often contain useful contact signals.
 _NOISE_DOMAINS = frozenset([
+    # ── Search engines ───────────────────────────────────────────────────────
     "google.com", "google.co.in", "google.co.uk",
+    "bing.com", "yahoo.com", "duckduckgo.com",
+
+    # ── Social / video ───────────────────────────────────────────────────────
     "youtube.com", "wikipedia.org", "wikimedia.org",
     "linkedin.com", "facebook.com", "twitter.com", "x.com",
     "instagram.com", "pinterest.com", "reddit.com", "quora.com",
+    "telegram.org", "whatsapp.com",
+
+    # ── Job portals — top source of noisy results ────────────────────────────
+    "naukri.com", "indeed.com", "indeed.co.in",
+    "monster.com", "monsterindia.com",
+    "shine.com", "timesjobs.com", "freshersworld.com",
+    "foundit.in", "glassdoor.com", "glassdoor.co.in",
+    "apna.co", "hirist.com", "iimjobs.com", "workindia.in",
+    "internshala.com", "instahyre.com", "cutshort.io",
+    "simplyhired.com", "ziprecruiter.com", "careerjet.co.in",
+    "ambitionbox.com", "theladders.com",
+
+    # ── News / media ─────────────────────────────────────────────────────────
+    "economictimes.indiatimes.com", "livemint.com", "businesstoday.in",
+    "moneycontrol.com", "ndtv.com", "ndtvprofit.com",
+    "thehindu.com", "hindustantimes.com", "timesofindia.com",
+    "businessstandard.com", "thehindubusinessline.com",
+    "news18.com", "firstpost.com", "cnbctv18.com",
+    "financialexpress.com", "deccanherald.com", "tribuneindia.com",
+    "reuters.com", "bloomberg.com", "forbes.com", "fortune.com",
+
+    # ── Press release / PR wire ──────────────────────────────────────────────
+    "prnewswire.com", "businesswire.com", "globenewswire.com",
+    "einpresswire.com", "accesswire.com",
+
+    # ── Blog / content platforms ─────────────────────────────────────────────
+    "medium.com", "wordpress.com", "blogspot.com", "tumblr.com",
+    "wix.com", "substack.com", "ghost.io",
+
+    # ── E-commerce marketplaces ──────────────────────────────────────────────
     "amazon.in", "amazon.com", "amazon.co.uk", "amazon.de", "amazon.co.jp",
     "ebay.com", "ebay.in", "ebay.co.uk",
     "flipkart.com", "shopclues.com", "meesho.com",
     "alibaba.com", "aliexpress.com", "made-in-china.com", "globalsources.com",
+    "snapdeal.com", "paytmmall.com",
+
+    # ── Local directories that hide contacts behind login ────────────────────
+    "justdial.com", "sulekha.com", "yellowpages.in", "asklaila.com",
+
+    # ── Document / presentation hosts ───────────────────────────────────────
     "scribd.com", "slideshare.net", "docplayer.net", "academia.edu",
-    # Government and standards bodies
+    "issuu.com", "calameo.com",
+
+    # ── Government and standards bodies ─────────────────────────────────────
     "nhtsa.gov", "iec.ch", "iso.org", "standards.ieee.org",
     "ul.com", "tuv.com", "bsigroup.com", "osha.gov", "epa.gov",
-    # Datasheet / spec sheet aggregators
+    "bis.gov.in", "meity.gov.in",
+
+    # ── Datasheet / spec sheet aggregators ──────────────────────────────────
     "datasheetspdf.com", "alldatasheet.com", "datasheetcatalog.com",
     "datasheet4u.com", "octopart.com", "findchips.com",
-    # Patent / legal / news
+
+    # ── Patent / legal ───────────────────────────────────────────────────────
     "patents.google.com", "freepatentsonline.com",
+
+    # ── Q&A / forums ─────────────────────────────────────────────────────────
+    "stackoverflow.com", "stackexchange.com", "geeksforgeeks.org",
+    "researchgate.net", "semanticscholar.org",
 ])
 
 

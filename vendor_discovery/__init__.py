@@ -65,21 +65,25 @@ def discover_and_store_vendors(
         # ── Step 1: try regex on snippet (free, no HTTP call) ────────────────
         contacts = extract_contacts(snippet)
 
-        # ── Step 2: fetch the page if snippet gave nothing ───────────────────
+        # ── Step 2: fetch page whenever email is missing ──────────────────────
         page_text = ""
-        if not contacts["email"] and not contacts["phone"]:
+        if not contacts["email"]:
             page_text = fetch_vendor_page(url)
             if page_text:
-                contacts = extract_contacts(page_text)
+                page_contacts = extract_contacts(page_text)
+                if page_contacts["email"]:
+                    contacts["email"] = page_contacts["email"]
+                if not contacts["phone"] and page_contacts["phone"]:
+                    contacts["phone"] = page_contacts["phone"]
 
-        # ── Step 3: LLM fallback (only when both regex passes failed) ─────────
+        # ── Step 3: LLM fallback whenever email still missing + page available ─
         llm_extras: dict = {}
-        if not contacts["email"] and not contacts["phone"] and page_text:
+        if not contacts["email"] and page_text:
             llm_extras = parse_vendor_with_llm(url, title, page_text)
-            contacts = {
-                "email": llm_extras.get("email"),
-                "phone": llm_extras.get("phone"),
-            }
+            if llm_extras.get("email"):
+                contacts["email"] = llm_extras["email"]
+            if llm_extras.get("phone") and not contacts["phone"]:
+                contacts["phone"] = llm_extras["phone"]
 
         payload = {
             "name":                 llm_extras.get("vendor_name") or title,

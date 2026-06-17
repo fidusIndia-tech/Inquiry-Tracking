@@ -12,10 +12,12 @@ from logging_setup import get_logger
 
 logger = get_logger(__name__)
 
-_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-_PHONE_RE = re.compile(r"(?:\+?[\d][\d\s\-(). ]{7,14}[\d])")
-_TAG_RE   = re.compile(r"<[^>]+>")
-_WS_RE    = re.compile(r"\s+")
+_EMAIL_RE    = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+# Phone: digits + spaces/dashes/parens only (NO dots — eliminates prices/decimals)
+# Lookbehind/ahead blocks matches adjacent to dots or digits (no partial number grabs)
+_PHONE_RAW_RE = re.compile(r"(?<![.\d])(\+?[\d][\d\s\-()]{6,18}[\d])(?![.\d])")
+_TAG_RE       = re.compile(r"<[^>]+>")
+_WS_RE        = re.compile(r"\s+")
 
 # Emails that are never real vendor contacts
 _SKIP_EMAIL_WORDS = frozenset([
@@ -23,11 +25,17 @@ _SKIP_EMAIL_WORDS = frozenset([
     "support@sentry", "user@", "email@", "info@example",
 ])
 
-# Domains to never visit (will 403 or are not vendor contact pages)
+# Domains to never visit (marketplaces/socials — won't have direct contact pages)
 _SKIP_VISIT_DOMAINS = frozenset([
-    "google.com", "youtube.com", "wikipedia.org", "linkedin.com",
-    "facebook.com", "twitter.com", "amazon.in", "amazon.com",
-    "flipkart.com", "instagram.com",
+    "google.com", "google.co.in", "youtube.com", "wikipedia.org",
+    "linkedin.com", "facebook.com", "twitter.com", "x.com",
+    "instagram.com", "pinterest.com", "reddit.com", "quora.com",
+    "amazon.in", "amazon.com", "amazon.co.uk",
+    "ebay.com", "ebay.in", "ebay.co.uk",
+    "flipkart.com", "shopclues.com",
+    "alibaba.com", "aliexpress.com",
+    "scribd.com", "slideshare.net",
+    "indiamart.com", "tradeindia.com",
 ])
 
 
@@ -74,14 +82,24 @@ def fetch_vendor_page(url: str, timeout: int = 12) -> str:
         return ""
 
 
+def _extract_phones(text: str) -> list[str]:
+    """Return only matches that contain 7–15 actual digits (filters prices, ratings, IPs)."""
+    results = []
+    for m in _PHONE_RAW_RE.findall(text):
+        digits = re.sub(r"\D", "", m)
+        if 7 <= len(digits) <= 15:
+            results.append(m.strip())
+    return results
+
+
 def extract_contacts(text: str) -> dict:
     """
     Regex-based contact extraction from any text (snippet or full page).
     Returns {"email": str|None, "phone": str|None}.
     """
     emails = _clean_emails(_EMAIL_RE.findall(text))
-    phones = _PHONE_RE.findall(text)
+    phones = _extract_phones(text)
     return {
         "email": emails[0] if emails else None,
-        "phone": phones[0].strip() if phones else None,
+        "phone": phones[0] if phones else None,
     }

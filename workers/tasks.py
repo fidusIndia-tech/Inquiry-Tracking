@@ -251,12 +251,22 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
 
             # Trigger async vendor discovery for each line item
             unique_code = result.get("uniqueCode")
+            logger.info(
+                "Vendor trigger check | unique_code=%s | line_items=%d",
+                unique_code, len(line_items) if line_items else 0,
+            )
             if unique_code and line_items:
-                discover_vendors_task.apply_async(
-                    args=[unique_code, line_items],
-                    queue="emails",
-                    countdown=10,
-                )
+                try:
+                    task = discover_vendors_task.apply_async(
+                        args=[unique_code, line_items],
+                        queue="emails",
+                        countdown=10,
+                    )
+                    logger.info("Vendor discovery queued | task_id=%s | unique_code=%s", task.id, unique_code)
+                except Exception as exc:
+                    logger.error("Failed to queue vendor discovery for %s: %s", unique_code, exc)
+            else:
+                logger.warning("Vendor discovery skipped | unique_code=%s | line_items=%s", unique_code, line_items)
 
         except HttpError as exc:
             status = exc.resp.status if exc.resp else "unknown"
@@ -396,6 +406,7 @@ def discover_vendors_task(unique_code: str, line_items: list[dict]) -> dict:
     Triggered automatically after a successful RFQ export (10s countdown).
     Results are stored via Next.js API → PostgreSQL vendor tables.
     """
+    logger.info("discover_vendors_task START | unique_code=%s | items=%d", unique_code, len(line_items))
     total_stored = 0
     for item in line_items:
         if not isinstance(item, dict):

@@ -17,6 +17,8 @@ _EMAIL_RE    = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 _INDIAN_MOBILE_RE = re.compile(r"(?:(?:\+91|0091|91)[\s\-]?)?([6-9]\d{9})")
 # Generic phone: digits + spaces/dashes/parens only (NO dots — eliminates prices/decimals)
 _PHONE_RAW_RE = re.compile(r"(?<![.\d])(\+?[\d][\d\s\-()]{6,18}[\d])(?![.\d])")
+# Date patterns to reject — DD-MM-YYYY, YYYY-MM-DD, or any string with a 4-digit year
+_DATE_RE = re.compile(r"(19|20)\d{2}")
 _TAG_RE       = re.compile(r"<[^>]+>")
 _WS_RE        = re.compile(r"\s+")
 
@@ -108,7 +110,7 @@ def _extract_phones(text: str) -> list[str]:
     # Priority 2: generic international phones not already captured
     for m in _PHONE_RAW_RE.findall(text):
         digits = re.sub(r"\D", "", m)
-        if 7 <= len(digits) <= 15 and digits not in seen:
+        if 8 <= len(digits) <= 15 and digits not in seen and not _DATE_RE.search(m):
             seen.add(digits)
             results.append(m.strip())
 

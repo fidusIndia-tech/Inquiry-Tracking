@@ -48,7 +48,7 @@ _JOB_SIGNALS = frozenset([
 ])
 
 # If any of these appear in title/snippet the page is an institution,
-# government body, or agricultural site — never a commercial dealer.
+# government body, agricultural site, or clearly not a dealer page.
 _INSTITUTION_SIGNALS = frozenset([
     "institute of technology", "indian institute", "national institute",
     "iit ", "nit ", " iit", " nit", "university", "college of engineering",
@@ -58,6 +58,16 @@ _INSTITUTION_SIGNALS = frozenset([
     "agricultural marketing", "agri marketing", "farming board",
     "reaper binder", "harvester", "crop binder", "paddy binder",
     "wheat binder", "agriculture board", "krishi",
+    "consumer complaint", "file a complaint", "grievance", "complaint forum",
+    "complaint portal", "consumer forum", "consumer court",
+])
+
+# Vendor names that are obviously not real company names — skip these results
+_GENERIC_VENDOR_NAMES = frozenset([
+    "complaint details", "our sellers", "contact us", "home page",
+    "about us", "products", "services", "company profile",
+    "seller details", "find a dealer", "dealer locator",
+    "branch and partner locator", "distributor locator",
 ])
 
 # URL path segments that indicate non-supplier pages
@@ -72,6 +82,15 @@ _NOISE_URL_PATHS = (
 def _domain(url: str) -> str:
     m = re.search(r"https?://(?:www\.)?([^/?#]+)", url)
     return m.group(1).lower() if m else url
+
+
+def _is_brand_own_domain(domain: str, brand: str) -> bool:
+    """Return True if the domain belongs to the brand itself — not a dealer."""
+    if not brand or len(brand) < 3:
+        return False
+    brand_slug = re.sub(r"[^a-z0-9]", "", brand.lower())
+    domain_slug = re.sub(r"[^a-z0-9]", "", domain.lower())
+    return brand_slug in domain_slug
 
 
 def _is_job_or_noise(title: str, snippet: str, url: str) -> bool:
@@ -131,7 +150,12 @@ def discover_and_store_vendors(
             continue
         seen_domains.add(domain)
 
-        # ── Pre-filter 2: drop job postings, news, blogs ─────────────────────
+        # ── Pre-filter 2: skip brand's own website ────────────────────────────
+        if _is_brand_own_domain(domain, brand):
+            logger.info("Brand own domain skipped | %s", domain)
+            continue
+
+        # ── Pre-filter 3: drop job postings, institutions, noise ──────────────
         if _is_job_or_noise(title, snippet, url):
             logger.info("Noise result skipped | %s | title=%s", domain, title[:60])
             continue
@@ -159,6 +183,12 @@ def discover_and_store_vendors(
                 contacts["email"] = llm_extras["email"]
             if llm_extras.get("phone") and not contacts["phone"]:
                 contacts["phone"] = llm_extras["phone"]
+
+        # ── Gate 0: Reject generic/invalid vendor names ───────────────────────
+        vendor_name = (llm_extras.get("vendor_name") or title or "").lower().strip()
+        if any(g in vendor_name for g in _GENERIC_VENDOR_NAMES):
+            logger.info("Generic vendor name rejected | %s | name=%s", domain, vendor_name[:60])
+            continue
 
         # ── Gate 1: Authorization ─────────────────────────────────────────────
         llm_confirms = bool(llm_extras.get("is_authorized_dealer"))

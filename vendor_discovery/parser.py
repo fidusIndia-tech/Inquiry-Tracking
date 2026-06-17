@@ -18,14 +18,26 @@ _SYSTEM = (
     "Return only valid JSON, no extra text."
 )
 
-_USER = """You are verifying whether this supplier page represents a genuine AUTHORIZED DEALER or AUTHORIZED DISTRIBUTOR for the brand "{brand}".
+_USER = """You are a strict procurement auditor verifying whether this page represents a genuine AUTHORIZED DEALER or AUTHORIZED DISTRIBUTOR for the brand "{brand}".
 
-AUTHORIZED means: the brand has officially appointed them as a dealer/distributor.
-Evidence to look for: "authorized dealer", "authorized distributor", "official dealer", "channel partner", brand authorization certificate, official dealership badge, or the brand's own dealer-locator page listing them.
+SET is_authorized_dealer: true ONLY when ALL of the following are met:
+1. The page belongs to a COMMERCIAL BUSINESS (a company that sells industrial products)
+2. The page explicitly mentions being authorized/appointed by the brand "{brand}" using phrases like:
+   - "authorized dealer", "authorized distributor", "authorised dealer", "authorised distributor"
+   - "official dealer", "official distributor", "channel partner", "certified partner"
+   - "appointed by {brand}", "{brand} authorized", "exclusive dealer for {brand}"
+   - OR the page is the brand's own official dealer-locator listing this company
 
-NOT authorized: general resellers, trading companies selling many brands without authorization, marketplaces, aggregator sites, or pages where authorization is vague or absent.
+SET is_authorized_dealer: false — NO EXCEPTIONS — for any of these:
+- Educational institutions: IIT, NIT, university, college, school, polytechnic, institute of technology
+- Government bodies: government of [state/country], ministry, municipal corporation, public board, PSU, WBLDC, NIC, agriculture board
+- Insurance companies: LIC, HDFC Life, SBI Life, or any insurance entity
+- Agricultural / farming companies: crop equipment, reaper, harvester, agro companies
+- Generic trading companies listing many unrelated brands with no explicit authorization
+- Marketplace or aggregator pages
+- Pages where authorization for "{brand}" is absent, vague, or implied rather than stated
 
-Extract the following from the page and return ONLY this JSON (use null for missing fields):
+Extract and return ONLY this JSON (use null for missing fields):
 {{
   "vendor_name": "exact registered company name",
   "email": "primary sales or contact email address",
@@ -33,7 +45,7 @@ Extract the following from the page and return ONLY this JSON (use null for miss
   "city": "city where this dealer is located",
   "country": "country",
   "is_authorized_dealer": true or false,
-  "authorization_evidence": "copy the exact phrase on the page that confirms or denies authorization"
+  "authorization_evidence": "copy the exact phrase that confirms authorization, or write 'none found' if absent"
 }}
 
 Brand: {brand}

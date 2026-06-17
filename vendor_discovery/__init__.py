@@ -47,6 +47,19 @@ _JOB_SIGNALS = frozenset([
     "interview", "recruitment", "walk-in", "walkin",
 ])
 
+# If any of these appear in title/snippet the page is an institution,
+# government body, or agricultural site — never a commercial dealer.
+_INSTITUTION_SIGNALS = frozenset([
+    "institute of technology", "indian institute", "national institute",
+    "iit ", "nit ", " iit", " nit", "university", "college of engineering",
+    "government of ", "govt. of ", "ministry of ", "department of ",
+    "municipal corporation", "public sector", "undertaking",
+    "life insurance", "insurance corporation", "insurance company",
+    "agricultural marketing", "agri marketing", "farming board",
+    "reaper binder", "harvester", "crop binder", "paddy binder",
+    "wheat binder", "agriculture board", "krishi",
+])
+
 # URL path segments that indicate non-supplier pages
 _NOISE_URL_PATHS = (
     "/jobs/", "/careers/", "/career/", "/job/", "/vacancy/", "/vacancies/",
@@ -62,9 +75,11 @@ def _domain(url: str) -> str:
 
 
 def _is_job_or_noise(title: str, snippet: str, url: str) -> bool:
-    """Return True if this result looks like a job posting or irrelevant page."""
+    """Return True if this result is a job posting, institution, or irrelevant page."""
     combined = (title + " " + snippet).lower()
     if any(sig in combined for sig in _JOB_SIGNALS):
+        return True
+    if any(sig in combined for sig in _INSTITUTION_SIGNALS):
         return True
     url_lower = url.lower()
     if any(path in url_lower for path in _NOISE_URL_PATHS):

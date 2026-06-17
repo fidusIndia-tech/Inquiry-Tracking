@@ -112,6 +112,21 @@ _NOISE_DOMAINS = frozenset([
     "nhtsa.gov", "iec.ch", "iso.org", "standards.ieee.org",
     "ul.com", "tuv.com", "bsigroup.com", "osha.gov", "epa.gov",
     "bis.gov.in", "meity.gov.in",
+    "wbagrimarketing.gov.in", "wbldc.in", "india.gov.in", "mnre.gov.in",
+
+    # ── Insurance companies ───────────────────────────────────────────────────
+    "licindia.in", "lic.co.in", "hdfclife.com", "sbilife.co.in",
+    "iciciprulife.com", "maxlifeinsurance.com", "bajajalianz.com",
+
+    # ── Agricultural / farming ────────────────────────────────────────────────
+    "sukhagro.com", "agrifarming.in", "krishijagran.com", "agrowon.com",
+    "agricultureinformation.com", "farmersforum.in",
+
+    # ── Educational institutions (specific; suffix catch covers the rest) ─────
+    "iith.ac.in", "iitb.ac.in", "iitd.ac.in", "iitk.ac.in", "iitm.ac.in",
+    "iitg.ac.in", "iitr.ac.in", "iitbbs.ac.in", "iitmandi.ac.in",
+    "mnit.ac.in", "nitt.edu", "nitk.ac.in", "nits.ac.in",
+    "vtu.ac.in", "anna.edu", "du.ac.in", "mu.ac.in",
 
     # ── Datasheet / spec sheet aggregators ──────────────────────────────────
     "datasheetspdf.com", "alldatasheet.com", "datasheetcatalog.com",
@@ -126,9 +141,26 @@ _NOISE_DOMAINS = frozenset([
 ])
 
 
+# Domain suffixes that are NEVER commercial suppliers — block entire TLD groups
+_NOISE_DOMAIN_SUFFIXES = (
+    ".ac.in",   # Indian academic institutions (IIT, NIT, universities)
+    ".edu.in",  # Indian educational
+    ".edu",     # Global educational
+    ".gov",     # US government
+    ".gov.in",  # Indian government
+    ".nic.in",  # Indian NIC / government portals
+    ".mil",     # Military
+    ".org.in",  # Indian NGOs / non-commercial
+)
+
+
 def _domain(url: str) -> str:
     m = re.search(r"https?://(?:www\.)?([^/?#]+)", url)
     return m.group(1).lower() if m else ""
+
+
+def _is_noise_domain(dom: str) -> bool:
+    return dom in _NOISE_DOMAINS or any(dom.endswith(s) for s in _NOISE_DOMAIN_SUFFIXES)
 
 
 def search_vendors(brand: str, part_number: str) -> list[dict]:
@@ -166,7 +198,7 @@ def search_vendors(brand: str, part_number: str) -> list[dict]:
             for r in organic:
                 url = r.get("link", "")
                 dom = _domain(url)
-                if url and url not in seen_urls and dom not in _NOISE_DOMAINS:
+                if url and url not in seen_urls and not _is_noise_domain(dom):
                     seen_urls.add(url)
                     results.append({
                         "url":     url,

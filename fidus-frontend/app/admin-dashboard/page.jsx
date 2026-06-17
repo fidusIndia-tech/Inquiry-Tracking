@@ -1010,6 +1010,17 @@ function AppSwitcher() {
     return () => document.removeEventListener("mousedown", handle);
   }, [open]);
 
+  const goToPortal = async () => {
+    setOpen(false);
+    try {
+      const userId = localStorage.getItem("userId");
+      const res = await fetch(`/api/auth/portal-token?userId=${encodeURIComponent(userId || "")}`);
+      const data = await res.json();
+      if (data.redirect_url) { window.location.href = data.redirect_url; return; }
+    } catch {}
+    window.location.href = `${PORTAL_BASE}/dashboard`;
+  };
+
   const apps = [
     { id: "inquiry-tracker", label: "InquiryTracker", emoji: "📨" },
     { id: "price-desk",      label: "PriceDesk",      emoji: "💹" },
@@ -1060,13 +1071,13 @@ function AppSwitcher() {
             </a>
           ))}
           <div style={{ height: 1, background: "#f1f5f9", margin: "6px 4px" }} />
-          <a
-            href={`${PORTAL_BASE}/dashboard`}
-            style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 10px", borderRadius: 9, textDecoration: "none", color: "#64748b", fontSize: 12, fontWeight: 500 }}
+          <button
+            onClick={goToPortal}
+            style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 10px", borderRadius: 9, textDecoration: "none", color: "#64748b", fontSize: 12, fontWeight: 500, width: "100%", background: "none", border: "none", cursor: "pointer" }}
             className="hover:bg-slate-50 transition-colors"
           >
             🏠 FidusSource Portal
-          </a>
+          </button>
         </div>,
         document.body
       )}

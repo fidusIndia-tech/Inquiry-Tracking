@@ -79,11 +79,33 @@ def discover_and_store_vendors(
         # ── Step 3: LLM fallback whenever email still missing + page available ─
         llm_extras: dict = {}
         if not contacts["email"] and page_text:
-            llm_extras = parse_vendor_with_llm(url, title, page_text)
+            llm_extras = parse_vendor_with_llm(url, title, page_text, brand=brand)
             if llm_extras.get("email"):
                 contacts["email"] = llm_extras["email"]
             if llm_extras.get("phone") and not contacts["phone"]:
                 contacts["phone"] = llm_extras["phone"]
+
+        # ── Step 4: Authorization gate ────────────────────────────────────────
+        # Only store confirmed authorized dealers. Two ways to confirm:
+        # A) LLM explicitly flagged is_authorized_dealer = True
+        # B) Title or snippet contains clear authorized-dealer keywords
+        #    (search queries already target these, so this catches snippet hits
+        #     where we couldn't fetch the page)
+        _AUTH_KEYWORDS = (
+            "authorized dealer", "authorised dealer",
+            "authorized distributor", "authorised distributor",
+            "official dealer", "official distributor",
+            "channel partner",
+        )
+        combined_text = (title + " " + snippet).lower()
+        snippet_confirms = any(kw in combined_text for kw in _AUTH_KEYWORDS)
+        llm_confirms     = bool(llm_extras.get("is_authorized_dealer"))
+
+        if not snippet_confirms and not llm_confirms:
+            logger.info(
+                "Skipping non-authorized vendor | %s | title=%s", domain, title[:60]
+            )
+            continue
 
         payload = {
             "name":                 llm_extras.get("vendor_name") or title,
@@ -93,7 +115,7 @@ def discover_and_store_vendors(
             "phone":                contacts.get("phone"),
             "city":                 llm_extras.get("city"),
             "country":              llm_extras.get("country"),
-            "is_authorized_dealer": llm_extras.get("is_authorized_dealer", False),
+            "is_authorized_dealer": True,
             "brand":                brand,
             "part_number":          part_number,
             "inquiry_unique_code":  inquiry_unique_code,
@@ -104,8 +126,9 @@ def discover_and_store_vendors(
             stored_result = post_vendor(payload)
             stored.append(stored_result)
             logger.info(
-                "Vendor stored | %s | email=%s | auth=%s",
-                domain, contacts.get("email"), llm_extras.get("is_authorized_dealer"),
+                "Vendor stored | %s | email=%s | auth_via=%s",
+                domain, contacts.get("email"),
+                "llm" if llm_confirms else "snippet",
             )
         except Exception as exc:
             logger.error("Failed to store vendor %s: %s", domain, exc)

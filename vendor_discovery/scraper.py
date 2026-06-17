@@ -13,8 +13,9 @@ from logging_setup import get_logger
 logger = get_logger(__name__)
 
 _EMAIL_RE    = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-# Phone: digits + spaces/dashes/parens only (NO dots — eliminates prices/decimals)
-# Lookbehind/ahead blocks matches adjacent to dots or digits (no partial number grabs)
+# Indian mobile: optional +91/0091/91 prefix, then 10-digit number starting with 6-9
+_INDIAN_MOBILE_RE = re.compile(r"(?:(?:\+91|0091|91)[\s\-]?)?([6-9]\d{9})")
+# Generic phone: digits + spaces/dashes/parens only (NO dots — eliminates prices/decimals)
 _PHONE_RAW_RE = re.compile(r"(?<![.\d])(\+?[\d][\d\s\-()]{6,18}[\d])(?![.\d])")
 _TAG_RE       = re.compile(r"<[^>]+>")
 _WS_RE        = re.compile(r"\s+")
@@ -88,12 +89,28 @@ def fetch_vendor_page(url: str, timeout: int = 12) -> str:
 
 
 def _extract_phones(text: str) -> list[str]:
-    """Return only matches that contain 7–15 actual digits (filters prices, ratings, IPs)."""
-    results = []
+    """
+    Return phone numbers. Indian mobiles (10-digit, starting 6-9) are extracted
+    first and given priority — they are the most reliable contact for Indian dealers.
+    Falls back to generic international number pattern.
+    """
+    seen: set[str] = set()
+    results: list[str] = []
+
+    # Priority 1: Indian mobile numbers
+    for m in _INDIAN_MOBILE_RE.finditer(text):
+        number = m.group(1)  # the 10-digit part
+        if number not in seen:
+            seen.add(number)
+            results.append(number)
+
+    # Priority 2: generic international phones not already captured
     for m in _PHONE_RAW_RE.findall(text):
         digits = re.sub(r"\D", "", m)
-        if 7 <= len(digits) <= 15:
+        if 7 <= len(digits) <= 15 and digits not in seen:
+            seen.add(digits)
             results.append(m.strip())
+
     return results
 
 

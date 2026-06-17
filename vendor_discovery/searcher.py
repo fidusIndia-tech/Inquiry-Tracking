@@ -1,7 +1,9 @@
 """
 vendor_discovery/searcher.py
 ----------------------------
-Call SerpAPI to find vendor URLs for a given brand + part number.
+Call SerpAPI to find authorized dealer/distributor URLs for a given brand.
+Queries are written like a procurement professional searching for official
+brand-authorized dealers in India — not generic resellers or part-number pages.
 Returns deduplicated list of {"url", "title", "snippet"} dicts.
 """
 
@@ -12,14 +14,21 @@ from logging_setup import get_logger
 logger = get_logger(__name__)
 settings = get_settings()
 
-# Three angles per part — global search, brand quoted, part number flexible
+# Four brand-focused queries targeting authorized dealers/distributors only.
+# Part number is intentionally omitted — authorized dealers carry the full brand,
+# not just individual part numbers.
 _QUERY_TEMPLATES = [
-    '"{brand}" {part_number} authorized distributor',
-    '"{brand}" {part_number} supplier dealer stockist',
-    '"{brand}" {part_number} buy price distributor',
+    '"{brand}" "authorized dealer" India contact email phone',
+    '"{brand}" "authorized distributor" official supplier India',
+    'site:indiamart.com "{brand}" "authorized dealer"',
+    '"{brand}" "official dealer" OR "channel partner" India supplier contact',
 ]
 
-# Domains that are pure noise — excluded from results entirely
+# Domains that are pure noise — excluded from results entirely.
+# NOTE: indiamart.com is intentionally NOT blocked here so that Google search
+# returns IndiaMart dealer listings; those pages are skipped at scrape time
+# (scraper._SKIP_VISIT_DOMAINS) because IndiaMart blocks bots, but the
+# Google snippets sometimes contain phone numbers worth keeping.
 _NOISE_DOMAINS = frozenset([
     "google.com", "google.co.in", "google.co.uk",
     "youtube.com", "wikipedia.org", "wikimedia.org",
@@ -30,7 +39,7 @@ _NOISE_DOMAINS = frozenset([
     "flipkart.com", "shopclues.com", "meesho.com",
     "alibaba.com", "aliexpress.com", "made-in-china.com", "globalsources.com",
     "scribd.com", "slideshare.net", "docplayer.net", "academia.edu",
-    "indiamart.com", "tradeindia.com", "exportersindia.com",
+    "exportersindia.com",
     # Government and standards bodies
     "nhtsa.gov", "iec.ch", "iso.org", "standards.ieee.org",
     "ul.com", "tuv.com", "bsigroup.com", "osha.gov", "epa.gov",
@@ -66,13 +75,15 @@ def search_vendors(brand: str, part_number: str) -> list[dict]:
     results: list[dict] = []
 
     for template in _QUERY_TEMPLATES:
-        query = template.format(brand=brand, part_number=part_number)
+        query = template.format(brand=brand)
         try:
             search = GoogleSearch({
                 "q":       query,
                 "api_key": settings.SERPAPI_KEY,
                 "num":     10,
                 "hl":      "en",
+                "gl":      "in",       # India-targeted results
+                "cr":      "countryIN",
             })
             data = search.get_dict()
             organic = data.get("organic_results", [])

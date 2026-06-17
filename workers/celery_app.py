@@ -23,17 +23,11 @@ celery_app.conf.update(
     result_serializer="json",
     accept_content=["json"],
     task_routes={
-        # ── Fast email-processing tasks ──────────────────────────────────────
         "workers.tasks.process_email_message": {"queue": "emails"},
         "workers.tasks.process_email_chunk":   {"queue": "emails"},
         "workers.tasks.poll_inbox":            {"queue": "emails"},
         "workers.tasks.poll_all_users":        {"queue": "emails"},
-        # ── Slow vendor-discovery tasks (separate queue) ─────────────────────
-        # Vendor discovery takes 3-7 min per brand (SerpAPI + page scraping +
-        # GPT calls). Routing to a dedicated "vendors" queue means it never
-        # blocks email processing. Run a second Celery worker for this queue:
-        #   celery -A workers.celery_app worker -Q vendors -n vendors@%h
-        "workers.tasks.discover_vendors_task": {"queue": "vendors"},
+        "workers.tasks.discover_vendors_task": {"queue": "emails"},
     },
     task_acks_late=True,
     worker_prefetch_multiplier=1,

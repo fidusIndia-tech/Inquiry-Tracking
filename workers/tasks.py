@@ -249,15 +249,12 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
                 result.get("itemCount"),
             )
 
-            # Trigger async vendor discovery on the dedicated "vendors" queue.
-            # Runs 10s after RFQ export so the inquiry is fully committed to DB first.
             unique_code = result.get("uniqueCode")
             if unique_code and line_items:
                 try:
                     task = discover_vendors_task.apply_async(
                         args=[unique_code, line_items],
                         countdown=10,
-                        # queue is set by task_routes in celery_app.py → "vendors"
                     )
                     logger.info(
                         "Vendor discovery queued | task_id=%s | unique_code=%s | items=%d",

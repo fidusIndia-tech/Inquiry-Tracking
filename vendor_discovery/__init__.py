@@ -4,11 +4,13 @@ vendor_discovery/__init__.py
 Main discovery pipeline.
 
 Given brand + part_number:
-  1. Call SerpAPI (3 search queries → up to 30 URLs)
-  2. Try regex contact extraction from search snippets (free)
-  3. Fetch vendor page if snippet had no contacts
-  4. Fall back to GPT-4o-mini if page fetch also found nothing
-  5. POST structured vendor data to Next.js API → stored in PostgreSQL
+  1. Call SerpAPI (4 brand-focused queries → up to 40 URLs)
+  2. Regex contact extraction from search snippets (free)
+  3. Fetch vendor page when email or authorization is still unconfirmed
+  4. Regex contact extraction from full page text
+  5. GPT-4o-mini for authorization check + contact fill-in when page available
+  6. Authorization gate: skip if not confirmed as authorized dealer
+  7. POST structured vendor data to Next.js API → stored in PostgreSQL
 
 Public API:
     discover_and_store_vendors(brand, part_number, inquiry_unique_code) -> list[dict]
@@ -23,10 +25,22 @@ from logging_setup import get_logger
 
 logger = get_logger(__name__)
 
+_AUTH_KEYWORDS = (
+    "authorized dealer", "authorised dealer",
+    "authorized distributor", "authorised distributor",
+    "official dealer", "official distributor",
+    "channel partner",
+)
+
 
 def _domain(url: str) -> str:
     m = re.search(r"https?://(?:www\.)?([^/?#]+)", url)
     return m.group(1).lower() if m else url
+
+
+def _snippet_confirms_auth(title: str, snippet: str) -> bool:
+    combined = (title + " " + snippet).lower()
+    return any(kw in combined for kw in _AUTH_KEYWORDS)
 
 
 def discover_and_store_vendors(
@@ -62,46 +76,44 @@ def discover_and_store_vendors(
             continue
         seen_domains.add(domain)
 
-        # ── Step 1: try regex on snippet (free, no HTTP call) ────────────────
+        # ── Step 1: regex on snippet (free, no HTTP call) ───────────────────
         contacts = extract_contacts(snippet)
+        auth_confirmed_by_snippet = _snippet_confirms_auth(title, snippet)
 
-        # ── Step 2: fetch page whenever email is missing ──────────────────────
+        # ── Step 2: fetch page when email OR authorization still unconfirmed ─
+        # Previously we only fetched when email was missing. Now we also fetch
+        # when authorization hasn't been confirmed by the snippet — so the LLM
+        # can read the full page and determine authorized-dealer status.
         page_text = ""
-        if not contacts["email"]:
+        needs_page = not contacts["email"] or not auth_confirmed_by_snippet
+        if needs_page:
             page_text = fetch_vendor_page(url)
             if page_text:
                 page_contacts = extract_contacts(page_text)
-                if page_contacts["email"]:
+                if page_contacts["email"] and not contacts["email"]:
                     contacts["email"] = page_contacts["email"]
-                if not contacts["phone"] and page_contacts["phone"]:
+                if page_contacts["phone"] and not contacts["phone"]:
                     contacts["phone"] = page_contacts["phone"]
 
-        # ── Step 3: LLM fallback whenever email still missing + page available ─
+        # ── Step 3: LLM — runs when page available AND auth not yet confirmed ─
+        # This fixes the previous bug where LLM was skipped for pages that had
+        # an email (found by regex) but no snippet-level auth keywords, causing
+        # real authorized dealers to fail the authorization gate.
         llm_extras: dict = {}
-        if not contacts["email"] and page_text:
+        if page_text and not auth_confirmed_by_snippet:
             llm_extras = parse_vendor_with_llm(url, title, page_text, brand=brand)
-            if llm_extras.get("email"):
+            if llm_extras.get("email") and not contacts["email"]:
                 contacts["email"] = llm_extras["email"]
             if llm_extras.get("phone") and not contacts["phone"]:
                 contacts["phone"] = llm_extras["phone"]
 
-        # ── Step 4: Authorization gate ────────────────────────────────────────
-        # Only store confirmed authorized dealers. Two ways to confirm:
-        # A) LLM explicitly flagged is_authorized_dealer = True
-        # B) Title or snippet contains clear authorized-dealer keywords
-        #    (search queries already target these, so this catches snippet hits
-        #     where we couldn't fetch the page)
-        _AUTH_KEYWORDS = (
-            "authorized dealer", "authorised dealer",
-            "authorized distributor", "authorised distributor",
-            "official dealer", "official distributor",
-            "channel partner",
-        )
-        combined_text = (title + " " + snippet).lower()
-        snippet_confirms = any(kw in combined_text for kw in _AUTH_KEYWORDS)
-        llm_confirms     = bool(llm_extras.get("is_authorized_dealer"))
+        # ── Step 4: Authorization gate ───────────────────────────────────────
+        # Confirmed authorized if:
+        # A) Snippet/title has explicit auth keywords (e.g. "authorized dealer"), OR
+        # B) LLM read the full page and flagged is_authorized_dealer = True
+        llm_confirms = bool(llm_extras.get("is_authorized_dealer"))
 
-        if not snippet_confirms and not llm_confirms:
+        if not auth_confirmed_by_snippet and not llm_confirms:
             logger.info(
                 "Skipping non-authorized vendor | %s | title=%s", domain, title[:60]
             )

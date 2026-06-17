@@ -36,7 +36,8 @@ _SKIP_VISIT_DOMAINS = frozenset([
     "flipkart.com", "shopclues.com",
     "alibaba.com", "aliexpress.com",
     "scribd.com", "slideshare.net",
-    "indiamart.com", "tradeindia.com",
+    "indiamart.com",       # blocks bots — snippets only, no page fetch
+    "tradeindia.com",      # blocks bots — snippets only, no page fetch
     # Government and standards — not vendor contact pages
     "nhtsa.gov", "iec.ch", "iso.org", "ul.com", "osha.gov", "epa.gov",
     # Datasheet aggregators

@@ -2,9 +2,14 @@
 vendor_discovery/searcher.py
 ----------------------------
 Call SerpAPI to find authorized dealer/distributor URLs for a given brand.
-Queries are written like a procurement professional searching for official
-brand-authorized dealers in India — not generic resellers or part-number pages.
-Returns deduplicated list of {"url", "title", "snippet"} dicts.
+
+Strategy: 8 queries total — 5 India-targeted + 3 global — written like a
+procurement professional hunting for official brand-authorized dealers.
+Part number is intentionally omitted from all queries: authorized dealers
+carry the full brand, not individual part numbers.
+
+Target: 8 queries × 20 results = up to 160 raw URLs → ~60-80 unique domains
+after deduplication → enough candidates to find 10+ authorized dealers.
 """
 
 import re
@@ -14,21 +19,43 @@ from logging_setup import get_logger
 logger = get_logger(__name__)
 settings = get_settings()
 
-# Four brand-focused queries targeting authorized dealers/distributors only.
-# Part number is intentionally omitted — authorized dealers carry the full brand,
-# not just individual part numbers.
-_QUERY_TEMPLATES = [
-    '"{brand}" "authorized dealer" India contact email phone',
-    '"{brand}" "authorized distributor" official supplier India',
-    'site:indiamart.com "{brand}" "authorized dealer"',
-    '"{brand}" "official dealer" OR "channel partner" India supplier contact',
+# Each entry: (query_template, extra_serpapi_params)
+# India-targeted queries use gl=in/cr=countryIN for local results.
+# Global queries run without geo-restriction to capture non-India authorized
+# dealers and distributors — user wants best suppliers India or outside India.
+_QUERIES: list[tuple[str, dict]] = [
+    # ── India-targeted ───────────────────────────────────────────────────────
+    ('"{brand}" "authorized dealer" India contact email phone',
+     {"gl": "in", "cr": "countryIN"}),
+
+    ('"{brand}" "authorized distributor" official supplier India',
+     {"gl": "in", "cr": "countryIN"}),
+
+    ('site:indiamart.com "{brand}" authorized dealer',
+     {"gl": "in"}),
+
+    ('"{brand}" "channel partner" dealer supplier India contact',
+     {"gl": "in", "cr": "countryIN"}),
+
+    ('site:tradeindia.com "{brand}" authorized dealer distributor',
+     {"gl": "in"}),
+
+    # ── Global (India + international) ──────────────────────────────────────
+    ('"{brand}" authorized dealer distributor contact email',
+     {}),
+
+    ('"{brand}" "authorized distributor" OR "certified dealer" contact email phone',
+     {}),
+
+    ('"{brand}" official reseller distributor supplier contact email',
+     {}),
 ]
 
 # Domains that are pure noise — excluded from results entirely.
-# NOTE: indiamart.com is intentionally NOT blocked here so that Google search
-# returns IndiaMart dealer listings; those pages are skipped at scrape time
-# (scraper._SKIP_VISIT_DOMAINS) because IndiaMart blocks bots, but the
-# Google snippets sometimes contain phone numbers worth keeping.
+# B2B directories (indiamart, tradeindia) are intentionally NOT blocked:
+# they contain real authorized-dealer listings. Their pages are skipped at
+# scrape time (scraper._SKIP_VISIT_DOMAINS) because they block bots, but
+# Google snippets from those pages often contain useful contact signals.
 _NOISE_DOMAINS = frozenset([
     "google.com", "google.co.in", "google.co.uk",
     "youtube.com", "wikipedia.org", "wikimedia.org",
@@ -39,7 +66,6 @@ _NOISE_DOMAINS = frozenset([
     "flipkart.com", "shopclues.com", "meesho.com",
     "alibaba.com", "aliexpress.com", "made-in-china.com", "globalsources.com",
     "scribd.com", "slideshare.net", "docplayer.net", "academia.edu",
-    "exportersindia.com",
     # Government and standards bodies
     "nhtsa.gov", "iec.ch", "iso.org", "standards.ieee.org",
     "ul.com", "tuv.com", "bsigroup.com", "osha.gov", "epa.gov",
@@ -58,7 +84,7 @@ def _domain(url: str) -> str:
 
 def search_vendors(brand: str, part_number: str) -> list[dict]:
     """
-    Run 3 SerpAPI searches and return deduplicated result dicts.
+    Run all queries against SerpAPI and return deduplicated result dicts.
     Returns [] if SERPAPI_KEY is not configured.
     """
     if not getattr(settings, "SERPAPI_KEY", ""):
@@ -74,19 +100,20 @@ def search_vendors(brand: str, part_number: str) -> list[dict]:
     seen_urls: set[str] = set()
     results: list[dict] = []
 
-    for template in _QUERY_TEMPLATES:
+    for template, geo_params in _QUERIES:
         query = template.format(brand=brand)
         try:
-            search = GoogleSearch({
+            params = {
                 "q":       query,
                 "api_key": settings.SERPAPI_KEY,
-                "num":     10,
+                "num":     20,      # 20 results per query for better coverage
                 "hl":      "en",
-                "gl":      "in",       # India-targeted results
-                "cr":      "countryIN",
-            })
+                **geo_params,
+            }
+            search = GoogleSearch(params)
             data = search.get_dict()
             organic = data.get("organic_results", [])
+            added = 0
             for r in organic:
                 url = r.get("link", "")
                 dom = _domain(url)
@@ -98,8 +125,12 @@ def search_vendors(brand: str, part_number: str) -> list[dict]:
                         "snippet": r.get("snippet", ""),
                         "domain":  dom,
                     })
-            logger.info("SerpAPI | '%s' → %d results", query[:70], len(organic))
+                    added += 1
+            logger.info(
+                "SerpAPI | '%s' → %d raw / %d new unique", query[:70], len(organic), added
+            )
         except Exception as exc:
             logger.error("SerpAPI error for query '%s': %s", query[:70], exc)
 
+    logger.info("SerpAPI total unique URLs collected: %d", len(results))
     return results

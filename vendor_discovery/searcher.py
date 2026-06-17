@@ -31,6 +31,14 @@ _NOISE_DOMAINS = frozenset([
     "alibaba.com", "aliexpress.com", "made-in-china.com", "globalsources.com",
     "scribd.com", "slideshare.net", "docplayer.net", "academia.edu",
     "indiamart.com", "tradeindia.com", "exportersindia.com",
+    # Government and standards bodies
+    "nhtsa.gov", "iec.ch", "iso.org", "standards.ieee.org",
+    "ul.com", "tuv.com", "bsigroup.com", "osha.gov", "epa.gov",
+    # Datasheet / spec sheet aggregators
+    "datasheetspdf.com", "alldatasheet.com", "datasheetcatalog.com",
+    "datasheet4u.com", "octopart.com", "findchips.com",
+    # Patent / legal / news
+    "patents.google.com", "freepatentsonline.com",
 ])
 
 

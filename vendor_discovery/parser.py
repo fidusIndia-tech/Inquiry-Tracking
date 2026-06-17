@@ -41,12 +41,17 @@ def parse_vendor_with_llm(url: str, title: str, text: str) -> dict:
     if not text or len(text) < 50:
         return {}
     try:
+        # Pass start + footer (emails usually live in footer, not header)
+        if len(text) > 4000:
+            page_excerpt = text[:2000] + "\n...\n" + text[-2000:]
+        else:
+            page_excerpt = text
         resp = _client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": _SYSTEM},
                 {"role": "user",   "content": _USER.format(
-                    url=url, title=title, text=text[:3000]
+                    url=url, title=title, text=page_excerpt
                 )},
             ],
             temperature=0,

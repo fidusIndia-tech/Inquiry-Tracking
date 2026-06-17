@@ -36,6 +36,10 @@ _SKIP_VISIT_DOMAINS = frozenset([
     "alibaba.com", "aliexpress.com",
     "scribd.com", "slideshare.net",
     "indiamart.com", "tradeindia.com",
+    # Government and standards — not vendor contact pages
+    "nhtsa.gov", "iec.ch", "iso.org", "ul.com", "osha.gov", "epa.gov",
+    # Datasheet aggregators
+    "alldatasheet.com", "datasheetcatalog.com", "octopart.com",
 ])
 
 
@@ -73,10 +77,11 @@ def fetch_vendor_page(url: str, timeout: int = 12) -> str:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if resp.status != 200:
                 return ""
-            raw = resp.read(60_000).decode("utf-8", errors="ignore")
+            raw = resp.read(300_000).decode("utf-8", errors="ignore")
             text = _TAG_RE.sub(" ", raw)
             text = _WS_RE.sub(" ", text).strip()
-            return text[:6000]
+            # Return up to 40 000 chars so footer contact info is included
+            return text[:40000]
     except Exception as exc:
         logger.debug("Page fetch failed %s: %s", url, type(exc).__name__)
         return ""

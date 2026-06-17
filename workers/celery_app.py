@@ -27,7 +27,7 @@ celery_app.conf.update(
         "workers.tasks.process_email_chunk":   {"queue": "emails"},
         "workers.tasks.poll_inbox":            {"queue": "emails"},
         "workers.tasks.poll_all_users":        {"queue": "emails"},
-        "workers.tasks.discover_vendors_task": {"queue": "vendors"},
+        "workers.tasks.discover_vendors_task": {"queue": "emails"},
     },
     task_acks_late=True,
     worker_prefetch_multiplier=1,

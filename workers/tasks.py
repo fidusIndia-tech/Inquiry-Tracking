@@ -249,6 +249,8 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
                 result.get("itemCount"),
             )
 
+            # Trigger async vendor discovery. Runs 10s after RFQ export so the
+            # inquiry is fully committed to DB first. Routes to "vendors" queue.
             unique_code = result.get("uniqueCode")
             if unique_code and line_items:
                 try:

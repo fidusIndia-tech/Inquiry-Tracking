@@ -1276,6 +1276,11 @@ function InquiryTable({
             : inq
         )
       );
+      // If the active filter would now hide this inquiry (e.g. "new" filter after status → "assigned"),
+      // reset to "all" so the admin can still see it.
+      if (statusFilter !== "all" && statusFilter !== data.inquiry.status) {
+        setStatusFilter("all");
+      }
     } catch (e) { alert(e.message); }
   };
 

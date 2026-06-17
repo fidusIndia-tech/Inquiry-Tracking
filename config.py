@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     SERPAPI_KEY: str = ""
     NEXT_VENDORS_API_URL: str = "http://localhost:3000/api/parser/vendors"
 
+    # Gmail Push Notifications (real-time email processing)
+    # Set to: projects/YOUR_GCP_PROJECT_ID/topics/YOUR_TOPIC_NAME
+    GMAIL_PUBSUB_TOPIC: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

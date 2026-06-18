@@ -629,8 +629,8 @@ function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatus
               >
                 <td
                   className="border-r border-[#DCE6F7] px-2 py-2.5 cursor-pointer"
-                  onDoubleClick={() => onDetailOpen(row.unique_code)}
-                  title="Double-click to view full details"
+                  onClick={() => onDetailOpen(row.unique_code)}
+                  title="Click to view details and vendors"
                 >
                   <p className="truncate font-semibold text-[#1D6FD8] text-[11px]">{row.unique_code}</p>
                 </td>

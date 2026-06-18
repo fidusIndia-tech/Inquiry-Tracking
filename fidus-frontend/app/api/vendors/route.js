@@ -1,4 +1,5 @@
 import { pool, query } from "@/lib/db";
+import { legacyQuery } from "@/lib/legacyDb";
 
 let _vendorSchemaReady = false;
 async function ensureVendorSchema() {
@@ -47,15 +48,17 @@ export async function GET(request) {
   try {
     await ensureVendorSchema();
     const { searchParams } = new URL(request.url);
-    const uniqueCode  = searchParams.get("unique_code");
-    const brand       = searchParams.get("brand");
-    const partNumber  = searchParams.get("part_number");
+    const uniqueCode = searchParams.get("unique_code");
+    const brand      = searchParams.get("brand");
+    const partNumber = searchParams.get("part_number");
+    // brands param: comma-separated list passed by frontend from inquiry.items
+    const brandsParam = searchParams.get("brands");
 
     let result;
 
     if (uniqueCode) {
-      // All vendors discovered for a specific inquiry
-      result = await query(
+      // ── Discovered vendors (SerpAPI) for this inquiry ─────────────────────
+      const discoveredResult = await query(
         `SELECT
            v.id, v.name, v.website, v.domain, v.email, v.phone,
            v.city, v.country, v.is_authorized_dealer, v.source, v.updated_at,
@@ -66,8 +69,49 @@ export async function GET(request) {
          ORDER BY v.is_authorized_dealer DESC, v.email NULLS LAST, v.name`,
         [uniqueCode]
       );
-    } else if (brand && partNumber) {
-      // All vendors known for a brand + part (cache lookup)
+
+      // ── Build brand list for legacy lookup ────────────────────────────────
+      // Prefer brands from the request param (from inquiry.items), fall back
+      // to brands already in inquiry_vendors.
+      let brandList = brandsParam
+        ? brandsParam.split(",").map((b) => b.trim()).filter(Boolean)
+        : [];
+      const discoveredBrands = [
+        ...new Set(discoveredResult.rows.map((v) => v.brand).filter(Boolean)),
+      ];
+      brandList = [...new Set([...brandList, ...discoveredBrands])];
+
+      // ── Legacy vendor history from parts_table ────────────────────────────
+      let legacy = [];
+      if (brandList.length > 0) {
+        try {
+          const legacyResult = await legacyQuery(
+            `SELECT DISTINCT ON (LOWER(email_from), brand)
+               id,
+               supplier      AS name,
+               email_from    AS email,
+               brand,
+               part_no,
+               price,
+               currency,
+               delivery_time
+             FROM parts_table
+             WHERE brand ILIKE ANY($1::text[])
+               AND email_from IS NOT NULL
+               AND email_from <> ''
+             ORDER BY LOWER(email_from), brand, id DESC`,
+            [brandList]
+          );
+          legacy = legacyResult.rows;
+        } catch (e) {
+          console.error("Legacy DB query failed:", e.message);
+        }
+      }
+
+      return Response.json({ discovered: discoveredResult.rows, legacy });
+    }
+
+    if (brand && partNumber) {
       result = await query(
         `SELECT
            v.id, v.name, v.website, v.domain, v.email, v.phone,
@@ -80,7 +124,6 @@ export async function GET(request) {
         [brand, partNumber]
       );
     } else if (brand) {
-      // All vendors known for a brand (all parts)
       result = await query(
         `SELECT
            v.id, v.name, v.website, v.domain, v.email, v.phone,
@@ -93,7 +136,6 @@ export async function GET(request) {
         [brand]
       );
     } else {
-      // No filter — return full vendor knowledge base (latest 500)
       result = await query(
         `SELECT
            v.id, v.name, v.website, v.domain, v.email, v.phone,
@@ -102,7 +144,10 @@ export async function GET(request) {
            iv.inquiry_unique_code
          FROM vendor_brand_coverage vbc
          JOIN vendors v ON v.id = vbc.vendor_id
-         LEFT JOIN inquiry_vendors iv ON iv.vendor_id = v.id AND iv.brand = vbc.brand AND iv.part_number = vbc.part_number
+         LEFT JOIN inquiry_vendors iv
+           ON iv.vendor_id = v.id
+           AND iv.brand = vbc.brand
+           AND iv.part_number = vbc.part_number
          ORDER BY v.updated_at DESC
          LIMIT 500`
       );

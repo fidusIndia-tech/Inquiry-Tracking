@@ -49,12 +49,13 @@ _ALWAYS_DROP_NUMBERED_RE = re.compile(
     re.IGNORECASE,
 )
 
-# ── Priority senders: admin / purchase-head forwarding client RFQs ───────────
+# ── Priority senders: admin / purchase-head / trusted employees forwarding RFQs
 # These bypass all filters and are accepted unconditionally.
 PRIORITY_SENDER_ADDRS = frozenset({
     "fidusindia@gmail.com",
     "purchasehead@gmail.com",
     "purchase.head@fidusindia.com",
+    "fidusindia7@gmail.com",        # Bharti — forwards client RFQs
 })
 
 # ── Sender domains that are NEVER RFQs ───────────────────────────────────────
@@ -143,8 +144,6 @@ SELLER_BODY_SIGNALS = [
     "pls send us email",
     "please send us your",
     "send us your requirement",
-    "feel free to contact us",
-    "please feel free to contact",
 
     # ── Price promotion ───────────────────────────────────────────────────
     "with good discount",
@@ -191,6 +190,7 @@ RFQ_BODY_KEYWORDS = [
     "please quote", "please provide", "kindly quote", "kindly provide",
     "share quotation", "share quote",
     "provide rates", "provide rate",
+    "arrange the quotation", "arrange quotation",
     # part identification (buyer listing what they need)
     "part number", "part no", "p/n", "pn:", "model no", "model number",
     "article no", "article number",
@@ -327,17 +327,20 @@ def is_rfq_candidate(email_dict: dict) -> bool:
     sender  = (email_dict.get("sender")  or "").lower()
     subject = (email_dict.get("subject") or "").lower()
 
-    # ── 0a. Hard-drop specific internal Fidus addresses ──────────────────────
     _am = re.search(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}", sender)
     sender_addr = _am.group(0) if _am else ""
-    if sender_addr in ALWAYS_DROP_SENDER_ADDRS or _ALWAYS_DROP_NUMBERED_RE.search(sender):
-        logger.debug("DROP (internal always-drop) | %s | %s", sender, subject[:60])
-        return False
 
-    # ── 0b. Priority senders: accept unconditionally ─────────────────────────
+    # ── 0a. Priority senders: accept unconditionally (checked FIRST) ──────────
+    # Must run before the always-drop so trusted numbered accounts like
+    # fidusindia7@gmail.com are not killed by the numbered-account regex.
     if sender_addr in PRIORITY_SENDER_ADDRS:
         logger.debug("KEEP (priority sender) | %s | %s", sender, subject[:60])
         return True
+
+    # ── 0b. Hard-drop specific internal Fidus addresses ──────────────────────
+    if sender_addr in ALWAYS_DROP_SENDER_ADDRS or _ALWAYS_DROP_NUMBERED_RE.search(sender):
+        logger.debug("DROP (internal always-drop) | %s | %s", sender, subject[:60])
+        return False
 
     plain, html_stripped = _extract_text(email_dict)
 

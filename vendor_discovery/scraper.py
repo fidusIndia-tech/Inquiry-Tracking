@@ -21,6 +21,7 @@ _PHONE_RAW_RE = re.compile(r"(?<![.\d])(\+?[\d][\d\s\-()]{6,18}[\d])(?![.\d])")
 _DATE_RE = re.compile(r"(19|20)\d{2}")
 _TAG_RE  = re.compile(r"<[^>]+>")
 _WS_RE   = re.compile(r"\s+")
+_SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style)[^>]*>.*?</\1>")
 
 # Emails that are never real vendor contacts
 _SKIP_EMAIL_WORDS = frozenset([
@@ -72,7 +73,9 @@ _FETCH_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0 Safari/537.36"
     ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.google.com/",
 }
 
 
@@ -96,8 +99,21 @@ def _fetch_url(url: str, timeout: int = 6) -> str:
             if resp.status != 200:
                 return ""
             raw = resp.read(300_000).decode("utf-8", errors="ignore")
+            raw = _SCRIPT_STYLE_RE.sub(" ", raw)
+
+            # Tag-split emails — e.g. <span>info</span>@<span>domain.com</span> —
+            # become "info @ domain.com" once tags are replaced with spaces, which
+            # breaks the no-space email regex. Stripping tags to '' (no space)
+            # rejoins these fragments so the email is recoverable.
+            tight_emails = _EMAIL_RE.findall(_TAG_RE.sub("", raw))
+
             text = _TAG_RE.sub(" ", raw)
-            return _WS_RE.sub(" ", text).strip()[:40000]
+            text = _WS_RE.sub(" ", text).strip()[:40000]
+
+            if tight_emails:
+                text = " ".join(tight_emails) + " " + text
+
+            return text
     except Exception as exc:
         logger.debug("Page fetch failed %s: %s", url, type(exc).__name__)
         return ""

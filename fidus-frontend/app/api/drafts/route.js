@@ -54,16 +54,23 @@ function escapeHtml(str) {
  * [CODE] form so the reply-matching pipeline can identify which inquiry a
  * vendor's reply belongs to, independent of Gmail thread_id.
  */
+const SUPPORT_PHONE = "+91 8766360058";
+
 function buildDraft(vendor, inquiryItems, uniqueCode) {
-  const brandItems = inquiryItems.filter(
-    (i) => (i.brand || "").toLowerCase() === (vendor.brand || "").toLowerCase()
-  );
+  // vendor.brands is the list of brands this vendor is being contacted for —
+  // a vendor covering multiple selected brands gets ONE combined draft instead
+  // of one per brand, so the items table can mix rows from different brands.
+  const vendorBrands = (vendor.brands?.length ? vendor.brands : [vendor.brand]).filter(Boolean);
+  const brandSet = new Set(vendorBrands.map((b) => b.toLowerCase()));
+
+  const brandItems = inquiryItems.filter((i) => brandSet.has((i.brand || "").toLowerCase()));
   const items = brandItems.length > 0 ? brandItems : inquiryItems;
 
   const partNumbers = items.map((i) => i.partNumber || i.part_no).filter(Boolean);
   const partNosForSubject = partNumbers.slice(0, 3).join(", ");
+  const brandsForSubject = vendorBrands.join(", ") || "Parts";
 
-  const subject = `RFQ [${uniqueCode}] – ${vendor.brand || "Parts"} | ${partNosForSubject}`;
+  const subject = `RFQ [${uniqueCode}] – ${brandsForSubject} | ${partNosForSubject}`;
 
   const rows = items
     .map((item, idx) => {
@@ -76,36 +83,46 @@ function buildDraft(vendor, inquiryItems, uniqueCode) {
         ? `<span style="font-weight:600;">${escapeHtml(realPartNumber)}</span>`
         : `<span style="font-style:italic;color:#64748B;">${escapeHtml(item.itemNotes || "—")}</span>`;
 
+      // When a real part number exists, still surface the description (color,
+      // rating, etc.) in its own column — it disambiguates near-identical SKUs.
+      // When there's no part number, the description is already shown above
+      // in the Part Number cell, so leave this blank to avoid repeating it.
+      const descriptionCell = realPartNumber ? escapeHtml(item.itemNotes || "") : "";
+
       return `
       <tr>
-        <td style="border:1px solid #D0DCF4;padding:8px;">${idx + 1}</td>
-        <td style="border:1px solid #D0DCF4;padding:8px;">${partNumberCell}</td>
-        <td style="border:1px solid #D0DCF4;padding:8px;">${escapeHtml(vendor.brand || "—")}</td>
-        <td style="border:1px solid #D0DCF4;padding:8px;">${escapeHtml(item.quantity ?? "—")}</td>
-        <td style="border:1px solid #D0DCF4;padding:8px;">${escapeHtml(item.uom || "—")}</td>
-        <td style="border:1px solid #FDE68A;padding:8px;background:#FFFDF5;">&nbsp;</td>
-        <td style="border:1px solid #FDE68A;padding:8px;background:#FFFDF5;">&nbsp;</td>
-        <td style="border:1px solid #FDE68A;padding:8px;background:#FFFDF5;">&nbsp;</td>
-        <td style="border:1px solid #FDE68A;padding:8px;background:#FFFDF5;">&nbsp;</td>
+        <td style="border:1px solid #D0DCF4;padding:10px;">${idx + 1}</td>
+        <td style="border:1px solid #D0DCF4;padding:10px;">${partNumberCell}</td>
+        <td style="border:1px solid #D0DCF4;padding:10px;">${escapeHtml(item.brand || "—")}</td>
+        <td style="border:1px solid #D0DCF4;padding:10px;color:#475569;">${descriptionCell}</td>
+        <td style="border:1px solid #D0DCF4;padding:10px;">${escapeHtml(item.quantity ?? "—")}</td>
+        <td style="border:1px solid #D0DCF4;padding:10px;">${escapeHtml(item.uom || "—")}</td>
+        <td style="border:1px solid #FDE68A;padding:10px;background:#FFFDF5;">&nbsp;</td>
+        <td style="border:1px solid #FDE68A;padding:10px;background:#FFFDF5;">&nbsp;</td>
+        <td style="border:1px solid #FDE68A;padding:10px;background:#FFFDF5;">&nbsp;</td>
+        <td style="border:1px solid #FDE68A;padding:10px;background:#FFFDF5;">&nbsp;</td>
       </tr>`;
     })
     .join("");
 
   const headerCell = (label, fill) => `
-    <th style="border:1px solid #D0DCF4;padding:8px;text-align:left;background:${fill ? "#FFFBEB" : "#EEF4FF"};color:${fill ? "#B45309" : "#4461A8"};font-size:11px;text-transform:uppercase;letter-spacing:0.04em;">${label}</th>`;
+    <th style="border:1px solid #D0DCF4;padding:10px;text-align:left;background:${fill ? "#FFFBEB" : "#EEF4FF"};color:${fill ? "#B45309" : "#4461A8"};font-size:11px;text-transform:uppercase;letter-spacing:0.04em;">${label}</th>`;
+
+  const p = (html) => `<p style="margin:0 0 16px 0;">${html}</p>`;
 
   const body = `
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.5;">
-  <p>Dear ${escapeHtml(vendor.name || "")} Team,</p>
-  <p>Greetings from FIAPL!</p>
-  <p>We have a procurement requirement and request your best offer for the items below. Reference: <b>${escapeHtml(uniqueCode)}</b></p>
+<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.8;">
+  ${p(`Dear ${escapeHtml(vendor.name || "")} Team,`)}
+  ${p("Greetings from FIAPL!")}
+  ${p(`We have a procurement requirement and request your best offer for the items below. Reference: <b>${escapeHtml(uniqueCode)}</b>`)}
 
-  <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:13px;">
+  <table style="border-collapse:collapse;width:100%;margin:20px 0;font-size:13px;">
     <thead>
       <tr>
         ${headerCell("#")}
         ${headerCell("Part Number")}
         ${headerCell("Brand")}
+        ${headerCell("Description")}
         ${headerCell("Qty")}
         ${headerCell("UOM")}
         ${headerCell("Your Unit Price", true)}
@@ -119,14 +136,15 @@ function buildDraft(vendor, inquiryItems, uniqueCode) {
     </tbody>
   </table>
 
-  <p>Kindly fill in the highlighted columns and reply with this same table.</p>
+  ${p("Kindly fill in the highlighted columns and reply with this same table.")}
+  ${p(`For any queries, please feel free to call us at <b>${SUPPORT_PHONE}</b>.`)}
 
-  <p>Warm regards,<br/>
+  <p style="margin:0;">Warm regards,<br/>
   FIAPL Procurement Team<br/>
   Fidus India Pvt. Ltd.</p>
 </div>`.trim();
 
-  return { subject, body, partNumbers: partNumbers.join(", ") };
+  return { subject, body, partNumbers: partNumbers.join(", "), brands: vendorBrands.join(", ") };
 }
 
 export async function GET(request) {
@@ -160,7 +178,7 @@ export async function POST(request) {
 
     const created = [];
     for (const vendor of vendors) {
-      const { subject, body, partNumbers } = buildDraft(vendor, inquiry_items || [], unique_code);
+      const { subject, body, partNumbers, brands } = buildDraft(vendor, inquiry_items || [], unique_code);
       const res = await query(
         `INSERT INTO vendor_drafts
            (inquiry_unique_code, vendor_name, vendor_email, brand, part_number, subject, body, source)
@@ -170,7 +188,7 @@ export async function POST(request) {
           unique_code,
           vendor.name,
           vendor.email,
-          vendor.brand,
+          brands,
           partNumbers,
           subject,
           body,

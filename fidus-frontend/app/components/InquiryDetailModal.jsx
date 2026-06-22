@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check, CheckCircle2, ClipboardCopy, FileText, Globe,
-  History, Mail, MapPin, Phone, RefreshCw, Send, Store, Tag, X,
+  History, Mail, MapPin, Phone, RefreshCw, Send, Store, Tag, Trash2, UserPlus, X,
 } from "lucide-react";
 
 /* ─────────────────────────────────────────────
@@ -41,8 +41,9 @@ function InfoField({ label, value }) {
 
 function SectionHeader({ icon, label, count, accent = "blue" }) {
   const colors = {
-    blue:  { bg: "bg-[#EFF6FF]", border: "border-[#BFDBFE]", text: "text-[#1D6FD8]", dot: "bg-[#3B82F6]" },
-    amber: { bg: "bg-[#FFFBEB]", border: "border-[#FDE68A]", text: "text-[#B45309]", dot: "bg-[#F59E0B]" },
+    blue:   { bg: "bg-[#EFF6FF]", border: "border-[#BFDBFE]", text: "text-[#1D6FD8]", dot: "bg-[#3B82F6]" },
+    amber:  { bg: "bg-[#FFFBEB]", border: "border-[#FDE68A]", text: "text-[#B45309]", dot: "bg-[#F59E0B]" },
+    violet: { bg: "bg-[#FAF9FF]", border: "border-[#DDD6FE]", text: "text-[#6D28D9]", dot: "bg-[#8B5CF6]" },
   };
   const c = colors[accent] || colors.blue;
   return (
@@ -59,6 +60,46 @@ function SectionHeader({ icon, label, count, accent = "blue" }) {
 /* ─────────────────────────────────────────────
    Details Tab
 ───────────────────────────────────────────── */
+function BrandCell({ item }) {
+  const [value, setValue] = useState(item.brand || "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const savedRef = useRef(item.brand || "");
+
+  const handleBlur = async () => {
+    if (value === savedRef.current) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/inquiries/items", {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ id: item.id, brand: value }),
+      });
+      if (res.ok) {
+        savedRef.current = value;
+        setSaved(true);
+        setTimeout(() => setSaved(false), 1500);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="relative flex items-center gap-1.5">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        placeholder="Add brand…"
+        className="w-full min-w-[90px] rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[11px] font-medium text-slate-700 outline-none transition hover:border-[#E4E8EE] focus:border-[#5BA7FF] focus:bg-white focus:ring-2 focus:ring-[#5BA7FF]/10 placeholder:text-slate-300 placeholder:italic"
+      />
+      {saving && <RefreshCw size={10} className="shrink-0 animate-spin text-slate-300" />}
+      {saved && <Check size={11} className="shrink-0 text-emerald-500" />}
+    </div>
+  );
+}
+
 function DetailsTab({ inquiry }) {
   const items = inquiry.items?.length ? inquiry.items : [];
   return (
@@ -96,7 +137,7 @@ function DetailsTab({ inquiry }) {
       {items.length > 0 && (
         <div>
           <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Line Items ({items.length})
+            Line Items ({items.length}) <span className="font-normal text-slate-300">· click a brand to edit</span>
           </p>
           <div className="overflow-hidden rounded-xl border border-[#E4E8EE]">
             <table className="w-full border-collapse text-[11px]">
@@ -109,9 +150,11 @@ function DetailsTab({ inquiry }) {
               </thead>
               <tbody>
                 {items.map((item, idx) => (
-                  <tr key={idx} className="border-b border-[#EEF2F6] last:border-b-0"
+                  <tr key={item.id ?? idx} className="border-b border-[#EEF2F6] last:border-b-0"
                       style={{ background: idx % 2 === 0 ? "white" : "#F8FAFC" }}>
-                    <td className="px-3 py-2 text-slate-600">{item.brand      || "—"}</td>
+                    <td className="px-1 py-1">
+                      {item.id ? <BrandCell item={item} /> : <span className="px-2 text-slate-600">{item.brand || "—"}</span>}
+                    </td>
                     <td className="px-3 py-2 font-semibold text-slate-900">{item.partNumber || "—"}</td>
                     <td className="px-3 py-2 text-slate-600">{item.quantity   || "—"}</td>
                     <td className="px-3 py-2 text-slate-600">{item.uom        || "—"}</td>
@@ -133,54 +176,137 @@ function DetailsTab({ inquiry }) {
 function VendorsTab({ inquiry, onDraftsGenerated }) {
   const [discovered,    setDiscovered]    = useState([]);
   const [legacy,        setLegacy]        = useState([]);
+  const [manual,        setManual]        = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState("");
-  const [selDisc,       setSelDisc]       = useState(new Set()); // vendor IDs
-  const [selLeg,        setSelLeg]        = useState(new Set()); // parts_table IDs
+  const [selDisc,       setSelDisc]       = useState(new Set()); // `${vendorId}::${brand}` keys
+  const [selLeg,        setSelLeg]        = useState(new Set()); // `${rowId}::${brand}` keys
+  const [selMan,        setSelMan]        = useState(new Set()); // manual vendor row ids
   const [generating,    setGenerating]    = useState(false);
   const [genError,      setGenError]      = useState("");
 
+  const [newVendor,     setNewVendor]     = useState({ name: "", email: "", phone: "", brand: "", notes: "" });
+  const [addingVendor,  setAddingVendor]  = useState(false);
+  const [addError,      setAddError]      = useState("");
+
   const brands = [...new Set((inquiry.items || []).map((i) => i.brand).filter(Boolean))];
+  const [selectedBrands, setSelectedBrands] = useState(() => new Set(brands));
 
   useEffect(() => {
     setLoading(true); setError("");
     const brandsQ = brands.length ? `&brands=${encodeURIComponent(brands.join(","))}` : "";
-    fetch(`/api/vendors?unique_code=${encodeURIComponent(inquiry.unique_code)}${brandsQ}`)
-      .then((r) => r.json())
-      .then((d) => { setDiscovered(d.discovered || []); setLegacy(d.legacy || []); })
+    Promise.all([
+      fetch(`/api/vendors?unique_code=${encodeURIComponent(inquiry.unique_code)}${brandsQ}`).then((r) => r.json()),
+      fetch(`/api/vendors/manual?unique_code=${encodeURIComponent(inquiry.unique_code)}`).then((r) => r.json()),
+    ])
+      .then(([v, m]) => {
+        setDiscovered(v.discovered || []);
+        setLegacy(v.legacy || []);
+        setManual(m.vendors || []);
+      })
       .catch(() => setError("Failed to load vendors"))
       .finally(() => setLoading(false));
   }, [inquiry.unique_code]);
 
-  const toggleDisc = (id) =>
-    setSelDisc((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleLeg = (id) =>
-    setSelLeg((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // Compound keys so selecting one (vendor, brand) row never silently selects
+  // a different brand row for the same vendor — needed once brand filtering
+  // can hide some of that vendor's rows from view.
+  const discKey = (v) => `${v.id}::${v.brand}`;
+  const legKey  = (v) => `${v.id}::${v.brand}`;
 
-  const toggleAllDisc = () =>
-    setSelDisc(selDisc.size === discovered.length ? new Set() : new Set(discovered.map((v) => v.id)));
-  const toggleAllLeg = () =>
-    setSelLeg(selLeg.size === legacy.length ? new Set() : new Set(legacy.map((v) => v.id)));
+  const toggleInSet = (setter) => (key) =>
+    setter((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  const toggleDisc = toggleInSet(setSelDisc);
+  const toggleLeg  = toggleInSet(setSelLeg);
+  const toggleMan  = toggleInSet(setSelMan);
 
-  const totalSelected = selDisc.size + selLeg.size;
+  const toggleBrand = (b) =>
+    setSelectedBrands((prev) => { const n = new Set(prev); n.has(b) ? n.delete(b) : n.add(b); return n; });
+
+  const filteredDiscovered = discovered.filter((v) => selectedBrands.has(v.brand));
+  const filteredLegacy     = legacy.filter((v) => selectedBrands.has(v.brand));
+  const filteredManual     = manual.filter((v) => !v.brand || selectedBrands.size === 0 || selectedBrands.has(v.brand));
+
+  const toggleAllDisc = () => {
+    const keys = filteredDiscovered.map(discKey);
+    const allSelected = keys.length > 0 && keys.every((k) => selDisc.has(k));
+    setSelDisc((prev) => {
+      const n = new Set(prev);
+      keys.forEach((k) => (allSelected ? n.delete(k) : n.add(k)));
+      return n;
+    });
+  };
+  const toggleAllLeg = () => {
+    const keys = filteredLegacy.map(legKey);
+    const allSelected = keys.length > 0 && keys.every((k) => selLeg.has(k));
+    setSelLeg((prev) => {
+      const n = new Set(prev);
+      keys.forEach((k) => (allSelected ? n.delete(k) : n.add(k)));
+      return n;
+    });
+  };
+  const toggleAllMan = () => {
+    const ids = filteredManual.map((v) => String(v.id));
+    const allSelected = ids.length > 0 && ids.every((id) => selMan.has(id));
+    setSelMan((prev) => {
+      const n = new Set(prev);
+      ids.forEach((id) => (allSelected ? n.delete(id) : n.add(id)));
+      return n;
+    });
+  };
+
+  const totalSelected = selDisc.size + selLeg.size + selMan.size;
+
+  const addManualVendor = async () => {
+    if (!newVendor.name.trim()) { setAddError("Vendor name is required"); return; }
+    setAddingVendor(true); setAddError("");
+    try {
+      const res = await fetch("/api/vendors/manual", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ unique_code: inquiry.unique_code, ...newVendor }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to add vendor");
+      setManual((prev) => [...prev, data.vendor]);
+      setNewVendor({ name: "", email: "", phone: "", brand: "", notes: "" });
+    } catch (e) {
+      setAddError(e.message);
+    } finally {
+      setAddingVendor(false);
+    }
+  };
+
+  const removeManualVendor = async (id) => {
+    setManual((prev) => prev.filter((v) => v.id !== id));
+    setSelMan((prev) => { const n = new Set(prev); n.delete(String(id)); return n; });
+    try {
+      await fetch("/api/vendors/manual", {
+        method:  "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ id }),
+      });
+    } catch {}
+  };
 
   const generateDrafts = async () => {
     setGenerating(true); setGenError("");
     try {
-      const vendors = [
-        ...discovered.filter((v) => selDisc.has(v.id)).map((v) => ({
-          source: "discovered",
-          name:   v.name,
-          email:  v.email,
-          brand:  v.brand,
-        })),
-        ...legacy.filter((v) => selLeg.has(v.id)).map((v) => ({
-          source: "legacy",
-          name:   v.name,
-          email:  v.email,
-          brand:  v.brand,
-        })),
-      ];
+      // Group selected rows by vendor identity so a vendor covering several
+      // selected brands gets ONE combined draft instead of one per brand.
+      const groups = new Map();
+      const addToGroup = (identity, source, name, email, brand) => {
+        if (!groups.has(identity)) groups.set(identity, { source, name, email, brands: new Set() });
+        if (brand) groups.get(identity).brands.add(brand);
+      };
+
+      discovered.forEach((v) => { if (selDisc.has(discKey(v))) addToGroup(`d-${v.id}`, "discovered", v.name, v.email, v.brand); });
+      legacy.forEach((v) => { if (selLeg.has(legKey(v))) addToGroup(`l-${(v.email || v.id || "").toLowerCase()}`, "legacy", v.name, v.email, v.brand); });
+      manual.forEach((v) => { if (selMan.has(String(v.id))) addToGroup(`m-${v.id}`, "manual", v.name, v.email, v.brand); });
+
+      const vendors = [...groups.values()].map((g) => ({
+        source: g.source, name: g.name, email: g.email, brands: [...g.brands],
+      }));
 
       const inquiryItems = (inquiry.items || []).map((i) => ({
         brand:      i.brand,
@@ -195,7 +321,6 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({
           unique_code:   inquiry.unique_code,
-          client_name:   inquiry.client_name,
           vendors,
           inquiry_items: inquiryItems,
         }),
@@ -223,17 +348,47 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
     return <p className="p-6 text-center text-[12px] text-rose-500">{error}</p>;
   }
 
-  const noData = discovered.length === 0 && legacy.length === 0;
+  const noData = discovered.length === 0 && legacy.length === 0 && manual.length === 0;
 
   return (
     <div className="flex flex-col" style={{ minHeight: 0 }}>
+      {/* Brand filter */}
+      {brands.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-[#EEF2F6] bg-[#FAFBFF] px-5 py-3 shrink-0">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Filter by brand:</span>
+          {brands.map((b) => (
+            <button
+              key={b}
+              onClick={() => toggleBrand(b)}
+              className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                selectedBrands.has(b)
+                  ? "border-[#4451E8] bg-[#EEF0FF] text-[#4451E8]"
+                  : "border-[#E4E8EE] bg-white text-slate-400 hover:border-[#C7D2FE]"
+              }`}
+            >
+              {b}
+            </button>
+          ))}
+          {selectedBrands.size < brands.length && (
+            <button onClick={() => setSelectedBrands(new Set(brands))} className="text-[10px] font-semibold text-[#4451E8] hover:underline">
+              Show all
+            </button>
+          )}
+          {selectedBrands.size > 1 && (
+            <span className="ml-auto text-[10px] text-slate-400">
+              Vendors covering all {selectedBrands.size} selected brands can be sent one combined email
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Scrollable vendor lists */}
       <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
         {/* ── Discovered vendors ── */}
         <div className="space-y-2">
-          <SectionHeader icon={Store} label="Discovered Vendors" count={discovered.length} accent="blue" />
-          {discovered.length === 0 ? (
+          <SectionHeader icon={Store} label="Discovered Vendors" count={filteredDiscovered.length} accent="blue" />
+          {filteredDiscovered.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[#D0DCF4] bg-[#FAFBFF] px-4 py-8 text-center">
               <Store size={18} className="mx-auto mb-2 text-slate-300" />
               <p className="text-[12px] font-medium text-slate-500">No vendors discovered yet</p>
@@ -245,7 +400,7 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
                 <thead>
                   <tr style={{ background: "linear-gradient(90deg,#EEF4FF,#E6EDFC)" }}>
                     <th className="w-8 border-b border-[#D0DCF4] px-3 py-2">
-                      <input type="checkbox" checked={selDisc.size === discovered.length && discovered.length > 0}
+                      <input type="checkbox" checked={filteredDiscovered.length > 0 && filteredDiscovered.every((v) => selDisc.has(discKey(v)))}
                         onChange={toggleAllDisc} className="h-3.5 w-3.5 accent-[#4451E8] cursor-pointer" />
                     </th>
                     {["Vendor / Domain", "Brand", "Email", "Phone", "Location", "Auth", ""].map((h) => (
@@ -254,12 +409,12 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {discovered.map((v) => (
-                    <tr key={`d-${v.id}-${v.brand}`}
+                  {filteredDiscovered.map((v) => (
+                    <tr key={discKey(v)}
                         className="border-b border-[#EEF2F6] last:border-b-0 transition"
-                        style={{ background: selDisc.has(v.id) ? "#EEF6FF" : "white" }}>
+                        style={{ background: selDisc.has(discKey(v)) ? "#EEF6FF" : "white" }}>
                       <td className="px-3 py-2.5">
-                        <input type="checkbox" checked={selDisc.has(v.id)} onChange={() => toggleDisc(v.id)}
+                        <input type="checkbox" checked={selDisc.has(discKey(v))} onChange={() => toggleDisc(discKey(v))}
                           className="h-3.5 w-3.5 accent-[#4451E8] cursor-pointer" />
                       </td>
                       <td className="px-3 py-2.5">
@@ -309,8 +464,8 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
 
         {/* ── Company history vendors ── */}
         <div className="space-y-2">
-          <SectionHeader icon={History} label="Company History" count={legacy.length} accent="amber" />
-          {legacy.length === 0 ? (
+          <SectionHeader icon={History} label="Company History" count={filteredLegacy.length} accent="amber" />
+          {filteredLegacy.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[#FDE68A] bg-[#FFFDF5] px-4 py-8 text-center">
               <History size={18} className="mx-auto mb-2 text-amber-300" />
               <p className="text-[12px] font-medium text-slate-500">No historical data for this brand</p>
@@ -322,7 +477,7 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
                 <thead>
                   <tr style={{ background: "linear-gradient(90deg,#FFFBEB,#FEF3C7)" }}>
                     <th className="w-8 border-b border-[#FDE68A] px-3 py-2">
-                      <input type="checkbox" checked={selLeg.size === legacy.length && legacy.length > 0}
+                      <input type="checkbox" checked={filteredLegacy.length > 0 && filteredLegacy.every((v) => selLeg.has(legKey(v)))}
                         onChange={toggleAllLeg} className="h-3.5 w-3.5 accent-[#F59E0B] cursor-pointer" />
                     </th>
                     {["Supplier", "Brand", "Email", "Last Price", "Delivery", ""].map((h) => (
@@ -331,16 +486,16 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {legacy.map((v) => {
+                  {filteredLegacy.map((v) => {
                     const price = v.price
                       ? `${v.currency === "INR" ? "₹" : v.currency === "EUR" ? "€" : v.currency === "USD" ? "$" : (v.currency || "")} ${Number(v.price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`
                       : "—";
                     return (
-                      <tr key={`l-${v.id}`}
+                      <tr key={legKey(v)}
                           className="border-b border-[#FEF3C7] last:border-b-0 transition"
-                          style={{ background: selLeg.has(v.id) ? "#FFFBEB" : "white" }}>
+                          style={{ background: selLeg.has(legKey(v)) ? "#FFFBEB" : "white" }}>
                         <td className="px-3 py-2.5">
-                          <input type="checkbox" checked={selLeg.has(v.id)} onChange={() => toggleLeg(v.id)}
+                          <input type="checkbox" checked={selLeg.has(legKey(v))} onChange={() => toggleLeg(legKey(v))}
                             className="h-3.5 w-3.5 accent-[#F59E0B] cursor-pointer" />
                         </td>
                         <td className="px-3 py-2.5">
@@ -377,6 +532,82 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
           )}
         </div>
 
+        {/* ── Manually added vendors ── */}
+        <div className="space-y-2">
+          <SectionHeader icon={UserPlus} label="Manually Added" count={filteredManual.length} accent="violet" />
+
+          <div className="flex flex-wrap items-end gap-2 rounded-xl border border-dashed border-[#DDD6FE] bg-[#FAF9FF] p-3">
+            <input value={newVendor.name} onChange={(e) => setNewVendor((p) => ({ ...p, name: e.target.value }))}
+              placeholder="Vendor name *" className="h-8 w-36 rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] outline-none focus:border-[#8B5CF6] focus:ring-2 focus:ring-[#8B5CF6]/10" />
+            <input value={newVendor.email} onChange={(e) => setNewVendor((p) => ({ ...p, email: e.target.value }))}
+              placeholder="Email" className="h-8 w-44 rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] outline-none focus:border-[#8B5CF6] focus:ring-2 focus:ring-[#8B5CF6]/10" />
+            <input value={newVendor.phone} onChange={(e) => setNewVendor((p) => ({ ...p, phone: e.target.value }))}
+              placeholder="Phone" className="h-8 w-28 rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] outline-none focus:border-[#8B5CF6] focus:ring-2 focus:ring-[#8B5CF6]/10" />
+            <input value={newVendor.brand} onChange={(e) => setNewVendor((p) => ({ ...p, brand: e.target.value }))}
+              placeholder="Brand" className="h-8 w-28 rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] outline-none focus:border-[#8B5CF6] focus:ring-2 focus:ring-[#8B5CF6]/10" />
+            <button
+              onClick={addManualVendor}
+              disabled={addingVendor || !newVendor.name.trim()}
+              className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold text-white transition disabled:opacity-40"
+              style={{ background: "linear-gradient(135deg,#8B5CF6,#7C3AED)" }}
+            >
+              {addingVendor ? <RefreshCw size={11} className="animate-spin" /> : <UserPlus size={11} />}
+              Add
+            </button>
+            {addError && <p className="text-[11px] text-rose-500 w-full">{addError}</p>}
+          </div>
+
+          {filteredManual.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-[#DDD6FE] bg-[#FAF9FF] px-4 py-6 text-center">
+              <p className="text-[11px] text-slate-400">No manually added vendors yet — use the form above.</p>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-[#DDD6FE]">
+              <table className="w-full border-collapse text-[11px]" style={{ minWidth: 640 }}>
+                <thead>
+                  <tr style={{ background: "linear-gradient(90deg,#FAF9FF,#F3F0FF)" }}>
+                    <th className="w-8 border-b border-[#DDD6FE] px-3 py-2">
+                      <input type="checkbox" checked={filteredManual.length > 0 && filteredManual.every((v) => selMan.has(String(v.id)))}
+                        onChange={toggleAllMan} className="h-3.5 w-3.5 accent-[#8B5CF6] cursor-pointer" />
+                    </th>
+                    {["Vendor", "Brand", "Email", "Phone", "Notes", ""].map((h) => (
+                      <th key={h} className="border-b border-[#DDD6FE] px-3 py-2 text-left text-[9px] font-bold uppercase tracking-widest text-[#6D28D9]">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredManual.map((v) => (
+                    <tr key={v.id}
+                        className="border-b border-[#F3F0FF] last:border-b-0 transition"
+                        style={{ background: selMan.has(String(v.id)) ? "#FAF9FF" : "white" }}>
+                      <td className="px-3 py-2.5">
+                        <input type="checkbox" checked={selMan.has(String(v.id))} onChange={() => toggleMan(String(v.id))}
+                          className="h-3.5 w-3.5 accent-[#8B5CF6] cursor-pointer" />
+                      </td>
+                      <td className="px-3 py-2.5 font-semibold text-slate-900">{v.name}</td>
+                      <td className="px-3 py-2.5">
+                        <span className="rounded-full border border-[#DDD6FE] bg-[#FAF9FF] px-2 py-0.5 text-[10px] font-semibold text-[#6D28D9]">
+                          {v.brand || "—"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {v.email ? <a href={`mailto:${v.email}`} className="text-[#6D28D9] hover:underline">{v.email}</a> : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600">{v.phone || "—"}</td>
+                      <td className="px-3 py-2.5 text-slate-500">{v.notes || "—"}</td>
+                      <td className="px-3 py-2.5">
+                        <button onClick={() => removeManualVendor(v.id)} className="text-slate-300 hover:text-rose-500 transition">
+                          <Trash2 size={12} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         {noData && (
           <div className="flex flex-col items-center justify-center py-8 gap-2">
             <Store size={24} className="text-slate-300" />
@@ -391,9 +622,9 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
         <div>
           {totalSelected > 0 ? (
             <p className="text-[12px] font-semibold text-slate-700">
-              {totalSelected} vendor{totalSelected !== 1 ? "s" : ""} selected
+              {totalSelected} row{totalSelected !== 1 ? "s" : ""} selected
               <span className="ml-1.5 font-normal text-slate-400">
-                ({selDisc.size} discovered · {selLeg.size} from history)
+                ({selDisc.size} discovered · {selLeg.size} from history · {selMan.size} manual)
               </span>
             </p>
           ) : (

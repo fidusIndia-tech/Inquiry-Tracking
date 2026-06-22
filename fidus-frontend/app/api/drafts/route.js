@@ -54,7 +54,7 @@ function escapeHtml(str) {
  * [CODE] form so the reply-matching pipeline can identify which inquiry a
  * vendor's reply belongs to, independent of Gmail thread_id.
  */
-function buildDraft(vendor, inquiryItems, clientName, uniqueCode) {
+function buildDraft(vendor, inquiryItems, uniqueCode) {
   const brandItems = inquiryItems.filter(
     (i) => (i.brand || "").toLowerCase() === (vendor.brand || "").toLowerCase()
   );
@@ -97,8 +97,8 @@ function buildDraft(vendor, inquiryItems, clientName, uniqueCode) {
   const body = `
 <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.5;">
   <p>Dear ${escapeHtml(vendor.name || "")} Team,</p>
-  <p>Greetings from FIAPL (Fidus India Pvt. Ltd.)!</p>
-  <p>We have a procurement requirement${clientName ? ` for our client ${escapeHtml(clientName)}` : ""} and request your best offer for the items below. Reference: <b>${escapeHtml(uniqueCode)}</b></p>
+  <p>Greetings from FIAPL!</p>
+  <p>We have a procurement requirement and request your best offer for the items below. Reference: <b>${escapeHtml(uniqueCode)}</b></p>
 
   <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:13px;">
     <thead>
@@ -119,8 +119,7 @@ function buildDraft(vendor, inquiryItems, clientName, uniqueCode) {
     </tbody>
   </table>
 
-  <p>Kindly fill in the highlighted columns and reply with this same table — it keeps things quick and easy to process on both ends.</p>
-  <p>This is time-sensitive — your prompt response will be greatly appreciated.</p>
+  <p>Kindly fill in the highlighted columns and reply with this same table.</p>
 
   <p>Warm regards,<br/>
   FIAPL Procurement Team<br/>
@@ -150,7 +149,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureDraftsSchema();
-    const { unique_code, client_name, vendors, inquiry_items } = await request.json();
+    const { unique_code, vendors, inquiry_items } = await request.json();
 
     if (!unique_code || !vendors?.length) {
       return Response.json(
@@ -161,7 +160,7 @@ export async function POST(request) {
 
     const created = [];
     for (const vendor of vendors) {
-      const { subject, body, partNumbers } = buildDraft(vendor, inquiry_items || [], client_name, unique_code);
+      const { subject, body, partNumbers } = buildDraft(vendor, inquiry_items || [], unique_code);
       const res = await query(
         `INSERT INTO vendor_drafts
            (inquiry_unique_code, vendor_name, vendor_email, brand, part_number, subject, body, source)

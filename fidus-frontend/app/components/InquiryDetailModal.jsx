@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check, CheckCircle2, ClipboardCopy, FileText, Globe,
-  History, Mail, MapPin, Phone, RefreshCw, Store, X,
+  History, Mail, MapPin, Phone, RefreshCw, Send, Store, Tag, X,
 } from "lucide-react";
 
 /* ─────────────────────────────────────────────
@@ -425,7 +425,30 @@ function DraftCard({ draft, onChange }) {
   const [saving,   setSaving]   = useState(false);
   const [copied,   setCopied]   = useState(false);
   const [status,   setStatus]   = useState(draft.status  || "draft");
+  const [sending,  setSending]  = useState(false);
+  const [sendError, setSendError] = useState("");
   const debounceRef = useRef(null);
+
+  const isSent = status === "sent" || status === "replied";
+
+  const handleSend = async () => {
+    setSending(true); setSendError("");
+    try {
+      const res  = await fetch("/api/drafts/send", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ draft_id: draft.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send");
+      setStatus("sent");
+      onChange(data.draft);
+    } catch (e) {
+      setSendError(e.message);
+    } finally {
+      setSending(false);
+    }
+  };
 
   const persist = useCallback(
     (newSubject, newBody, newStatus) => {
@@ -485,8 +508,13 @@ function DraftCard({ draft, onChange }) {
           {draft.source === "legacy" ? "History" : "Discovered"}
         </span>
         <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold
-          ${status === "approved" ? "border-[#6EE7B7] bg-[#ECFDF5] text-[#059669]" : "border-[#E4E8EE] bg-white text-slate-500"}`}>
-          {status === "approved" ? <><Check size={9} />Approved</> : "Draft"}
+          ${status === "replied" ? "border-[#6EE7B7] bg-[#ECFDF5] text-[#059669]"
+            : status === "sent" ? "border-[#BFDBFE] bg-[#EFF6FF] text-[#1D6FD8]"
+            : status === "approved" ? "border-[#6EE7B7] bg-[#ECFDF5] text-[#059669]"
+            : "border-[#E4E8EE] bg-white text-slate-500"}`}>
+          {status === "replied" ? <><Check size={9} />Replied</>
+            : status === "sent" ? <><Send size={9} />Sent</>
+            : status === "approved" ? <><Check size={9} />Approved</> : "Draft"}
         </span>
         {saving && <RefreshCw size={12} className="animate-spin text-slate-300" />}
       </div>
@@ -497,7 +525,8 @@ function DraftCard({ draft, onChange }) {
         <input
           value={subject}
           onChange={(e) => handleSubjectChange(e.target.value)}
-          className="w-full rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-[12px] font-medium text-slate-800 outline-none transition hover:border-[#E4E8EE] focus:border-[#5BA7FF] focus:bg-white focus:ring-2 focus:ring-[#5BA7FF]/10"
+          disabled={isSent}
+          className="w-full rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-[12px] font-medium text-slate-800 outline-none transition hover:border-[#E4E8EE] focus:border-[#5BA7FF] focus:bg-white focus:ring-2 focus:ring-[#5BA7FF]/10 disabled:text-slate-500"
         />
       </div>
 
@@ -508,7 +537,8 @@ function DraftCard({ draft, onChange }) {
           value={body}
           onChange={(e) => handleBodyChange(e.target.value)}
           rows={10}
-          className="w-full resize-none rounded-xl border border-[#E4E8EE] bg-[#FAFBFF] px-3 py-2.5 text-[12px] leading-relaxed text-slate-700 outline-none transition focus:border-[#5BA7FF] focus:bg-white focus:ring-2 focus:ring-[#5BA7FF]/10 font-mono"
+          disabled={isSent}
+          className="w-full resize-none rounded-xl border border-[#E4E8EE] bg-[#FAFBFF] px-3 py-2.5 text-[12px] leading-relaxed text-slate-700 outline-none transition focus:border-[#5BA7FF] focus:bg-white focus:ring-2 focus:ring-[#5BA7FF]/10 font-mono disabled:text-slate-400"
         />
       </div>
 
@@ -520,20 +550,40 @@ function DraftCard({ draft, onChange }) {
         >
           {copied ? <><Check size={11} className="text-emerald-500" />Copied</> : <><ClipboardCopy size={11} />Copy</>}
         </button>
-        <button
-          onClick={handleApprove}
-          className={`flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-semibold transition
-            ${status === "approved"
-              ? "border-[#6EE7B7] bg-[#ECFDF5] text-[#059669] hover:bg-[#D1FAE5]"
-              : "border-[#E4E8EE] bg-white text-slate-600 hover:bg-[#F3F5F7]"}`}
-        >
-          <CheckCircle2 size={11} />
-          {status === "approved" ? "Approved" : "Approve"}
-        </button>
+        {!isSent && (
+          <button
+            onClick={handleApprove}
+            className={`flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-semibold transition
+              ${status === "approved"
+                ? "border-[#6EE7B7] bg-[#ECFDF5] text-[#059669] hover:bg-[#D1FAE5]"
+                : "border-[#E4E8EE] bg-white text-slate-600 hover:bg-[#F3F5F7]"}`}
+          >
+            <CheckCircle2 size={11} />
+            {status === "approved" ? "Approved" : "Approve"}
+          </button>
+        )}
+        {!isSent ? (
+          <button
+            onClick={handleSend}
+            disabled={sending || !draft.vendor_email}
+            title={!draft.vendor_email ? "This vendor has no email on file" : ""}
+            className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)" }}
+          >
+            {sending ? <><RefreshCw size={11} className="animate-spin" />Sending…</> : <><Send size={11} />Send to Vendor</>}
+          </button>
+        ) : (
+          <span className="flex h-8 items-center gap-1.5 rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] px-3 text-[11px] font-semibold text-[#1D6FD8]">
+            <CheckCircle2 size={11} />Sent{draft.sent_at ? ` · ${new Date(draft.sent_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}` : ""}
+          </span>
+        )}
         <p className="ml-auto text-[10px] text-slate-300">
           {draft.source === "legacy" ? "From company history" : "From web discovery"} · Auto-saves
         </p>
       </div>
+      {sendError && (
+        <p className="border-t border-rose-100 bg-rose-50 px-4 py-2 text-[11px] font-medium text-rose-600">{sendError}</p>
+      )}
     </div>
   );
 }
@@ -597,6 +647,199 @@ function DraftsTab({ inquiry, initialDrafts }) {
 }
 
 /* ─────────────────────────────────────────────
+   Reply to Client Tab — vendor quotes received, pick the best
+   per part, add margin, send the final quotation.
+───────────────────────────────────────────── */
+const QUOTE_CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£" };
+
+function formatQuotePrice(value, currency) {
+  if (value === null || value === undefined || value === "") return "—";
+  const symbol = QUOTE_CURRENCY_SYMBOLS[currency] || (currency ? `${currency} ` : "");
+  return `${symbol}${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+function QuotesTab({ inquiry }) {
+  const [quotes,        setQuotes]        = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [selected,      setSelected]      = useState({}); // part_number -> quote id
+  const [sellingPrices, setSellingPrices] = useState({}); // part_number -> string
+  const [sending,       setSending]       = useState(false);
+  const [sendError,     setSendError]     = useState("");
+  const [sentOk,        setSentOk]        = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/quotes?unique_code=${encodeURIComponent(inquiry.unique_code)}`)
+      .then((r) => r.json())
+      .then((d) => setQuotes(d.quotes || []))
+      .catch(() => setQuotes([]))
+      .finally(() => setLoading(false));
+  }, [inquiry.unique_code]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16">
+        <RefreshCw size={20} className="animate-spin text-[#4451E8]" />
+        <p className="text-[12px] text-slate-400">Loading vendor quotes…</p>
+      </div>
+    );
+  }
+
+  if (quotes.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16 px-6">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl"
+             style={{ background: "linear-gradient(135deg,#EFFAF6,#A7F3D0)" }}>
+          <Tag size={20} className="text-[#059669]" />
+        </div>
+        <p className="text-[13px] font-semibold text-slate-700">No vendor quotes received yet</p>
+        <p className="text-[11px] text-slate-400 text-center max-w-xs">
+          Once a vendor replies with pricing to a sent RFQ draft, their quote will appear here automatically.
+        </p>
+      </div>
+    );
+  }
+
+  const byPart = {};
+  for (const q of quotes) {
+    const key = q.part_number || "—";
+    (byPart[key] = byPart[key] || []).push(q);
+  }
+  const partNumbers = Object.keys(byPart);
+
+  const itemQty = (partNumber) => {
+    const item = (inquiry.items || []).find((i) => (i.partNumber || "") === partNumber);
+    return item?.quantity ?? null;
+  };
+
+  const readyLines = partNumbers
+    .filter((pn) => selected[pn] && sellingPrices[pn])
+    .map((pn) => {
+      const q = byPart[pn].find((x) => String(x.id) === String(selected[pn]));
+      return {
+        part_number: pn,
+        quantity: itemQty(pn),
+        currency: q?.currency || null,
+        selling_price: sellingPrices[pn],
+      };
+    });
+
+  const sendQuote = async () => {
+    setSending(true); setSendError("");
+    try {
+      const res = await fetch("/api/quotes/send-to-client", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ unique_code: inquiry.unique_code, lines: readyLines }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send quote");
+      setSentOk(true);
+    } catch (e) {
+      setSendError(e.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col" style={{ minHeight: 0 }}>
+      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+        {partNumbers.map((pn) => {
+          const rows = byPart[pn];
+          const qty = itemQty(pn);
+          return (
+            <div key={pn} className="space-y-2">
+              <div className="flex items-center gap-2 rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#3B82F6]" />
+                <span className="text-[11px] font-bold uppercase tracking-widest text-[#1D6FD8]">{pn}</span>
+                {qty !== null && <span className="ml-auto text-[11px] text-slate-500">Qty: {qty}</span>}
+              </div>
+              <div className="overflow-hidden rounded-xl border border-[#E4E8EE]">
+                <table className="w-full border-collapse text-[11px]">
+                  <thead>
+                    <tr style={{ background: "linear-gradient(90deg,#EEF4FF,#E6EDFC)" }}>
+                      <th className="w-8 border-b border-[#D0DCF4] px-3 py-2" />
+                      {["Vendor", "Unit Price", "Lead Time", "Availability"].map((h) => (
+                        <th key={h} className="border-b border-[#D0DCF4] px-3 py-2 text-left text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((q) => (
+                      <tr key={q.id} style={{ background: String(selected[pn]) === String(q.id) ? "#EEF6FF" : "white" }}
+                          className="border-b border-[#EEF2F6] last:border-b-0">
+                        <td className="px-3 py-2.5">
+                          <input
+                            type="radio"
+                            name={`quote-${pn}`}
+                            checked={String(selected[pn]) === String(q.id)}
+                            onChange={() => setSelected((prev) => ({ ...prev, [pn]: q.id }))}
+                            className="h-3.5 w-3.5 accent-[#4451E8] cursor-pointer"
+                          />
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <p className="font-semibold text-slate-900">{q.vendor_name || "—"}</p>
+                          <p className="text-[10px] text-slate-400">{q.vendor_email || ""}</p>
+                        </td>
+                        <td className="px-3 py-2.5 font-semibold text-slate-800">{formatQuotePrice(q.unit_price, q.currency)}</td>
+                        <td className="px-3 py-2.5 text-slate-600">{q.lead_time || "—"}</td>
+                        <td className="px-3 py-2.5 text-slate-500">{q.availability || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {selected[pn] && (
+                <div className="flex items-center gap-2 rounded-xl border border-[#FDE68A] bg-[#FFFDF5] px-3 py-2">
+                  <Tag size={12} className="text-[#B45309]" />
+                  <label className="text-[11px] font-semibold text-[#B45309]">Your Selling Price</label>
+                  <input
+                    type="number"
+                    value={sellingPrices[pn] || ""}
+                    onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-32 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Sticky bottom action bar */}
+      <div className="shrink-0 border-t border-[#EEF2F6] bg-white px-5 py-3 flex items-center justify-between gap-3">
+        <div>
+          {sentOk ? (
+            <p className="flex items-center gap-1.5 text-[12px] font-semibold text-[#059669]">
+              <CheckCircle2 size={13} />Quotation sent to client
+            </p>
+          ) : (
+            <p className="text-[12px] text-slate-400">
+              {readyLines.length > 0
+                ? `${readyLines.length} of ${partNumbers.length} part${partNumbers.length !== 1 ? "s" : ""} priced`
+                : "Select a vendor quote and enter your selling price for each part"}
+            </p>
+          )}
+          {sendError && <p className="text-[11px] text-rose-500 mt-0.5">{sendError}</p>}
+        </div>
+        {!sentOk && (
+          <button
+            onClick={sendQuote}
+            disabled={readyLines.length === 0 || sending}
+            className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
+          >
+            {sending ? <><RefreshCw size={13} className="animate-spin" />Sending…</> : <><Send size={13} />Send Quote to Client</>}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
    Main modal
 ───────────────────────────────────────────── */
 export default function InquiryDetailModal({ inquiry, onClose }) {
@@ -617,9 +860,10 @@ export default function InquiryDetailModal({ inquiry, onClose }) {
   };
 
   const TABS = [
-    { id: "details", label: "Details",    Icon: FileText },
-    { id: "vendors", label: "Vendors",    Icon: Store    },
-    { id: "drafts",  label: "Drafts",     Icon: Mail     },
+    { id: "details", label: "Details",         Icon: FileText },
+    { id: "vendors", label: "Vendors",          Icon: Store    },
+    { id: "drafts",  label: "Drafts",           Icon: Mail     },
+    { id: "quotes",  label: "Reply to Client",  Icon: Tag      },
   ];
 
   return (
@@ -685,10 +929,13 @@ export default function InquiryDetailModal({ inquiry, onClose }) {
               <DraftsTab inquiry={inquiry} initialDrafts={draftsFromGenerate} />
             </div>
           )}
+          {activeTab === "quotes" && (
+            <QuotesTab inquiry={inquiry} />
+          )}
         </div>
 
         {/* Footer */}
-        {activeTab !== "vendors" && (
+        {activeTab !== "vendors" && activeTab !== "quotes" && (
           <div className="flex shrink-0 justify-end border-t border-[#EEF2F6] p-4" style={{ background: "#F8FAFC" }}>
             <button onClick={onClose}
               className="h-9 rounded-xl border border-[#E4E8EE] bg-white px-5 text-[13px] font-medium text-slate-700 transition hover:bg-[#F3F5F7]">

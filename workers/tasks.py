@@ -4,7 +4,9 @@ workers/tasks.py
 Full pipeline — sends ONE parsed RFQ row per email to the Next.js backend.
 """
 
+import re
 import traceback
+from datetime import datetime, timezone
 from celery import Task
 from googleapiclient.errors import HttpError
 
@@ -21,8 +23,17 @@ from email_parser import parse_email
 from rfq_filter import is_rfq_candidate, is_client_reminder
 from attachment_handler import extract_attachment_text
 from llm_extractor import is_rfq_email, extract_rfq_data, get_buyer_identity
-from next_api_client import post_rfq_item, post_reminder_item
+from next_api_client import (
+    post_rfq_item,
+    post_reminder_item,
+    get_drafts_for_inquiry,
+    get_stale_drafts,
+    patch_draft,
+    post_vendor_quote,
+)
 from vendor_discovery import discover_and_store_vendors
+from vendor_outreach import send_vendor_reminder
+from vendor_reply import match_inquiry_code, extract_quote
 from config import get_settings
 from logging_setup import get_logger
 
@@ -379,8 +390,17 @@ def poll_all_users(self) -> dict:
     """
     Beat entry point — runs every 60 s.
     Dispatches poll_inbox for every user that has a stored historyId.
+
+    Excludes VENDOR_MAILBOX_USER_ID: that mailbox is exclusively polled by
+    poll_vendor_replies on its own queue. If it went through here too, vendor
+    price replies would also get fed into the client RFQ pipeline (rfq_filter
+    + GPT classifier), which has no concept of vendor quotes and would either
+    drop them as noise or create bogus duplicate inquiries.
     """
-    user_ids = get_all_user_ids()
+    user_ids = [
+        uid for uid in get_all_user_ids()
+        if uid != settings.VENDOR_MAILBOX_USER_ID
+    ]
     if not user_ids:
         logger.debug("poll_all_users | no users registered yet")
         return {"status": "no_users"}
@@ -401,6 +421,10 @@ def poll_all_users(self) -> dict:
     max_retries=2,
     retry_backoff=30,
     retry_jitter=True,
+    # Multiple brands × 8 SerpAPI queries × scraping candidates can legitimately
+    # run several minutes — longer than the global task_time_limit default.
+    time_limit=900,
+    soft_time_limit=840,
 )
 def discover_vendors_task(unique_code: str, line_items: list[dict]) -> dict:
     """
@@ -458,3 +482,172 @@ def discover_vendors_task(unique_code: str, line_items: list[dict]) -> dict:
         "brands_searched": len(seen_brands),
         "vendors_stored": total_stored,
     }
+
+
+# ── Vendor reply pipeline ───────────────────────────────────────────────────
+# Everything below operates on the single dedicated vendor-outreach mailbox
+# (settings.VENDOR_MAILBOX_USER_ID), never the per-employee client mailboxes.
+# It runs on its own "vendor_replies" queue so a slow GPT extraction call can
+# never delay client RFQ polling.
+
+_SENDER_EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE)
+
+
+def _extract_sender_email(sender: str | None) -> str | None:
+    if not sender:
+        return None
+    m = _SENDER_EMAIL_RE.search(sender)
+    return m.group(0) if m else None
+
+
+@celery_app.task(
+    bind=True,
+    base=BaseTask,
+    name="workers.tasks.poll_vendor_replies",
+    autoretry_for=(HttpError, ConnectionError, TimeoutError),
+    max_retries=3,
+    retry_backoff=60,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def poll_vendor_replies(self) -> dict:
+    """
+    Incremental sync for the vendor-outreach mailbox (beat-scheduled).
+    Any new message is just queued for extract_vendor_quote — the actual
+    [UNIQUE_CODE] subject match happens there so this stays a thin, fast poll.
+    """
+    user_id = settings.VENDOR_MAILBOX_USER_ID
+    if not user_id:
+        logger.debug("poll_vendor_replies | VENDOR_MAILBOX_USER_ID not set — skipping")
+        return {"status": "not_configured"}
+
+    stored_id = get_latest_history_id(user_id)
+    if not stored_id:
+        logger.warning("poll_vendor_replies | no historyId for %s — re-login to seed", user_id)
+        return {"status": "no_history_id"}
+
+    try:
+        service = get_gmail_service_for_user(user_id)
+    except ValueError as exc:
+        logger.error("poll_vendor_replies | auth error: %s", exc)
+        return {"status": "auth_error", "detail": str(exc)}
+
+    try:
+        new_msgs, latest_id = fetch_new_message_ids_from_history(service, stored_id)
+    except HistoryExpiredError as exc:
+        logger.error("poll_vendor_replies | historyId expired: %s", exc)
+        return {"status": "history_expired", "detail": str(exc)}
+
+    if latest_id:
+        save_latest_history_id(user_id, latest_id)
+
+    if not new_msgs:
+        return {"status": "no_new_messages"}
+
+    queued = 0
+    for msg in new_msgs:
+        extract_vendor_quote.apply_async(args=[msg["id"]], queue="vendor_replies")
+        queued += 1
+
+    logger.info("poll_vendor_replies | new=%d queued=%d", len(new_msgs), queued)
+    return {"status": "queued", "new_messages": len(new_msgs), "queued": queued}
+
+
+@celery_app.task(
+    bind=True,
+    base=BaseTask,
+    name="workers.tasks.extract_vendor_quote",
+    autoretry_for=(HttpError, ConnectionError, TimeoutError),
+    max_retries=2,
+    retry_backoff=30,
+    retry_jitter=True,
+)
+def extract_vendor_quote(self, message_id: str) -> dict:
+    """
+    Quote Extraction Agent. Matches a vendor reply back to its inquiry via
+    the [UNIQUE_CODE] subject tag, then GPT-extracts price/lead-time per part.
+    """
+    user_id = settings.VENDOR_MAILBOX_USER_ID
+    if not user_id:
+        return {"status": "not_configured"}
+
+    service = get_gmail_service_for_user(user_id)
+    raw = get_full_message(service, message_id)
+
+    if not is_processable_inbox_message(raw):
+        logger.debug("extract_vendor_quote | skip non-inbox message %s", message_id)
+        return {"status": "skipped_non_inbox"}
+
+    parsed = parse_email(raw, user_id)
+    unique_code = match_inquiry_code(parsed.get("subject"))
+    if not unique_code:
+        logger.debug(
+            "extract_vendor_quote | no inquiry code in subject — not a tracked vendor reply | subject=%s",
+            parsed.get("subject"),
+        )
+        return {"status": "no_match"}
+
+    drafts = get_drafts_for_inquiry(unique_code)
+    thread_id = parsed.get("thread_id")
+    sender_email = _extract_sender_email(parsed.get("sender"))
+
+    draft = next((d for d in drafts if d.get("thread_id") == thread_id), None)
+    if draft is None and sender_email:
+        draft = next(
+            (d for d in drafts if (d.get("vendor_email") or "").lower() == sender_email.lower()),
+            None,
+        )
+
+    part_numbers = [p.strip() for p in (draft.get("part_number") or "").split(",") if p.strip()] if draft else []
+    quotes = extract_quote(parsed.get("body_plain"), parsed.get("body_html"), part_numbers)
+
+    if not quotes:
+        logger.info("extract_vendor_quote | no price found in reply | unique_code=%s", unique_code)
+        return {"status": "no_quote_found", "unique_code": unique_code}
+
+    post_vendor_quote({
+        "unique_code": unique_code,
+        "draft_id": draft.get("id") if draft else None,
+        "vendor_name": draft.get("vendor_name") if draft else None,
+        "vendor_email": (draft.get("vendor_email") if draft else None) or sender_email,
+        "brand": draft.get("brand") if draft else None,
+        "raw_reply": parsed.get("body_plain") or parsed.get("body_html"),
+        "quotes": quotes,
+    })
+
+    logger.info("Vendor quote extracted | unique_code=%s | parts=%d", unique_code, len(quotes))
+    return {"status": "ok", "unique_code": unique_code, "quotes": len(quotes)}
+
+
+@celery_app.task(
+    bind=True,
+    base=BaseTask,
+    name="workers.tasks.send_vendor_reminders",
+)
+def send_vendor_reminders(self) -> dict:
+    """
+    Reminder Agent (beat-scheduled). Follows up on sent RFQs that have had
+    no vendor reply within VENDOR_REMINDER_AFTER_HOURS, once each.
+    """
+    if not settings.VENDOR_MAILBOX_USER_ID:
+        return {"status": "not_configured"}
+
+    stale = get_stale_drafts(settings.VENDOR_REMINDER_AFTER_HOURS)
+    sent = 0
+    for draft in stale:
+        if not draft.get("thread_id") or not draft.get("vendor_email"):
+            continue
+        try:
+            send_vendor_reminder(
+                vendor_email=draft["vendor_email"],
+                subject=draft["subject"],
+                thread_id=draft["thread_id"],
+                rfc_message_id=draft.get("rfc_message_id"),
+            )
+            patch_draft(draft["id"], reminded_at=datetime.now(timezone.utc).isoformat())
+            sent += 1
+        except Exception as exc:
+            logger.error("Vendor reminder failed | draft_id=%s: %s", draft.get("id"), exc)
+
+    logger.info("send_vendor_reminders | candidates=%d sent=%d", len(stale), sent)
+    return {"status": "ok", "candidates": len(stale), "sent": sent}

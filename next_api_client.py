@@ -6,6 +6,7 @@ Small HTTP client for sending extracted RFQs to the Next.js backend.
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from config import get_settings
@@ -58,3 +59,44 @@ def post_reminder_item(payload: dict) -> dict:
 def get_inquiries() -> dict:
     with urllib.request.urlopen(settings.NEXT_INQUIRIES_API_URL, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def _request(url: str, payload: dict | None, method: str) -> dict:
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"{url} failed with HTTP {error.code}: {detail}") from error
+    except urllib.error.URLError as error:
+        raise ConnectionError(f"{url} unreachable: {error.reason}") from error
+
+
+def patch_draft(draft_id: int, **fields) -> dict:
+    """Update any subset of vendor_drafts columns (status, thread_id, etc.)."""
+    return _request(settings.NEXT_DRAFTS_API_URL, {"id": draft_id, **fields}, "PATCH")
+
+
+def get_drafts_for_inquiry(unique_code: str) -> list[dict]:
+    url = f"{settings.NEXT_DRAFTS_API_URL}?unique_code={urllib.parse.quote(unique_code)}"
+    with urllib.request.urlopen(url, timeout=30) as response:
+        data = json.loads(response.read().decode("utf-8"))
+        return data.get("drafts", [])
+
+
+def get_stale_drafts(hours: int) -> list[dict]:
+    url = f"{settings.NEXT_DRAFTS_STALE_API_URL}?hours={hours}"
+    with urllib.request.urlopen(url, timeout=30) as response:
+        data = json.loads(response.read().decode("utf-8"))
+        return data.get("drafts", [])
+
+
+def post_vendor_quote(payload: dict) -> dict:
+    return _request(settings.NEXT_QUOTES_API_URL, payload, "POST")

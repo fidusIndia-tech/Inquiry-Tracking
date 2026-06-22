@@ -17,6 +17,14 @@ class Settings(BaseSettings):
         "https://www.googleapis.com/auth/userinfo.email",
         "openid",
     ]
+    # Granted only to the dedicated vendor-outreach mailbox below — every other
+    # registered Gmail account stays read-only.
+    GOOGLE_SCOPES_VENDOR_MAILBOX: list[str] = [
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "openid",
+    ]
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     CREDENTIAL_ENCRYPTION_KEY: str = ""
@@ -24,6 +32,22 @@ class Settings(BaseSettings):
     NEXT_PARSER_API_URL: str = "http://localhost:3000/api/parser/rfq-items"
     NEXT_INQUIRIES_API_URL: str = "http://localhost:3000/api/inquiries"
     NEXT_REMINDERS_API_URL: str = "http://localhost:3000/api/parser/reminders"
+
+    # Vendor outreach / reply pipeline
+    NEXT_DRAFTS_API_URL: str = "http://localhost:3000/api/drafts"
+    NEXT_DRAFTS_STALE_API_URL: str = "http://localhost:3000/api/drafts/stale"
+    NEXT_QUOTES_API_URL: str = "http://localhost:3000/api/quotes"
+
+    # Single dedicated mailbox that sends every vendor RFQ and receives every
+    # vendor price reply. Must be one of the Gmail accounts registered via
+    # /login?mailbox=vendor (needs gmail.send).
+    VENDOR_MAILBOX_USER_ID: str = ""
+    VENDOR_REMINDER_AFTER_HOURS: int = 24
+
+    # Single mailbox that sends final quotations back to clients, replying in
+    # the original inquiry thread. Typically sales@fidusindia.com — must also
+    # be (re-)registered via /login?mailbox=client (needs gmail.send).
+    CLIENT_MAILBOX_USER_ID: str = ""
 
     DATABASE_URL: str = "sqlite:///emails.db"
 
@@ -41,6 +65,14 @@ class Settings(BaseSettings):
     # Vendor Discovery
     SERPAPI_KEY: str = ""
     NEXT_VENDORS_API_URL: str = "http://localhost:3000/api/parser/vendors"
+    NEXT_VENDORS_BRAND_STATUS_API_URL: str = "http://localhost:3000/api/parser/vendors/brand-status"
+    NEXT_VENDORS_LINK_API_URL: str = "http://localhost:3000/api/parser/vendors/link"
+
+    # Days to wait before re-running a paid SerpAPI search for a brand we've
+    # already discovered vendors for. Within the window, new inquiries for
+    # the same brand just reuse the existing vendor pool instead of paying
+    # for a search that reliably returns the same top results.
+    VENDOR_BRAND_SEARCH_COOLDOWN_DAYS: int = 30
 
     class Config:
         env_file = ".env"

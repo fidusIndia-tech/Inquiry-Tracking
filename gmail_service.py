@@ -2,6 +2,9 @@
 gmail_service.py  (flat-import edition)
 """
 
+import base64
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Generator
 from googleapiclient.errors import HttpError
 from config import get_settings
@@ -135,6 +138,58 @@ def fetch_new_message_ids_from_history(
         start_history_id, latest_history_id, len(unique),
     )
     return unique, latest_history_id
+
+
+def send_message(
+    service,
+    to: str,
+    subject: str,
+    html_body: str,
+    thread_id: str | None = None,
+    in_reply_to_rfc_message_id: str | None = None,
+) -> dict:
+    """
+    Send an HTML email via the Gmail API.
+
+    Pass thread_id + in_reply_to_rfc_message_id when following up on a
+    previously sent message (reminders) so the new mail threads correctly
+    in the recipient's inbox instead of arriving as an unrelated email.
+
+    Returns {"id": <gmail message id>, "thread_id": <gmail thread id>}.
+    """
+    msg = MIMEMultipart("alternative")
+    msg["To"] = to
+    msg["Subject"] = subject
+    if in_reply_to_rfc_message_id:
+        msg["In-Reply-To"] = in_reply_to_rfc_message_id
+        msg["References"] = in_reply_to_rfc_message_id
+    msg.attach(MIMEText(html_body, "html"))
+
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+    body: dict = {"raw": raw}
+    if thread_id:
+        body["threadId"] = thread_id
+
+    sent = service.users().messages().send(userId="me", body=body).execute()
+    return {"id": sent.get("id"), "thread_id": sent.get("threadId")}
+
+
+def get_rfc_message_id(service, message_id: str) -> str | None:
+    """
+    Fetch the RFC 822 Message-ID header for a just-sent message — needed as
+    the In-Reply-To value when sending a reminder in the same thread.
+    """
+    msg = (
+        service.users()
+        .messages()
+        .get(userId="me", id=message_id, format="metadata", metadataHeaders=["Message-ID"])
+        .execute()
+    )
+    headers = msg.get("payload", {}).get("headers", [])
+    for h in headers:
+        if h.get("name", "").lower() == "message-id":
+            return h.get("value")
+    return None
 
 
 def parse_headers(email_data: dict) -> dict:

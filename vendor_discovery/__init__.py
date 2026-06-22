@@ -19,13 +19,16 @@ Public API:
 """
 
 import re
+from datetime import datetime, timezone
 from .searcher import search_vendors
 from .scraper  import fetch_vendor_page, fetch_contact_page, extract_contacts
 from .parser   import parse_vendor_with_llm
-from .client   import post_vendor
+from .client   import post_vendor, get_brand_status, link_brand_vendors_to_inquiry
+from config import get_settings
 from logging_setup import get_logger
 
 logger = get_logger(__name__)
+settings = get_settings()
 
 MAX_VENDORS = 10
 
@@ -122,6 +125,32 @@ def discover_and_store_vendors(
     """
     if not brand or not part_number:
         return []
+
+    # ── Cooldown check ────────────────────────────────────────────────────
+    # Search is brand-only (see searcher.py) — Google's top results for the
+    # same brand barely change day to day, so re-running SerpAPI for a brand
+    # we already have vendors for is mostly paying to rediscover the same
+    # dealer. Within the cooldown window, reuse the existing pool instead;
+    # once it expires, search fresh again so the pool can still grow over
+    # time and pick up new dealers.
+    status = get_brand_status(brand)
+    if status.get("count", 0) > 0 and status.get("last_discovered_at"):
+        last_discovered = datetime.fromisoformat(
+            status["last_discovered_at"].replace("Z", "+00:00")
+        )
+        age_days = (datetime.now(timezone.utc) - last_discovered).days
+        if age_days < settings.VENDOR_BRAND_SEARCH_COOLDOWN_DAYS:
+            logger.info(
+                "Vendor discovery skipped (cooldown) | brand=%s | last_searched=%dd ago | known_vendors=%d",
+                brand, age_days, status["count"],
+            )
+            if inquiry_unique_code:
+                linked = link_brand_vendors_to_inquiry(brand, part_number, inquiry_unique_code)
+                logger.info(
+                    "Linked existing vendors to inquiry | brand=%s | unique_code=%s | linked=%d/%d",
+                    brand, inquiry_unique_code, linked.get("linked", 0), linked.get("candidates", 0),
+                )
+            return []
 
     logger.info("Vendor discovery start | brand=%s part=%s", brand, part_number)
 

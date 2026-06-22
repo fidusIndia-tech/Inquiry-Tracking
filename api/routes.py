@@ -4,6 +4,7 @@ api/routes.py
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse, JSONResponse
+from pydantic import BaseModel
 
 from googleapiclient.discovery import build
 
@@ -16,6 +17,10 @@ from history_tracker import get_latest_history_id, save_latest_history_id
 from models.user_model import save_user_credentials
 from workers.tasks import process_email_message
 from next_api_client import get_inquiries
+from vendor_outreach import send_vendor_rfq
+from vendor_outreach.sender import VendorMailboxNotConfigured
+from client_outreach import send_client_quote
+from client_outreach.sender import ClientMailboxNotConfigured
 from config import get_settings
 from logging_setup import get_logger
 
@@ -39,12 +44,20 @@ def debug():
 
 
 @router.get("/login")
-def login(request: Request):
+def login(request: Request, mailbox: str = "default"):
+    """
+    mailbox=vendor or mailbox=client requests the broader scope set (adds
+    gmail.send) — use this once to (re-)authorize the single dedicated
+    vendor-outreach mailbox or the single client-facing reply mailbox.
+    Every other account should keep using the default read-only login.
+    """
     try:
-        flow = build_oauth_flow()
+        scopes = settings.GOOGLE_SCOPES_VENDOR_MAILBOX if mailbox != "default" else settings.GOOGLE_SCOPES
+        flow = build_oauth_flow(scopes=scopes)
         authorization_url, state = get_authorization_url(flow)
         request.session["oauth_state"] = state
         request.session["oauth_code_verifier"] = getattr(flow, "code_verifier", None)
+        request.session["oauth_scopes"] = scopes
         return RedirectResponse(authorization_url)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -56,7 +69,7 @@ def oauth_callback(request: Request):
     if not session_state or session_state != request.query_params.get("state"):
         raise HTTPException(status_code=400, detail="Invalid OAuth state.")
 
-    flow = build_oauth_flow(state=session_state)
+    flow = build_oauth_flow(state=session_state, scopes=request.session.get("oauth_scopes"))
     flow.code_verifier = request.session.get("oauth_code_verifier")
 
     try:
@@ -326,6 +339,74 @@ def trigger_vendors(unique_code: str, brand: str, part_number: str):
         report["detail"] = str(exc)
 
     return report
+
+
+class SendVendorRfqRequest(BaseModel):
+    draft_id: int
+    unique_code: str
+    vendor_email: str
+    subject: str
+    body: str
+
+
+@router.post("/send-vendor-rfq")
+def send_vendor_rfq_endpoint(payload: SendVendorRfqRequest):
+    """
+    Sends one vendor RFQ draft via the single dedicated vendor-outreach
+    mailbox. Runs synchronously (one Gmail API call, ~1-2s) so the employee
+    gets an immediate one-click send/fail result instead of polling a task.
+    """
+    try:
+        result = send_vendor_rfq(
+            unique_code=payload.unique_code,
+            vendor_email=payload.vendor_email,
+            subject=payload.subject,
+            body=payload.body,
+        )
+    except VendorMailboxNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        logger.error("send_vendor_rfq failed | draft_id=%s: %s", payload.draft_id, exc)
+        raise HTTPException(status_code=502, detail=f"Gmail send failed: {exc}")
+
+    return {
+        "status": "sent",
+        "message_id": result["message_id"],
+        "thread_id": result["thread_id"],
+        "rfc_message_id": result["rfc_message_id"],
+    }
+
+
+class SendClientQuoteRequest(BaseModel):
+    unique_code: str
+    client_email: str
+    subject: str
+    body: str
+    thread_id: str | None = None
+    in_reply_to_message_id: str | None = None
+
+
+@router.post("/send-client-quote")
+def send_client_quote_endpoint(payload: SendClientQuoteRequest):
+    """
+    Sends the final quotation to the client via the single dedicated
+    client-reply mailbox, threaded as a reply to their original RFQ email.
+    """
+    try:
+        result = send_client_quote(
+            client_email=payload.client_email,
+            subject=payload.subject,
+            body=payload.body,
+            thread_id=payload.thread_id,
+            in_reply_to_message_id=payload.in_reply_to_message_id,
+        )
+    except ClientMailboxNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        logger.error("send_client_quote failed | unique_code=%s: %s", payload.unique_code, exc)
+        raise HTTPException(status_code=502, detail=f"Gmail send failed: {exc}")
+
+    return {"status": "sent", "message_id": result["message_id"], "thread_id": result["thread_id"]}
 
 
 @router.get("/debug/vendors")

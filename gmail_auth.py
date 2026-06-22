@@ -48,7 +48,7 @@ def _client_secret() -> str:
     return value
 
 
-def build_oauth_flow(state: str | None = None) -> Flow:
+def build_oauth_flow(state: str | None = None, scopes: list[str] | None = None) -> Flow:
     client_config = {
         "web": {
             "client_id": _client_id(),
@@ -60,7 +60,7 @@ def build_oauth_flow(state: str | None = None) -> Flow:
     }
     kwargs: dict = {
         "client_config": client_config,
-        "scopes": settings.GOOGLE_SCOPES,
+        "scopes": scopes or settings.GOOGLE_SCOPES,
     }
     if state:
         kwargs["state"] = state

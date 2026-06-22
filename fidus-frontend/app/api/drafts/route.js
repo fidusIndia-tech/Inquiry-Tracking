@@ -10,63 +10,124 @@ async function ensureDraftsSchema() {
       vendor_name         TEXT,
       vendor_email        TEXT,
       brand               TEXT,
+      part_number         TEXT,
       subject             TEXT NOT NULL,
       body                TEXT NOT NULL,
       status              TEXT DEFAULT 'draft',
       source              TEXT DEFAULT 'discovered',
+      thread_id           TEXT,
+      message_id          TEXT,
+      rfc_message_id      TEXT,
+      sent_at             TIMESTAMPTZ,
+      reminded_at         TIMESTAMPTZ,
+      replied_at          TIMESTAMPTZ,
       created_at          TIMESTAMPTZ DEFAULT NOW(),
       updated_at          TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // Additive columns for installs created before these fields existed.
+  await pool.query(`
+    ALTER TABLE vendor_drafts
+      ADD COLUMN IF NOT EXISTS part_number     TEXT,
+      ADD COLUMN IF NOT EXISTS thread_id       TEXT,
+      ADD COLUMN IF NOT EXISTS message_id      TEXT,
+      ADD COLUMN IF NOT EXISTS rfc_message_id  TEXT,
+      ADD COLUMN IF NOT EXISTS sent_at         TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS reminded_at     TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS replied_at      TIMESTAMPTZ
+  `);
   _draftsSchemaReady = true;
 }
 
-function buildDraft(vendor, inquiryItems, clientName) {
-  // Filter items matching this vendor's brand; fall back to all items
+const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£" };
+
+function escapeHtml(str) {
+  return String(str ?? "").replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+/**
+ * Builds a clean, structured RFQ email: a real HTML table with explicit
+ * "Your Unit Price / Currency / Lead Time / Remarks" columns left blank for
+ * the vendor to fill in. The unique_code is embedded in the subject in
+ * [CODE] form so the reply-matching pipeline can identify which inquiry a
+ * vendor's reply belongs to, independent of Gmail thread_id.
+ */
+function buildDraft(vendor, inquiryItems, clientName, uniqueCode) {
   const brandItems = inquiryItems.filter(
     (i) => (i.brand || "").toLowerCase() === (vendor.brand || "").toLowerCase()
   );
   const items = brandItems.length > 0 ? brandItems : inquiryItems;
 
-  const itemLines = items
+  const partNumbers = items.map((i) => i.partNumber || i.part_no).filter(Boolean);
+  const partNosForSubject = partNumbers.slice(0, 3).join(", ");
+
+  const subject = `RFQ [${uniqueCode}] – ${vendor.brand || "Parts"} | ${partNosForSubject}`;
+
+  const rows = items
     .map((item, idx) => {
-      const line = [`  ${idx + 1}. Part No: ${item.partNumber || item.part_no || "—"}`];
-      if (item.quantity) line.push(`Qty: ${item.quantity}${item.uom ? " " + item.uom : ""}`);
-      if (item.itemNotes) line.push(`Notes: ${item.itemNotes}`);
-      return line.join("  |  ");
+      const realPartNumber = item.partNumber || item.part_no;
+      // No formal SKU from the client — fall back to the item description so
+      // the vendor always sees something identifiable in the Part Number
+      // column, instead of leaving it blank while the description sits
+      // hidden in the vendor's own Remarks column below.
+      const partNumberCell = realPartNumber
+        ? `<span style="font-weight:600;">${escapeHtml(realPartNumber)}</span>`
+        : `<span style="font-style:italic;color:#64748B;">${escapeHtml(item.itemNotes || "—")}</span>`;
+
+      return `
+      <tr>
+        <td style="border:1px solid #D0DCF4;padding:8px;">${idx + 1}</td>
+        <td style="border:1px solid #D0DCF4;padding:8px;">${partNumberCell}</td>
+        <td style="border:1px solid #D0DCF4;padding:8px;">${escapeHtml(vendor.brand || "—")}</td>
+        <td style="border:1px solid #D0DCF4;padding:8px;">${escapeHtml(item.quantity ?? "—")}</td>
+        <td style="border:1px solid #D0DCF4;padding:8px;">${escapeHtml(item.uom || "—")}</td>
+        <td style="border:1px solid #FDE68A;padding:8px;background:#FFFDF5;">&nbsp;</td>
+        <td style="border:1px solid #FDE68A;padding:8px;background:#FFFDF5;">&nbsp;</td>
+        <td style="border:1px solid #FDE68A;padding:8px;background:#FFFDF5;">&nbsp;</td>
+        <td style="border:1px solid #FDE68A;padding:8px;background:#FFFDF5;">&nbsp;</td>
+      </tr>`;
     })
-    .join("\n");
+    .join("");
 
-  const partNos = items
-    .map((i) => i.partNumber || i.part_no)
-    .filter(Boolean)
-    .slice(0, 3)
-    .join(", ");
+  const headerCell = (label, fill) => `
+    <th style="border:1px solid #D0DCF4;padding:8px;text-align:left;background:${fill ? "#FFFBEB" : "#EEF4FF"};color:${fill ? "#B45309" : "#4461A8"};font-size:11px;text-transform:uppercase;letter-spacing:0.04em;">${label}</th>`;
 
-  const subject = `RFQ – ${vendor.brand || "Parts"} | ${partNos}`;
+  const body = `
+<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.5;">
+  <p>Dear ${escapeHtml(vendor.name || "")} Team,</p>
+  <p>Greetings from FIAPL (Fidus India Pvt. Ltd.)!</p>
+  <p>We have a procurement requirement${clientName ? ` for our client ${escapeHtml(clientName)}` : ""} and request your best offer for the items below. Reference: <b>${escapeHtml(uniqueCode)}</b></p>
 
-  const body = `Dear ${vendor.name} Team,
+  <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:13px;">
+    <thead>
+      <tr>
+        ${headerCell("#")}
+        ${headerCell("Part Number")}
+        ${headerCell("Brand")}
+        ${headerCell("Qty")}
+        ${headerCell("UOM")}
+        ${headerCell("Your Unit Price", true)}
+        ${headerCell("Currency", true)}
+        ${headerCell("Lead Time", true)}
+        ${headerCell("Remarks", true)}
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>
 
-Greetings from FIAPL (Fidus India Pvt. Ltd.)!
+  <p>Kindly fill in the highlighted columns and reply with this same table — it keeps things quick and easy to process on both ends.</p>
+  <p>This is time-sensitive — your prompt response will be greatly appreciated.</p>
 
-We have an urgent procurement requirement${clientName ? ` for our client ${clientName}` : ""} and request your best offer for the following:
+  <p>Warm regards,<br/>
+  FIAPL Procurement Team<br/>
+  Fidus India Pvt. Ltd.</p>
+</div>`.trim();
 
-${itemLines}
-
-Kindly share the following at the earliest:
-  • Unit Price (exclusive and inclusive of GST)
-  • Availability / Stock Status
-  • Delivery Timeline / Lead Time
-  • Any applicable alternate part numbers
-
-This is time-sensitive — your prompt response will be greatly appreciated.
-
-Warm regards,
-FIAPL Procurement Team
-Fidus India Pvt. Ltd.
-sales@fidusindia.com`;
-
-  return { subject, body };
+  return { subject, body, partNumbers: partNumbers.join(", ") };
 }
 
 export async function GET(request) {
@@ -100,17 +161,18 @@ export async function POST(request) {
 
     const created = [];
     for (const vendor of vendors) {
-      const { subject, body } = buildDraft(vendor, inquiry_items || [], client_name);
+      const { subject, body, partNumbers } = buildDraft(vendor, inquiry_items || [], client_name, unique_code);
       const res = await query(
         `INSERT INTO vendor_drafts
-           (inquiry_unique_code, vendor_name, vendor_email, brand, subject, body, source)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+           (inquiry_unique_code, vendor_name, vendor_email, brand, part_number, subject, body, source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING *`,
         [
           unique_code,
           vendor.name,
           vendor.email,
           vendor.brand,
+          partNumbers,
           subject,
           body,
           vendor.source || "discovered",
@@ -128,15 +190,19 @@ export async function POST(request) {
 export async function PATCH(request) {
   try {
     await ensureDraftsSchema();
-    const { id, subject, body, status } = await request.json();
+    const { id, subject, body, status, thread_id, message_id, rfc_message_id, sent_at, reminded_at, replied_at } = await request.json();
     if (!id) return Response.json({ error: "id required" }, { status: 400 });
 
+    const fields = { subject, body, status, thread_id, message_id, rfc_message_id, sent_at, reminded_at, replied_at };
     const setClauses = [];
     const values = [];
     let idx = 1;
-    if (subject !== undefined) { setClauses.push(`subject = $${idx++}`); values.push(subject); }
-    if (body    !== undefined) { setClauses.push(`body = $${idx++}`);    values.push(body); }
-    if (status  !== undefined) { setClauses.push(`status = $${idx++}`);  values.push(status); }
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined) { setClauses.push(`${key} = $${idx++}`); values.push(value); }
+    }
+    if (setClauses.length === 0) {
+      return Response.json({ error: "no fields to update" }, { status: 400 });
+    }
     setClauses.push("updated_at = NOW()");
     values.push(id);
 

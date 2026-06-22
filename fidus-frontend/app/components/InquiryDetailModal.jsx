@@ -427,6 +427,7 @@ function DraftCard({ draft, onChange }) {
   const [status,   setStatus]   = useState(draft.status  || "draft");
   const [sending,  setSending]  = useState(false);
   const [sendError, setSendError] = useState("");
+  const [editingHtml, setEditingHtml] = useState(false);
   const debounceRef = useRef(null);
 
   const isSent = status === "sent" || status === "replied";
@@ -532,14 +533,35 @@ function DraftCard({ draft, onChange }) {
 
       {/* Body */}
       <div className="px-4 py-3">
-        <label className="mb-1 block text-[9px] font-bold uppercase tracking-widest text-slate-400">Email Body</label>
-        <textarea
-          value={body}
-          onChange={(e) => handleBodyChange(e.target.value)}
-          rows={10}
-          disabled={isSent}
-          className="w-full resize-none rounded-xl border border-[#E4E8EE] bg-[#FAFBFF] px-3 py-2.5 text-[12px] leading-relaxed text-slate-700 outline-none transition focus:border-[#5BA7FF] focus:bg-white focus:ring-2 focus:ring-[#5BA7FF]/10 font-mono disabled:text-slate-400"
-        />
+        <div className="mb-1 flex items-center justify-between">
+          <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Email Body</label>
+          {!isSent && (
+            <button
+              onClick={() => setEditingHtml((v) => !v)}
+              className="text-[10px] font-semibold text-[#4451E8] hover:underline"
+            >
+              {editingHtml ? "Preview" : "Edit HTML"}
+            </button>
+          )}
+        </div>
+        {editingHtml ? (
+          <textarea
+            value={body}
+            onChange={(e) => handleBodyChange(e.target.value)}
+            rows={14}
+            disabled={isSent}
+            className="w-full resize-none rounded-xl border border-[#E4E8EE] bg-[#FAFBFF] px-3 py-2.5 text-[11px] leading-relaxed text-slate-700 outline-none transition focus:border-[#5BA7FF] focus:bg-white focus:ring-2 focus:ring-[#5BA7FF]/10 font-mono disabled:text-slate-400"
+          />
+        ) : (
+          // This renders exactly what the vendor will see in their inbox — the
+          // body is our own server-generated HTML (escaped at build time in
+          // buildDraft()), not arbitrary external input, so rendering it
+          // directly here is safe.
+          <div
+            className="overflow-x-auto rounded-xl border border-[#E4E8EE] bg-white px-3 py-2.5 text-[12px] leading-relaxed text-slate-700"
+            dangerouslySetInnerHTML={{ __html: body }}
+          />
+        )}
       </div>
 
       {/* Actions */}

@@ -1152,9 +1152,8 @@ export default function InquiryDetailModal({ inquiry, onClose, onBlockClient }) 
           <div className="flex items-center gap-2">
             {onBlockClient && (
               <button onClick={handleBlock} title="Block this client — future mail won't be parsed"
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100">
-                <Ban size={12} />
-                Block Client
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100">
+                <Ban size={13} />
               </button>
             )}
             <button onClick={onClose}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Ban, Check, CheckCircle2, ClipboardCopy, FileText, Globe,
+  Check, CheckCircle2, ClipboardCopy, FileText, Globe,
   History, Mail, MapPin, Phone, RefreshCw, Send, Store, Tag, Trash2, UserPlus, X,
 } from "lucide-react";
 
@@ -1095,17 +1095,11 @@ function QuotesTab({ inquiry }) {
 /* ─────────────────────────────────────────────
    Main modal
 ───────────────────────────────────────────── */
-export default function InquiryDetailModal({ inquiry, onClose, onBlockClient }) {
+export default function InquiryDetailModal({ inquiry, onClose }) {
   const [activeTab,          setActiveTab]          = useState("details");
   const [draftsFromGenerate, setDraftsFromGenerate] = useState(null);
 
   const status = inquiry.status || "new";
-
-  const handleBlock = () => {
-    if (!inquiry.sender_email) { alert("This inquiry has no sender email to block."); return; }
-    if (!confirm(`Block ${inquiry.sender_email}? Future mail from this client will be skipped before parsing.`)) return;
-    onBlockClient?.(inquiry.sender_email, inquiry.client_name);
-  };
 
   const handleDraftsGenerated = (drafts) => {
     setDraftsFromGenerate(drafts);
@@ -1149,18 +1143,10 @@ export default function InquiryDetailModal({ inquiry, onClose, onBlockClient }) 
               <span className="text-[12px] text-slate-500 font-medium">{inquiry.client_name}</span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            {onBlockClient && (
-              <button onClick={handleBlock} title="Block this client — future mail won't be parsed"
-                className="flex h-7 w-7 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100">
-                <Ban size={13} />
-              </button>
-            )}
-            <button onClick={onClose}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-[#F3F5F7] hover:text-slate-700">
-              <X size={15} />
-            </button>
-          </div>
+          <button onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-[#F3F5F7] hover:text-slate-700">
+            <X size={15} />
+          </button>
         </div>
 
         {/* Tabs */}

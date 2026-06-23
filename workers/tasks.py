@@ -587,7 +587,15 @@ def extract_vendor_quote(self, message_id: str) -> dict:
         )
         return {"status": "no_match"}
 
-    drafts = get_drafts_for_inquiry(unique_code)
+    # Draft lookup is only used for part-number hints and vendor/thread
+    # matching — a nice-to-have, not essential. A failure here (Next.js
+    # down, bad URL, etc.) shouldn't drop the vendor's price on the floor;
+    # fall back to extracting without those hints instead.
+    try:
+        drafts = get_drafts_for_inquiry(unique_code)
+    except Exception as exc:
+        logger.warning("extract_vendor_quote | draft lookup failed for %s: %s", unique_code, exc)
+        drafts = []
     thread_id = parsed.get("thread_id")
     sender_email = _extract_sender_email(parsed.get("sender"))
 

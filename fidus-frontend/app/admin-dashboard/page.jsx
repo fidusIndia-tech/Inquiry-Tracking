@@ -68,7 +68,9 @@ export default function AdminDashboard() {
   const [searchText,         setSearchText]         = useState("");
   const [statusFilter,       setStatusFilter]       = useState("all");
   const [assignmentFilter,   setAssignmentFilter]   = useState("all");
-  const [dateFilter,         setDateFilter]         = useState("all");
+  const [executiveFilter,    setExecutiveFilter]    = useState("all");
+  const [dateFrom,           setDateFrom]           = useState("");
+  const [dateTo,             setDateTo]             = useState("");
   const [now,                setNow]                = useState(0);
   const [deleteConfirm,      setDeleteConfirm]      = useState(null);
   const [autoAssignPreview,  setAutoAssignPreview]  = useState(null);
@@ -264,8 +266,8 @@ export default function AdminDashboard() {
 
   const filteredInquiries = useMemo(() => {
     const tokens = searchText.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const todayMs = today.getTime();
+    const fromMs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
+    const toMs   = dateTo   ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
 
     return inquiries.filter((inquiry) => {
       if (statusFilter !== "all" && inquiry.status !== statusFilter) return false;
@@ -277,13 +279,19 @@ export default function AdminDashboard() {
         if (assignmentFilter === "over48h" && !(ageHours !== null && ageHours > 48)) return false;
       }
 
-      if (dateFilter !== "all") {
+      if (executiveFilter !== "all") {
+        if (executiveFilter === "unassigned") {
+          if (inquiry.assigned_to) return false;
+        } else if (String(inquiry.assigned_to || "") !== String(executiveFilter)) {
+          return false;
+        }
+      }
+
+      if (fromMs !== null || toMs !== null) {
         if (!inquiry.email_date) return false;
         const d = new Date(inquiry.email_date).getTime();
-        if (dateFilter === "today"     && d < todayMs) return false;
-        if (dateFilter === "yesterday" && !(d >= todayMs - 864e5 && d < todayMs)) return false;
-        if (dateFilter === "7d"        && d < todayMs - 6 * 864e5) return false;
-        if (dateFilter === "30d"       && d < todayMs - 29 * 864e5) return false;
+        if (fromMs !== null && d < fromMs) return false;
+        if (toMs   !== null && d > toMs)   return false;
       }
 
       if (tokens.length > 0) {
@@ -306,7 +314,7 @@ export default function AdminDashboard() {
 
       return true;
     });
-  }, [inquiries, searchText, statusFilter, assignmentFilter, dateFilter, now]);
+  }, [inquiries, searchText, statusFilter, assignmentFilter, executiveFilter, dateFrom, dateTo, now]);
 
   const counts = useMemo(() => ({
     total:    inquiries.length,
@@ -437,8 +445,12 @@ export default function AdminDashboard() {
                   setStatusFilter={setStatusFilter}
                   assignmentFilter={assignmentFilter}
                   setAssignmentFilter={setAssignmentFilter}
-                  dateFilter={dateFilter}
-                  setDateFilter={setDateFilter}
+                  executiveFilter={executiveFilter}
+                  setExecutiveFilter={setExecutiveFilter}
+                  dateFrom={dateFrom}
+                  setDateFrom={setDateFrom}
+                  dateTo={dateTo}
+                  setDateTo={setDateTo}
                   totalCount={inquiries.length}
                   now={now}
                   onDeleteRequest={(inquiry)  => setDeleteConfirm(inquiry)}
@@ -615,6 +627,7 @@ export default function AdminDashboard() {
         <InquiryDetailModal
           inquiry={detailModal}
           onClose={() => setDetailModal(null)}
+          onBlockClient={(senderEmail, clientName) => handleBlockClient(senderEmail, clientName)}
         />
       )}
 
@@ -1265,7 +1278,7 @@ function MetricCard({ icon, label, value, accent, delay }) {
 ─────────────────────────────────────────────── */
 const ADMIN_COLS = [
   { label: "Sr. No.",       defaultW: 52  },
-  { label: "Received",      defaultW: 115 },
+  { label: "Received",      defaultW: 190 },
   { label: "F Unique Code", defaultW: 110 },
   { label: "Client Name",   defaultW: 120 },
   { label: "Location",      defaultW: 100 },
@@ -1275,7 +1288,7 @@ const ADMIN_COLS = [
   { label: "Part Number",   defaultW: 120 },
   { label: "UOM",           defaultW: 60  },
   { label: "Qty",           defaultW: 55  },
-  { label: "Allocation",    defaultW: 110 },
+  { label: "Allocation",    defaultW: 170 },
   { label: "Status",        defaultW: 100 },
   { label: "Remark",        defaultW: 180 },
   { label: "Actions",       defaultW: 72  },
@@ -1287,7 +1300,9 @@ function InquiryTable({
   isLoading, error,
   statusFilter, setStatusFilter,
   assignmentFilter, setAssignmentFilter,
-  dateFilter, setDateFilter,
+  executiveFilter, setExecutiveFilter,
+  dateFrom, setDateFrom,
+  dateTo, setDateTo,
   totalCount,
   now,
   onDeleteRequest, onEditRequest, onSubjectOpen, onDetailOpen, onAssignToMeRequest, onAutoAssign,
@@ -1422,19 +1437,39 @@ function InquiryTable({
                   {col.label === "Received" ? (
                     <div className="flex flex-col gap-1 pr-2">
                       <span className="truncate text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">Received</span>
-                      <select
-                        value={dateFilter}
-                        onChange={(e) => setDateFilter(e.target.value)}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="h-5 w-full rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] font-semibold text-slate-600 outline-none cursor-pointer normal-case tracking-normal"
-                        style={{ letterSpacing: 0 }}
-                      >
-                        <option value="all">All Dates</option>
-                        <option value="today">Today</option>
-                        <option value="yesterday">Yesterday</option>
-                        <option value="7d">Last 7 Days</option>
-                        <option value="30d">Last 30 Days</option>
-                      </select>
+                      <div className="flex items-center gap-0.5">
+                        <input
+                          type="date"
+                          value={dateFrom}
+                          onChange={(e) => setDateFrom(e.target.value)}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          max={dateTo || undefined}
+                          title="From date"
+                          className="h-5 w-full min-w-0 rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] font-semibold text-slate-600 outline-none cursor-pointer normal-case tracking-normal"
+                          style={{ letterSpacing: 0 }}
+                        />
+                        <span className="text-[8px] text-slate-400">–</span>
+                        <input
+                          type="date"
+                          value={dateTo}
+                          onChange={(e) => setDateTo(e.target.value)}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          min={dateFrom || undefined}
+                          title="To date"
+                          className="h-5 w-full min-w-0 rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] font-semibold text-slate-600 outline-none cursor-pointer normal-case tracking-normal"
+                          style={{ letterSpacing: 0 }}
+                        />
+                        {(dateFrom || dateTo) && (
+                          <button
+                            onClick={() => { setDateFrom(""); setDateTo(""); }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            title="Clear date range"
+                            className="shrink-0 text-[9px] font-bold text-rose-500 hover:text-rose-700"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ) : col.label === "Allocation" ? (
                     <div className="flex flex-col gap-1 pr-2">
@@ -1449,6 +1484,19 @@ function InquiryTable({
                         <option value="all">All</option>
                         <option value="over24h">Over 24h</option>
                         <option value="over48h">Over 48h</option>
+                      </select>
+                      <select
+                        value={executiveFilter}
+                        onChange={(e) => setExecutiveFilter(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="h-5 w-full rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] font-semibold text-slate-600 outline-none cursor-pointer normal-case tracking-normal"
+                        style={{ letterSpacing: 0 }}
+                      >
+                        <option value="all">All Executives</option>
+                        <option value="unassigned">Unassigned</option>
+                        {employees.map((emp) => (
+                          <option key={emp.id} value={emp.id}>{emp.name}</option>
+                        ))}
                       </select>
                     </div>
                   ) : (

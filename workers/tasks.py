@@ -5,6 +5,7 @@ Full pipeline — sends ONE parsed RFQ row per email to the Next.js backend.
 """
 
 import re
+import time
 import traceback
 from datetime import datetime, timezone
 from celery import Task
@@ -30,6 +31,7 @@ from next_api_client import (
     get_stale_drafts,
     patch_draft,
     post_vendor_quote,
+    get_blocked_emails,
 )
 from vendor_discovery import discover_and_store_vendors
 from vendor_outreach import send_vendor_reminder
@@ -39,6 +41,27 @@ from logging_setup import get_logger
 
 logger = get_logger(__name__)
 settings = get_settings()
+
+_SENDER_ADDR_RE = re.compile(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}", re.IGNORECASE)
+
+# Short-TTL cache so every email doesn't hit the Next.js API — refreshed at
+# most once every 60s, fails open (empty set) if the API is unreachable so a
+# transient outage never blocks the whole pipeline.
+_blocked_cache: dict = {"emails": set(), "ts": 0.0}
+_BLOCKED_CACHE_TTL = 60
+
+
+def _is_blocked_sender(sender_header: str) -> bool:
+    now = time.monotonic()
+    if now - _blocked_cache["ts"] > _BLOCKED_CACHE_TTL:
+        try:
+            _blocked_cache["emails"] = get_blocked_emails()
+            _blocked_cache["ts"] = now
+        except Exception as exc:
+            logger.warning("Failed to refresh blocked-clients list: %s", exc)
+    match = _SENDER_ADDR_RE.search(sender_header or "")
+    addr = match.group(0).lower() if match else ""
+    return bool(addr) and addr in _blocked_cache["emails"]
 
 
 def _route_to_reminder(msg_id: str, parsed: dict, items: list) -> None:
@@ -93,6 +116,7 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
     stats = {
         "total": 1,
         "parsed": 0,
+        "blocked_dropped": 0,
         "layer1_dropped": 0,
         "layer2_dropped": 0,
         "rfq_exported": 0,
@@ -115,6 +139,14 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
 
             parsed = parse_email(raw, user_id)
             stats["parsed"] += 1
+
+            # 1b. Blocked client — admin has blocked this sender; drop before
+            # any filtering/LLM work so blocked clients never create inquiries
+            # or reminders again.
+            if _is_blocked_sender(parsed.get("sender")):
+                logger.info("DROP (blocked client) | %s | %s", parsed.get("sender", ""), parsed.get("subject", ""))
+                stats["blocked_dropped"] += 1
+                continue
 
             # 2. Layer 1: fast rule-based filter.
             if not is_rfq_candidate(parsed):

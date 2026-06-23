@@ -61,6 +61,18 @@ def get_inquiries() -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def get_blocked_emails() -> set[str]:
+    """Lowercased sender emails the admin has blocked. Inquiries from these
+    addresses are dropped before parsing/LLM extraction even runs."""
+    with urllib.request.urlopen(settings.NEXT_BLOCKED_CLIENTS_API_URL, timeout=15) as response:
+        data = json.loads(response.read().decode("utf-8"))
+        return {
+            row["sender_email"].strip().lower()
+            for row in data.get("blocked", [])
+            if row.get("sender_email")
+        }
+
+
 def _request(url: str, payload: dict | None, method: str) -> dict:
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = urllib.request.Request(

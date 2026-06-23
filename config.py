@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     NEXT_PARSER_API_URL: str = "http://localhost:3000/api/parser/rfq-items"
     NEXT_INQUIRIES_API_URL: str = "http://localhost:3000/api/inquiries"
     NEXT_REMINDERS_API_URL: str = "http://localhost:3000/api/parser/reminders"
+    NEXT_BLOCKED_CLIENTS_API_URL: str = "http://localhost:3000/api/blocked-clients"
 
     # Vendor outreach / reply pipeline
     NEXT_DRAFTS_API_URL: str = "http://localhost:3000/api/drafts"

@@ -6,6 +6,7 @@ import InquiryDetailModal from "@/app/components/InquiryDetailModal";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
+  Ban,
   Bell,
   CheckCircle2,
   ChevronLeft,
@@ -79,7 +80,54 @@ export default function AdminDashboard() {
   const [isLoadingReminders, setIsLoadingReminders] = useState(false);
   const [showAddModal,       setShowAddModal]       = useState(false);
   const [selectedReminder,   setSelectedReminder]   = useState(null);
+  const [blockedClients,     setBlockedClients]     = useState([]);
+  const [blockBusy,          setBlockBusy]          = useState(false);
   const prevCountRef = useRef(0);
+
+  const fetchBlockedClients = useCallback(async () => {
+    try {
+      const res = await fetch("/api/blocked-clients");
+      const data = await res.json();
+      if (res.ok) setBlockedClients(data.blocked || []);
+    } catch (_) {}
+  }, []);
+
+  useEffect(() => { fetchBlockedClients(); }, [fetchBlockedClients]);
+
+  const handleBlockClient = async (senderEmail, clientName) => {
+    if (!senderEmail) { alert("This inquiry has no sender email to block."); return; }
+    setBlockBusy(true);
+    try {
+      const res = await fetch("/api/blocked-clients", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          sender_email: senderEmail,
+          client_name:  clientName || null,
+          blocked_by:   Number(localStorage.getItem("userId")) || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to block client");
+      await fetchBlockedClients();
+    } catch (e) { alert(e.message); }
+    finally { setBlockBusy(false); }
+  };
+
+  const handleUnblockClient = async (id) => {
+    setBlockBusy(true);
+    try {
+      const res = await fetch("/api/blocked-clients", {
+        method:  "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to unblock client");
+      await fetchBlockedClients();
+    } catch (e) { alert(e.message); }
+    finally { setBlockBusy(false); }
+  };
 
   const fetchReminders = useCallback(async () => {
     setIsLoadingReminders(true);
@@ -379,6 +427,13 @@ export default function AdminDashboard() {
                   <MetricCard icon={<CheckCircle2 size={15} />} label="Quoted"   value={isLoadingInquiries ? "—" : counts.quoted}   accent="violet" delay="180ms" />
                 </section>
 
+                <BlockedClientsPanel
+                  blocked={blockedClients}
+                  onAdd={(senderEmail) => handleBlockClient(senderEmail, null)}
+                  onRemove={handleUnblockClient}
+                  busy={blockBusy}
+                />
+
                 <InquiryTable
                   inquiries={filteredInquiries}
                   setInquiries={setInquiries}
@@ -563,6 +618,7 @@ export default function AdminDashboard() {
         <InquiryDetailModal
           inquiry={detailModal}
           onClose={() => setDetailModal(null)}
+          onBlockClient={(senderEmail, clientName) => handleBlockClient(senderEmail, clientName)}
         />
       )}
 
@@ -1748,6 +1804,88 @@ function timerClass(assignedAt, now) {
   if (hours > 48) return "text-rose-600";
   if (hours > 24) return "text-amber-600";
   return "text-emerald-700";
+}
+
+/* ──────────────────────────────────────────────
+   BLOCKED CLIENTS
+─────────────────────────────────────────────── */
+function BlockedClientsPanel({ blocked, onAdd, onRemove, busy }) {
+  const [open,  setOpen]  = useState(false);
+  const [email, setEmail] = useState("");
+
+  const submit = () => {
+    const value = email.trim();
+    if (!value) return;
+    onAdd(value);
+    setEmail("");
+  };
+
+  return (
+    <section
+      className="rounded-2xl"
+      style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #FECDD3, 0 4px 24px rgba(244,63,94,0.08)" }}
+    >
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-3 rounded-2xl px-5 py-3"
+        style={{ background: "linear-gradient(90deg,#FFF1F2 0%,#FFF5F5 100%)" }}
+      >
+        <div className="flex items-center gap-2.5">
+          <Ban size={14} className="text-rose-600" />
+          <h3 className="text-[13px] font-semibold text-slate-900">Blocked Clients</h3>
+          <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+            {blocked.length}
+          </span>
+        </div>
+        <ChevronRight size={14} className={`text-slate-400 transition-transform ${open ? "rotate-90" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="border-t border-[#FECDD3] px-5 py-4">
+          <div className="mb-3 flex gap-2">
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+              placeholder="client@example.com — block by sender email"
+              className="h-8 flex-1 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[12px] outline-none focus:border-rose-300 focus:ring-2 focus:ring-rose-100"
+            />
+            <button
+              onClick={submit}
+              disabled={busy || !email.trim()}
+              className="h-8 rounded-lg bg-rose-600 px-3 text-[11px] font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
+            >
+              Block
+            </button>
+          </div>
+
+          {blocked.length === 0 ? (
+            <p className="text-[11px] italic text-slate-400">No clients blocked. Mail from blocked senders is skipped before parsing.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {blocked.map((b) => (
+                <span
+                  key={b.id}
+                  title={b.client_name || ""}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-700"
+                >
+                  {b.client_name ? `${b.client_name} — ` : ""}{b.sender_email}
+                  <button
+                    onClick={() => onRemove(b.id)}
+                    disabled={busy}
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-rose-400 transition hover:bg-rose-200 hover:text-rose-800 disabled:opacity-40"
+                    title="Unblock"
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function AccessControlPanel({ users, usersError, onUsersChanged }) {

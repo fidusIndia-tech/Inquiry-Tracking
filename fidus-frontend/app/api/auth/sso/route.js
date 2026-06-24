@@ -33,6 +33,20 @@ function verifySsoToken(token) {
   return claims;
 }
 
+// GET handler for the FidusSource portal's redirect-mode bootstrap flow.
+// portal route.ts sends the browser to /proxy/api/auth/sso?token=<portalJwt>;
+// this redirects to the /sso page which completes the hand-off client-side.
+export async function GET(request) {
+  const token = new URL(request.url).searchParams.get("token");
+  if (!token) return Response.json({ error: "Missing token" }, { status: 400 });
+  // Redirect to root-relative /sso so the FidusSource proxy's Location rewriter
+  // prepends the correct proxy prefix (avoiding double-basePath in the URL).
+  return Response.redirect(
+    new URL(`/sso?token=${encodeURIComponent(token)}`, request.url),
+    302
+  );
+}
+
 export async function POST(request) {
   try {
     const { token } = await request.json();

@@ -916,6 +916,8 @@ function QuotesTab({ inquiry }) {
   const [loading,       setLoading]       = useState(true);
   const [selected,      setSelected]      = useState({}); // part_number -> quote id
   const [sellingPrices, setSellingPrices] = useState({}); // part_number -> string
+  const [leadTimes,     setLeadTimes]     = useState({}); // part_number -> string
+  const [salesperson,   setSalesperson]   = useState("");
   const [sending,       setSending]       = useState(false);
   const [sendError,     setSendError]     = useState("");
   const [sentOk,        setSentOk]        = useState(false);
@@ -964,6 +966,18 @@ function QuotesTab({ inquiry }) {
     const item = (inquiry.items || []).find((i) => (i.partNumber || "") === partNumber);
     return item?.quantity ?? null;
   };
+  const itemUom = (partNumber) => {
+    const item = (inquiry.items || []).find((i) => (i.partNumber || "") === partNumber);
+    return item?.uom || null;
+  };
+  const itemDescription = (partNumber) => {
+    const item = (inquiry.items || []).find((i) => (i.partNumber || "") === partNumber);
+    return item?.itemNotes || null;
+  };
+  const itemBrand = (partNumber) => {
+    const item = (inquiry.items || []).find((i) => (i.partNumber || "") === partNumber);
+    return item?.brand || null;
+  };
 
   const readyLines = partNumbers
     .filter((pn) => selected[pn] && sellingPrices[pn])
@@ -971,9 +985,13 @@ function QuotesTab({ inquiry }) {
       const q = byPart[pn].find((x) => String(x.id) === String(selected[pn]));
       return {
         part_number: pn,
+        description: itemDescription(pn),
+        brand: itemBrand(pn),
         quantity: itemQty(pn),
+        uom: itemUom(pn),
         currency: q?.currency || null,
         selling_price: sellingPrices[pn],
+        lead_time: leadTimes[pn] || q?.lead_time || "",
       };
     });
 
@@ -983,7 +1001,7 @@ function QuotesTab({ inquiry }) {
       const res = await fetch("/api/quotes/send-to-client", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ unique_code: inquiry.unique_code, lines: readyLines }),
+        body:    JSON.stringify({ unique_code: inquiry.unique_code, lines: readyLines, salesperson }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send quote");
@@ -1027,7 +1045,10 @@ function QuotesTab({ inquiry }) {
                             type="radio"
                             name={`quote-${pn}`}
                             checked={String(selected[pn]) === String(q.id)}
-                            onChange={() => setSelected((prev) => ({ ...prev, [pn]: q.id }))}
+                            onChange={() => {
+                              setSelected((prev) => ({ ...prev, [pn]: q.id }));
+                              setLeadTimes((prev) => prev[pn] ? prev : { ...prev, [pn]: q.lead_time || "" });
+                            }}
                             className="h-3.5 w-3.5 accent-[#4451E8] cursor-pointer"
                           />
                         </td>
@@ -1044,16 +1065,28 @@ function QuotesTab({ inquiry }) {
                 </table>
               </div>
               {selected[pn] && (
-                <div className="flex items-center gap-2 rounded-xl border border-[#FDE68A] bg-[#FFFDF5] px-3 py-2">
-                  <Tag size={12} className="text-[#B45309]" />
-                  <label className="text-[11px] font-semibold text-[#B45309]">Your Selling Price</label>
-                  <input
-                    type="number"
-                    value={sellingPrices[pn] || ""}
-                    onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
-                    placeholder="0.00"
-                    className="w-32 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
-                  />
+                <div className="flex items-center gap-4 rounded-xl border border-[#FDE68A] bg-[#FFFDF5] px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <Tag size={12} className="text-[#B45309]" />
+                    <label className="text-[11px] font-semibold text-[#B45309]">Your Selling Price</label>
+                    <input
+                      type="number"
+                      value={sellingPrices[pn] || ""}
+                      onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
+                      placeholder="0.00"
+                      className="w-28 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] font-semibold text-[#B45309]">Lead Time</label>
+                    <input
+                      type="text"
+                      value={leadTimes[pn] || ""}
+                      onChange={(e) => setLeadTimes((prev) => ({ ...prev, [pn]: e.target.value }))}
+                      placeholder="e.g. 15-20 days"
+                      className="w-36 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -1063,24 +1096,39 @@ function QuotesTab({ inquiry }) {
 
       {/* Sticky bottom action bar */}
       <div className="shrink-0 border-t border-[#EEF2F6] bg-white px-5 py-3 flex items-center justify-between gap-3">
-        <div>
-          {sentOk ? (
-            <p className="flex items-center gap-1.5 text-[12px] font-semibold text-[#059669]">
-              <CheckCircle2 size={13} />Quotation sent to client
-            </p>
-          ) : (
-            <p className="text-[12px] text-slate-400">
-              {readyLines.length > 0
-                ? `${readyLines.length} of ${partNumbers.length} part${partNumbers.length !== 1 ? "s" : ""} priced`
-                : "Select a vendor quote and enter your selling price for each part"}
-            </p>
+        <div className="flex items-center gap-4">
+          {!sentOk && (
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] font-semibold text-slate-500">Salesperson</label>
+              <input
+                type="text"
+                value={salesperson}
+                onChange={(e) => setSalesperson(e.target.value)}
+                placeholder="Your name"
+                className="w-32 rounded-lg border border-[#E4E8EE] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+              />
+            </div>
           )}
-          {sendError && <p className="text-[11px] text-rose-500 mt-0.5">{sendError}</p>}
+          <div>
+            {sentOk ? (
+              <p className="flex items-center gap-1.5 text-[12px] font-semibold text-[#059669]">
+                <CheckCircle2 size={13} />Quotation sent to client
+              </p>
+            ) : (
+              <p className="text-[12px] text-slate-400">
+                {readyLines.length > 0
+                  ? `${readyLines.length} of ${partNumbers.length} part${partNumbers.length !== 1 ? "s" : ""} priced`
+                  : "Select a vendor quote and enter your selling price for each part"}
+              </p>
+            )}
+            {sendError && <p className="text-[11px] text-rose-500 mt-0.5">{sendError}</p>}
+          </div>
         </div>
         {!sentOk && (
           <button
             onClick={sendQuote}
-            disabled={readyLines.length === 0 || sending}
+            disabled={readyLines.length === 0 || sending || !salesperson.trim()}
+            title={!salesperson.trim() ? "Enter the salesperson name first" : ""}
             className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
           >

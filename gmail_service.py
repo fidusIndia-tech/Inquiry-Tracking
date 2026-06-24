@@ -3,6 +3,8 @@ gmail_service.py  (flat-import edition)
 """
 
 import base64
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Generator
@@ -147,9 +149,13 @@ def send_message(
     html_body: str,
     thread_id: str | None = None,
     in_reply_to_rfc_message_id: str | None = None,
+    attachment_filename: str | None = None,
+    attachment_bytes: bytes | None = None,
+    attachment_mime_type: str = "application/pdf",
 ) -> dict:
     """
-    Send an HTML email via the Gmail API.
+    Send an HTML email via the Gmail API, optionally with one file attached
+    (e.g. the generated quotation PDF).
 
     Pass thread_id + in_reply_to_rfc_message_id when following up on a
     previously sent message (reminders) so the new mail threads correctly
@@ -157,13 +163,27 @@ def send_message(
 
     Returns {"id": <gmail message id>, "thread_id": <gmail thread id>}.
     """
-    msg = MIMEMultipart("alternative")
+    has_attachment = attachment_filename and attachment_bytes
+    msg = MIMEMultipart("mixed") if has_attachment else MIMEMultipart("alternative")
     msg["To"] = to
     msg["Subject"] = subject
     if in_reply_to_rfc_message_id:
         msg["In-Reply-To"] = in_reply_to_rfc_message_id
         msg["References"] = in_reply_to_rfc_message_id
-    msg.attach(MIMEText(html_body, "html"))
+
+    if has_attachment:
+        body_part = MIMEMultipart("alternative")
+        body_part.attach(MIMEText(html_body, "html"))
+        msg.attach(body_part)
+
+        main_type, _, sub_type = attachment_mime_type.partition("/")
+        part = MIMEBase(main_type, sub_type or "octet-stream")
+        part.set_payload(attachment_bytes)
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", "attachment", filename=attachment_filename)
+        msg.attach(part)
+    else:
+        msg.attach(MIMEText(html_body, "html"))
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
     body: dict = {"raw": raw}

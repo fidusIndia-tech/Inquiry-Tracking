@@ -35,6 +35,8 @@ def send_client_quote(
     body: str,
     thread_id: str | None = None,
     in_reply_to_message_id: str | None = None,
+    attachment_filename: str | None = None,
+    attachment_bytes: bytes | None = None,
 ) -> dict:
     """
     in_reply_to_message_id is the Gmail API message id of the ORIGINAL client
@@ -56,6 +58,8 @@ def send_client_quote(
         html_body=body,
         thread_id=thread_id,
         in_reply_to_rfc_message_id=rfc_message_id,
+        attachment_filename=attachment_filename,
+        attachment_bytes=attachment_bytes,
     )
     logger.info(
         "Client quote sent | to=%s | thread_id=%s | message_id=%s",

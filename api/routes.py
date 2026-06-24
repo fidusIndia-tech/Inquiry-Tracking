@@ -2,6 +2,8 @@
 api/routes.py
 """
 
+import base64
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse, JSONResponse
 from pydantic import BaseModel
@@ -384,6 +386,8 @@ class SendClientQuoteRequest(BaseModel):
     body: str
     thread_id: str | None = None
     in_reply_to_message_id: str | None = None
+    attachment_filename: str | None = None
+    attachment_base64: str | None = None
 
 
 @router.post("/send-client-quote")
@@ -392,6 +396,7 @@ def send_client_quote_endpoint(payload: SendClientQuoteRequest):
     Sends the final quotation to the client via the single dedicated
     client-reply mailbox, threaded as a reply to their original RFQ email.
     """
+    attachment_bytes = base64.b64decode(payload.attachment_base64) if payload.attachment_base64 else None
     try:
         result = send_client_quote(
             client_email=payload.client_email,
@@ -399,6 +404,8 @@ def send_client_quote_endpoint(payload: SendClientQuoteRequest):
             body=payload.body,
             thread_id=payload.thread_id,
             in_reply_to_message_id=payload.in_reply_to_message_id,
+            attachment_filename=payload.attachment_filename,
+            attachment_bytes=attachment_bytes,
         )
     except ClientMailboxNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc))

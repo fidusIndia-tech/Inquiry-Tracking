@@ -70,6 +70,19 @@ function BrandCell({ item }) {
   const [isAuto, setIsAuto] = useState(item.brandSource === "auto");
   const savedRef = useRef(item.brand || "");
 
+  // useState's initial value only applies on mount. If the brand gets
+  // auto-detected by the background worker while this modal is already
+  // open, the parent's polling/refresh updates `item`, but this component
+  // would otherwise keep showing whatever it saw when it first rendered.
+  // Sync local state whenever the saved value actually changes upstream.
+  useEffect(() => {
+    if (item.brand !== savedRef.current) {
+      setValue(item.brand || "");
+      savedRef.current = item.brand || "";
+      setIsAuto(item.brandSource === "auto");
+    }
+  }, [item.brand, item.brandSource]);
+
   const handleBlur = async () => {
     if (value === savedRef.current) return;
     setSaving(true);

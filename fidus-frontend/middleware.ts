@@ -1,20 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BASE_PATH = "/dashboard/apps/inquiry-tracker/proxy";
-const DIRECT_ACCESS_REDIRECT =
-  process.env.DIRECT_ACCESS_REDIRECT_URL ||
-  "https://fidussource.com/dashboard/apps/inquiry-tracker";
-
-export function middleware(req: NextRequest) {
-  // Allow requests that are already under the proxy basePath.
-  if (req.nextUrl.pathname.startsWith(BASE_PATH)) {
-    return NextResponse.next();
-  }
-  // Everything else is a direct Railway-URL visit — send to FidusSource.
-  return NextResponse.redirect(DIRECT_ACCESS_REDIRECT, { status: 302 });
+// The basePath in next.config.ts ('/dashboard/apps/inquiry-tracker/proxy')
+// already prevents Next.js from serving any page at the Railway root URL —
+// direct visits to inquiry.railway.app/ get a 404 rather than the app.
+// No middleware redirect is needed; pass all requests through to routing.
+export function middleware(_req: NextRequest) {
+  return NextResponse.next();
 }
 
 export const config = {
-  // Run on all paths except Next.js internals and common static files.
-  matcher: ["/((?!_next/static|_next/image|favicon\\.ico|robots\\.txt).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon\\.ico).*)"],
 };

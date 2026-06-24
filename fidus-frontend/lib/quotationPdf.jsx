@@ -105,7 +105,7 @@ function formatMoney(value) {
  * Mirrors the company's existing Odoo-generated quotation PDF layout exactly,
  * so this can replace the manual Odoo-download step in the employee's flow.
  *
- * lines: [{ part_number, description, brand, lead_time, quantity, uom, unit_price }]
+ * lines: [{ part_number, description, brand, lead_time, quantity, uom, selling_price }]
  */
 export default function QuotationDocument({
   quotationNumber,
@@ -120,7 +120,7 @@ export default function QuotationDocument({
 
   const computed = lines.map((l) => ({
     ...l,
-    amount: Number(l.quantity || 0) * Number(l.unit_price || 0),
+    amount: Number(l.quantity || 0) * Number(l.selling_price || 0),
   }));
   const untaxedAmount = computed.reduce((sum, l) => sum + l.amount, 0);
   const igstAmount = untaxedAmount * IGST_RATE;
@@ -199,7 +199,7 @@ export default function QuotationDocument({
               <Text style={[styles.colMake, styles.td]}>{l.brand || "-"}</Text>
               <Text style={[styles.colLead, styles.td]}>{l.lead_time || "—"}</Text>
               <Text style={[styles.colQty, styles.td]}>{l.quantity} {l.uom || ""}</Text>
-              <Text style={[styles.colUnit, styles.td]}>{formatMoney(l.unit_price)}</Text>
+              <Text style={[styles.colUnit, styles.td]}>{formatMoney(l.selling_price)}</Text>
               <Text style={[styles.colTax, styles.td]}>IGST {Math.round(IGST_RATE * 100)}%</Text>
               <Text style={[styles.colAmt, styles.td]}>{formatMoney(l.amount)}</Text>
             </View>

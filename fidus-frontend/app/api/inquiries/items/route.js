@@ -1,4 +1,11 @@
-import { query } from "@/lib/db";
+import { pool, query } from "@/lib/db";
+
+let _schemaReady = false;
+async function ensureSchema() {
+  if (_schemaReady) return;
+  await pool.query("ALTER TABLE inquiry_items ADD COLUMN IF NOT EXISTS brand_source TEXT");
+  _schemaReady = true;
+}
 
 /**
  * Lets an admin/employee correct a line item's brand when the client's
@@ -6,16 +13,41 @@ import { query } from "@/lib/db";
  * (e.g. starts with a known manufacturer prefix). Editing the brand here
  * makes the item eligible for vendor discovery and brand-based filtering,
  * which both require a non-null brand.
+ *
+ * Two ways to target a row:
+ *  - { id, brand }                          — manual edit from the Details tab.
+ *    Clears brand_source since a human just confirmed/overrode it.
+ *  - { unique_code, part_number, brand, source: "auto" } — called by the
+ *    Python brand-identification step when it successfully searches out a
+ *    brand the client never stated. Tags the row so the UI can show it was
+ *    machine-detected, not typed by a person.
  */
 export async function PATCH(request) {
   try {
-    const { id, brand } = await request.json();
-    if (!id) return Response.json({ error: "id is required" }, { status: 400 });
+    await ensureSchema();
+    const { id, unique_code, part_number, brand, source } = await request.json();
 
-    const result = await query(
-      `UPDATE inquiry_items SET brand = $1 WHERE id = $2 RETURNING id, brand`,
-      [brand?.trim() || null, id]
-    );
+    let result;
+    if (id) {
+      result = await query(
+        `UPDATE inquiry_items SET brand = $1, brand_source = NULL WHERE id = $2 RETURNING id, brand, brand_source`,
+        [brand?.trim() || null, id]
+      );
+    } else if (unique_code && part_number) {
+      result = await query(
+        `UPDATE inquiry_items ii
+         SET brand = $1, brand_source = $2
+         FROM inquiries i
+         WHERE ii.inquiry_id = i.id
+           AND i.unique_code = $3
+           AND ii.part_number = $4
+         RETURNING ii.id, ii.brand, ii.brand_source`,
+        [brand?.trim() || null, source === "auto" ? "auto" : null, unique_code, part_number]
+      );
+    } else {
+      return Response.json({ error: "id, or unique_code + part_number, is required" }, { status: 400 });
+    }
+
     if (result.rowCount === 0) {
       return Response.json({ error: "Line item not found" }, { status: 404 });
     }

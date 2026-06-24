@@ -32,8 +32,10 @@ from next_api_client import (
     patch_draft,
     post_vendor_quote,
     get_blocked_emails,
+    save_identified_brand,
 )
 from vendor_discovery import discover_and_store_vendors
+from vendor_discovery.brand_lookup import identify_brand
 from vendor_outreach import send_vendor_reminder
 from vendor_reply import match_inquiry_code, extract_quote
 from config import get_settings
@@ -481,6 +483,23 @@ def discover_vendors_task(unique_code: str, line_items: list[dict]) -> dict:
             continue
         brand       = (item.get("brand") or "").strip()
         part_number = (item.get("part_number") or "").strip()
+        notes       = (item.get("notes") or "").strip()
+
+        # Client's email never named a brand — try to identify one the same
+        # way an employee would: Google the part number, fall back to the
+        # description, and only proceed once a brand is confidently found.
+        if not brand and part_number:
+            identified = identify_brand(part_number, notes)
+            if identified:
+                brand = identified
+                try:
+                    save_identified_brand(unique_code, part_number, brand)
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to save auto-identified brand | %s | part=%s: %s",
+                        unique_code, part_number, exc,
+                    )
+
         if not brand or not part_number:
             continue
 

@@ -112,3 +112,13 @@ def get_stale_drafts(hours: int) -> list[dict]:
 
 def post_vendor_quote(payload: dict) -> dict:
     return _request(settings.NEXT_QUOTES_API_URL, payload, "POST")
+
+
+def save_identified_brand(unique_code: str, part_number: str, brand: str) -> dict:
+    """Persists a brand the client never stated but brand_lookup figured out
+    from the part number/notes, tagged so the UI shows it as auto-detected."""
+    return _request(
+        settings.NEXT_INQUIRY_ITEMS_API_URL,
+        {"unique_code": unique_code, "part_number": part_number, "brand": brand, "source": "auto"},
+        "PATCH",
+    )

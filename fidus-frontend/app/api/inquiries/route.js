@@ -8,6 +8,7 @@ async function ensureInquiriesSchema() {
   await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS in_progress_at TIMESTAMPTZ");
   await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS quoted_at TIMESTAMPTZ");
   await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS remark TEXT");
+  await pool.query("ALTER TABLE inquiry_items ADD COLUMN IF NOT EXISTS brand_source TEXT");
   _inquiriesSchemaReady = true;
 }
 
@@ -42,6 +43,7 @@ export async function GET() {
             json_build_object(
               'id', ii.id,
               'brand', ii.brand,
+              'brandSource', ii.brand_source,
               'partNumber', ii.part_number,
               'quantity', ii.quantity,
               'uom', ii.uom,

@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
-  Ban, Check, CheckCircle2, ClipboardCopy, FileText, Globe,
+  Award, Ban, Bot, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCopy, FileText, Globe,
   History, Mail, MapPin, Phone, RefreshCw, Send, Store, Tag, Trash2, UserPlus, X,
 } from "lucide-react";
 
@@ -64,6 +64,10 @@ function BrandCell({ item }) {
   const [value, setValue] = useState(item.brand || "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  // Once the employee actually edits and saves, this stops being "auto" —
+  // the PATCH endpoint clears brand_source server-side for id-based edits,
+  // so mirror that locally instead of waiting on a refetch.
+  const [isAuto, setIsAuto] = useState(item.brandSource === "auto");
   const savedRef = useRef(item.brand || "");
 
   const handleBlur = async () => {
@@ -77,6 +81,7 @@ function BrandCell({ item }) {
       });
       if (res.ok) {
         savedRef.current = value;
+        setIsAuto(false);
         setSaved(true);
         setTimeout(() => setSaved(false), 1500);
       }
@@ -87,12 +92,21 @@ function BrandCell({ item }) {
 
   return (
     <div className="relative flex items-center gap-1.5">
+      {isAuto && (
+        <span title="Brand auto-detected by web search — verify before relying on it">
+          <Bot size={11} className="shrink-0 text-[#8B5CF6]" />
+        </span>
+      )}
       <input
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={handleBlur}
         placeholder="Add brand…"
-        className="w-full min-w-[90px] rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[11px] font-medium text-slate-700 outline-none transition hover:border-[#E4E8EE] focus:border-[#5BA7FF] focus:bg-white focus:ring-2 focus:ring-[#5BA7FF]/10 placeholder:text-slate-300 placeholder:italic"
+        className={`w-full min-w-[90px] rounded-md border px-1 py-0.5 text-[11px] font-medium outline-none transition hover:border-[#E4E8EE] focus:border-[#5BA7FF] focus:bg-white focus:ring-2 focus:ring-[#5BA7FF]/10 placeholder:text-slate-300 placeholder:italic ${
+          isAuto
+            ? "border-[#DDD6FE] bg-[#FAF9FF] text-[#6D28D9]"
+            : "border-transparent bg-transparent text-slate-700"
+        }`}
       />
       {saving && <RefreshCw size={10} className="shrink-0 animate-spin text-slate-300" />}
       {saved && <Check size={11} className="shrink-0 text-emerald-500" />}
@@ -136,8 +150,13 @@ function DetailsTab({ inquiry }) {
 
       {items.length > 0 && (
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
             Line Items ({items.length}) <span className="font-normal text-slate-300">· click a brand to edit</span>
+            {items.some((i) => i.brandSource === "auto") && (
+              <span className="flex items-center gap-1 font-normal text-[#8B5CF6]">
+                <Bot size={10} />= auto-detected, verify before relying on it
+              </span>
+            )}
           </p>
           <div className="overflow-hidden rounded-xl border border-[#E4E8EE]">
             <table className="w-full border-collapse text-[11px]">
@@ -225,7 +244,11 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
 
   const filteredDiscovered = discovered.filter((v) => selectedBrands.has(v.brand));
   const filteredLegacy     = legacy.filter((v) => selectedBrands.has(v.brand));
-  const filteredManual     = manual.filter((v) => !v.brand || selectedBrands.size === 0 || selectedBrands.has(v.brand));
+  // Manually added vendors are exempt from the brand filter — the whole point
+  // of adding one manually is to cover a brand the inquiry doesn't already
+  // recognize (e.g. the client's email never stated it), so there's often no
+  // filter chip for it to match against. Always show every manual vendor.
+  const filteredManual     = manual;
 
   const toggleAllDisc = () => {
     const keys = filteredDiscovered.map(discKey);
@@ -918,6 +941,7 @@ function QuotesTab({ inquiry }) {
   const [sellingPrices, setSellingPrices] = useState({}); // part_number -> string
   const [leadTimes,     setLeadTimes]     = useState({}); // part_number -> string
   const [salesperson,   setSalesperson]   = useState("");
+  const [expanded,      setExpanded]      = useState({}); // quote id -> bool
   const [sending,       setSending]       = useState(false);
   const [sendError,     setSendError]     = useState("");
   const [sentOk,        setSentOk]        = useState(false);
@@ -1017,7 +1041,13 @@ function QuotesTab({ inquiry }) {
     <div className="flex flex-col" style={{ minHeight: 0 }}>
       <div className="flex-1 overflow-y-auto p-5 space-y-5">
         {partNumbers.map((pn) => {
-          const rows = byPart[pn];
+          // Cheapest valid price first — nulls/NaN sink to the bottom.
+          const rows = [...byPart[pn]].sort((a, b) => {
+            const pa = Number(a.unit_price);
+            const pb = Number(b.unit_price);
+            return (Number.isFinite(pa) ? pa : Infinity) - (Number.isFinite(pb) ? pb : Infinity);
+          });
+          const bestId = rows.find((q) => Number.isFinite(Number(q.unit_price)))?.id;
           const qty = itemQty(pn);
           return (
             <div key={pn} className="space-y-2">
@@ -1031,35 +1061,69 @@ function QuotesTab({ inquiry }) {
                   <thead>
                     <tr style={{ background: "linear-gradient(90deg,#EEF4FF,#E6EDFC)" }}>
                       <th className="w-8 border-b border-[#D0DCF4] px-3 py-2" />
-                      {["Vendor", "Unit Price", "Lead Time", "Availability"].map((h) => (
+                      {["Vendor", "Unit Price", "Lead Time", "Availability", ""].map((h) => (
                         <th key={h} className="border-b border-[#D0DCF4] px-3 py-2 text-left text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((q) => (
-                      <tr key={q.id} style={{ background: String(selected[pn]) === String(q.id) ? "#EEF6FF" : "white" }}
-                          className="border-b border-[#EEF2F6] last:border-b-0">
-                        <td className="px-3 py-2.5">
-                          <input
-                            type="radio"
-                            name={`quote-${pn}`}
-                            checked={String(selected[pn]) === String(q.id)}
-                            onChange={() => {
-                              setSelected((prev) => ({ ...prev, [pn]: q.id }));
-                              setLeadTimes((prev) => prev[pn] ? prev : { ...prev, [pn]: q.lead_time || "" });
-                            }}
-                            className="h-3.5 w-3.5 accent-[#4451E8] cursor-pointer"
-                          />
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <p className="font-semibold text-slate-900">{q.vendor_name || "—"}</p>
-                          <p className="text-[10px] text-slate-400">{q.vendor_email || ""}</p>
-                        </td>
-                        <td className="px-3 py-2.5 font-semibold text-slate-800">{formatQuotePrice(q.unit_price, q.currency)}</td>
-                        <td className="px-3 py-2.5 text-slate-600">{q.lead_time || "—"}</td>
-                        <td className="px-3 py-2.5 text-slate-500">{q.availability || "—"}</td>
-                      </tr>
+                      <Fragment key={q.id}>
+                        <tr style={{ background: String(selected[pn]) === String(q.id) ? "#EEF6FF" : "white" }}
+                            className="border-b border-[#EEF2F6] last:border-b-0">
+                          <td className="px-3 py-2.5">
+                            <input
+                              type="radio"
+                              name={`quote-${pn}`}
+                              checked={String(selected[pn]) === String(q.id)}
+                              onChange={() => {
+                                setSelected((prev) => ({ ...prev, [pn]: q.id }));
+                                setLeadTimes((prev) => prev[pn] ? prev : { ...prev, [pn]: q.lead_time || "" });
+                              }}
+                              className="h-3.5 w-3.5 accent-[#4451E8] cursor-pointer"
+                            />
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <p className="font-semibold text-slate-900">{q.vendor_name || "—"}</p>
+                            <p className="text-[10px] text-slate-400">{q.vendor_email || ""}</p>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className="font-semibold text-slate-800">{formatQuotePrice(q.unit_price, q.currency)}</span>
+                            {q.id === bestId && (
+                              <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-[#6EE7B7] bg-[#ECFDF5] px-1.5 py-0.5 text-[9px] font-bold text-[#059669]">
+                                <Award size={9} />Best Price
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-slate-600">{q.lead_time || "—"}</td>
+                          <td className="px-3 py-2.5 text-slate-500">{q.availability || "—"}</td>
+                          <td className="px-3 py-2.5">
+                            {q.raw_reply && (
+                              <button
+                                onClick={() => setExpanded((prev) => ({ ...prev, [q.id]: !prev[q.id] }))}
+                                className="flex items-center gap-1 text-[10px] font-medium text-slate-400 hover:text-[#4451E8] transition"
+                              >
+                                {expanded[q.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                Reply
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                        {expanded[q.id] && (
+                          <tr className="border-b border-[#EEF2F6]">
+                            <td colSpan={6} className="bg-[#FAFBFF] px-4 py-3">
+                              <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-slate-400">Vendor's Original Reply</p>
+                              <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-600">{q.raw_reply}</p>
+                              {q.remarks && (
+                                <Fragment>
+                                  <p className="mb-1 mt-2 text-[9px] font-bold uppercase tracking-widest text-slate-400">Remarks</p>
+                                  <p className="text-[11px] text-slate-600">{q.remarks}</p>
+                                </Fragment>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>

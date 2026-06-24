@@ -147,7 +147,12 @@ export default function EmployeeDashboard() {
   const [error,                 setError]                 = useState("");
   const [notice,                setNotice]                = useState("");
   const [notificationsEnabled,  setNotificationsEnabled]  = useState(false);
-  const [detailModal,           setDetailModal]           = useState(null);
+  // Stores the unique_code only, never a snapshot of the inquiry object —
+  // the actual data passed to the modal is re-derived from `inquiries` on
+  // every render (below), so background refreshes (SSE/poll) keep an
+  // already-open modal showing live data instead of whatever existed at
+  // the moment it was opened.
+  const [detailModalCode,       setDetailModalCode]       = useState(null);
   const knownAssignmentsRef = useRef(new Map());
   const firstLoadRef        = useRef(true);
 
@@ -271,9 +276,11 @@ export default function EmployeeDashboard() {
   };
 
   const openDetail = (uniqueCode) => {
-    const inq = inquiries.find((i) => i.unique_code === uniqueCode);
-    if (inq) setDetailModal(inq);
+    setDetailModalCode(uniqueCode);
   };
+  const detailModal = detailModalCode
+    ? inquiries.find((i) => i.unique_code === detailModalCode) || null
+    : null;
 
   const updateDraftStatus = (uniqueCode, value) => {
     setNotice("");
@@ -430,7 +437,7 @@ export default function EmployeeDashboard() {
       {detailModal && (
         <InquiryDetailModal
           inquiry={detailModal}
-          onClose={() => setDetailModal(null)}
+          onClose={() => setDetailModalCode(null)}
         />
       )}
     </div>

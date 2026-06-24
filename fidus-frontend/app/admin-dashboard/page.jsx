@@ -76,7 +76,11 @@ export default function AdminDashboard() {
   const [autoAssignPreview,  setAutoAssignPreview]  = useState(null);
   const [editModal,          setEditModal]          = useState(null);
   const [subjectPreview,     setSubjectPreview]     = useState(null);
-  const [detailModal,        setDetailModal]        = useState(null);
+  // Stores the unique_code only, never a snapshot — the inquiry object
+  // passed to the modal is re-derived from `inquiries` on every render
+  // (below) so background refreshes (SSE) keep an already-open modal
+  // showing live data instead of whatever existed at the moment it opened.
+  const [detailModalCode,    setDetailModalCode]    = useState(null);
   const [notifBadge,         setNotifBadge]         = useState(0);
   const [reminders,          setReminders]          = useState([]);
   const [isLoadingReminders, setIsLoadingReminders] = useState(false);
@@ -411,6 +415,10 @@ export default function AdminDashboard() {
     }
   };
 
+  const detailModal = detailModalCode
+    ? inquiries.find((i) => i.unique_code === detailModalCode) || null
+    : null;
+
   return (
     <div className="min-h-screen text-slate-900 dashboard-bg flex flex-col" style={{ height: "100vh", overflow: "hidden" }}>
       <TopBar
@@ -456,7 +464,7 @@ export default function AdminDashboard() {
                   onDeleteRequest={(inquiry)  => setDeleteConfirm(inquiry)}
                   onEditRequest={(inquiry)   => setEditModal(inquiry)}
                   onSubjectOpen={(inquiry)   => setSubjectPreview(inquiry)}
-                  onDetailOpen={(inquiry)    => setDetailModal(inquiry)}
+                  onDetailOpen={(inquiry)    => setDetailModalCode(inquiry.unique_code)}
                   onAssignToMeRequest={(uc)  => handleAssignToMe(uc)}
                   onAutoAssign={handleAutoAssign}
                 />
@@ -626,7 +634,7 @@ export default function AdminDashboard() {
       {detailModal && (
         <InquiryDetailModal
           inquiry={detailModal}
-          onClose={() => setDetailModal(null)}
+          onClose={() => setDetailModalCode(null)}
           onBlockClient={(senderEmail, clientName) => handleBlockClient(senderEmail, clientName)}
         />
       )}

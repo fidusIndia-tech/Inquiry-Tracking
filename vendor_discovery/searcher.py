@@ -193,6 +193,16 @@ def search_vendors(brand: str, part_number: str) -> list[dict]:
             }
             search = GoogleSearch(params)
             data = search.get_dict()
+
+            # SerpAPI returns a 200 with an "error" key (quota exhausted,
+            # bad key, etc.) rather than raising — left unchecked, this
+            # looks identical to "Google genuinely found nothing" in the
+            # logs, which is exactly the wrong thing to hide.
+            api_error = data.get("error")
+            if api_error:
+                logger.error("SerpAPI error for query '%s': %s", query[:70], api_error)
+                continue
+
             organic = data.get("organic_results", [])
             added = 0
             for r in organic:

@@ -61,7 +61,16 @@ Based on these search results, what is the brand/manufacturer name of this
 industrial part? Return ONLY valid JSON: {{"brand": "Manufacturer Name"}}
 or {{"brand": null}} if you cannot confidently determine it from these
 results. Do not guess — only answer if multiple results consistently point
-to the same manufacturer."""
+to the same manufacturer.
+
+The brand you return gets wrapped in quotes for an exact-phrase Google
+search ("authorized dealer of X"), so it must be the SHORT, commonly-used
+name a procurement professional would actually search by — not a string
+copied verbatim from a listing. Strip legal suffixes (Inc., Ltd., Pvt Ltd,
+Corp, GmbH, AG), drop punctuation like commas and trailing periods, and
+prefer the form the brand is normally known by (e.g. "Siemens" not
+"Siemens Aktiengesellschaft", "3M" not "3M Company", "McCoy" not
+"McCoy- Ellison, inc.")."""
 
     try:
         response = client.chat.completions.create(
@@ -69,7 +78,8 @@ to the same manufacturer."""
             messages=[
                 {
                     "role": "system",
-                    "content": "You identify industrial part manufacturers from search results. "
+                    "content": "You identify industrial part manufacturers from search results and "
+                               "normalize the name to its short, commonly-searched form. "
                                "Be conservative — return null rather than guess.",
                 },
                 {"role": "user", "content": prompt},

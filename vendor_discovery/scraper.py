@@ -47,24 +47,18 @@ _SKIP_VISIT_DOMAINS = frozenset([
     "alldatasheet.com", "datasheetcatalog.com", "octopart.com",
 ])
 
-# Contact page paths tried in order when main page has no email
+# Contact page paths tried in order when main page has no email.
+# Trimmed from an earlier 30-path list down to the highest-yield ones —
+# every path tried costs real time on a slow-but-alive domain (each one
+# can take several seconds), and with discover_vendors_task processing many
+# candidates per brand, the long tail of rarely-used paths (/touch,
+# /talk-to-us, /corporate-info, etc.) was adding up enough to occasionally
+# blow the task's 900s hard time limit without finding anything extra.
 _CONTACT_PATHS = [
-    # Standard contact pages
-    "/contact", "/contact-us", "/contactus", "/contact_us", "/contacts",
-    # About pages (often have contact info)
-    "/about-us", "/about", "/aboutus", "/about_us",
-    # Reach / connect
-    "/reach-us", "/reach-out", "/get-in-touch", "/connect", "/connect-with-us",
-    # Enquiry / query (common on Indian sites)
-    "/enquiry", "/enquire", "/inquiry", "/query",
-    # Support / help
-    "/support", "/help", "/helpdesk",
-    # Info
-    "/info", "/information", "/corporate-info",
-    # Forms / feedback
-    "/contact-form", "/enquiry-form", "/feedback",
-    # Write / touch
-    "/write-to-us", "/touch", "/talk-to-us",
+    "/contact", "/contact-us", "/contactus", "/contact_us",
+    "/about-us", "/about",
+    "/enquiry", "/inquiry",
+    "/get-in-touch", "/support",
 ]
 
 _FETCH_HEADERS = {
@@ -91,13 +85,23 @@ def _clean_emails(raw: list[str]) -> list[str]:
     ]
 
 
-def _fetch_url(url: str, timeout: int = 6) -> str:
-    """Fetch a single URL and return plain text. Returns '' on any failure."""
+def _fetch_url(url: str, timeout: int = 6) -> tuple[str, bool]:
+    """
+    Fetch a single URL and return (plain_text, unreachable).
+
+    unreachable=True means the failure happened at the network/DNS level
+    (refused connection, DNS lookup failed, socket timeout) — the whole
+    domain is down, not just this one path. unreachable=False covers a
+    clean HTTP error (404, 403, etc.): the domain answered, this specific
+    path just doesn't exist. Callers trying many paths on one domain need
+    this distinction to stop early instead of repeating an identical
+    network failure for every remaining path.
+    """
     try:
         req = urllib.request.Request(url, headers=_FETCH_HEADERS)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if resp.status != 200:
-                return ""
+                return "", False
             raw = resp.read(300_000).decode("utf-8", errors="ignore")
             raw = _SCRIPT_STYLE_RE.sub(" ", raw)
 
@@ -113,10 +117,13 @@ def _fetch_url(url: str, timeout: int = 6) -> str:
             if tight_emails:
                 text = " ".join(tight_emails) + " " + text
 
-            return text
+            return text, False
+    except urllib.error.HTTPError as exc:
+        logger.debug("Page fetch failed %s: %s", url, type(exc).__name__)
+        return "", False
     except Exception as exc:
         logger.debug("Page fetch failed %s: %s", url, type(exc).__name__)
-        return ""
+        return "", True
 
 
 def fetch_vendor_page(url: str, timeout: int = 6) -> str:
@@ -126,14 +133,19 @@ def fetch_vendor_page(url: str, timeout: int = 6) -> str:
     """
     if _domain(url) in _SKIP_VISIT_DOMAINS:
         return ""
-    return _fetch_url(url, timeout)
+    text, _ = _fetch_url(url, timeout)
+    return text
 
 
 def fetch_contact_page(base_url: str, timeout: int = 6) -> str:
     """
-    Try 30 common contact page paths on the vendor's domain.
+    Try common contact page paths on the vendor's domain.
     Returns the first page text that contains an email, or ''.
     Called when the main page has no email.
+
+    Stops after the first connection-level failure (DNS/refused/timeout) —
+    if the domain itself is unreachable, every remaining path would fail
+    identically, so trying all 30 just burns minutes for nothing.
     """
     dom = _domain(base_url)
     if not dom or dom in _SKIP_VISIT_DOMAINS:
@@ -141,7 +153,10 @@ def fetch_contact_page(base_url: str, timeout: int = 6) -> str:
 
     base = f"https://{dom}"
     for path in _CONTACT_PATHS:
-        text = _fetch_url(base + path, timeout)
+        text, unreachable = _fetch_url(base + path, timeout)
+        if unreachable:
+            logger.debug("Domain unreachable, stopping contact-page search | %s", dom)
+            return ""
         if text and _EMAIL_RE.search(text):
             logger.debug("Contact page found email | %s%s", dom, path)
             return text

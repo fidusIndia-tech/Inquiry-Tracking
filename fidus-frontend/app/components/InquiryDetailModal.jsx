@@ -208,8 +208,14 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
   const [addingVendor,  setAddingVendor]  = useState(false);
   const [addError,      setAddError]      = useState("");
 
+  // Brand strings get captured at different times by different pipelines
+  // (client email extraction, SerpAPI discovery, the legacy parts_table) and
+  // routinely disagree on casing/whitespace ("Panasonic" vs "PANASONIC").
+  // The backend matches brands case-insensitively (SQL ILIKE); this filter
+  // must too, or it silently hides rows the API correctly returned.
+  const normBrand = (b) => (b || "").trim().toLowerCase();
   const brands = [...new Set((inquiry.items || []).map((i) => i.brand).filter(Boolean))];
-  const [selectedBrands, setSelectedBrands] = useState(() => new Set(brands));
+  const [selectedBrands, setSelectedBrands] = useState(() => new Set(brands.map(normBrand)));
 
   useEffect(() => {
     setLoading(true); setError("");
@@ -240,10 +246,15 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
   const toggleMan  = toggleInSet(setSelMan);
 
   const toggleBrand = (b) =>
-    setSelectedBrands((prev) => { const n = new Set(prev); n.has(b) ? n.delete(b) : n.add(b); return n; });
+    setSelectedBrands((prev) => {
+      const key = normBrand(b);
+      const n = new Set(prev);
+      n.has(key) ? n.delete(key) : n.add(key);
+      return n;
+    });
 
-  const filteredDiscovered = discovered.filter((v) => selectedBrands.has(v.brand));
-  const filteredLegacy     = legacy.filter((v) => selectedBrands.has(v.brand));
+  const filteredDiscovered = discovered.filter((v) => selectedBrands.has(normBrand(v.brand)));
+  const filteredLegacy     = legacy.filter((v) => selectedBrands.has(normBrand(v.brand)));
   // Manually added vendors are exempt from the brand filter — the whole point
   // of adding one manually is to cover a brand the inquiry doesn't already
   // recognize (e.g. the client's email never stated it), so there's often no
@@ -384,7 +395,7 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
               key={b}
               onClick={() => toggleBrand(b)}
               className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
-                selectedBrands.has(b)
+                selectedBrands.has(normBrand(b))
                   ? "border-[#4451E8] bg-[#EEF0FF] text-[#4451E8]"
                   : "border-[#E4E8EE] bg-white text-slate-400 hover:border-[#C7D2FE]"
               }`}

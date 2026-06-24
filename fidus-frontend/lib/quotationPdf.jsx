@@ -1,7 +1,8 @@
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 
-const TERMS = [
-  "Prices: All prices are quoted in INR and are valid for 30 days from the date of this quotation. Prices are exclusive of applicable taxes, duties, and freight unless otherwise mentioned.",
+function buildTerms(currencyCode) {
+  return [
+  `Prices: All prices are quoted in ${currencyCode} and are valid for 30 days from the date of this quotation. Prices are exclusive of applicable taxes, duties, and freight unless otherwise mentioned.`,
   "Payment Terms: 100% advance payment against confirmed purchase order, unless agreed otherwise in writing. Payment should be made via bank transfer to the account details mentioned in the invoice.",
   "Delivery: Standard delivery lead time is stated above in days from the receipt of advance payment and confirmed PO.",
   "Warranty: Warranty is applicable only for manufacturing defects and excludes misuse, mishandling, or damages during transit.",
@@ -12,7 +13,8 @@ const TERMS = [
   "Limitation of Liability: Our liability is limited only to the extent of replacing defective products as per warranty policy.",
   "Jurisdiction: All disputes are subject to the jurisdiction of Gurgram",
   "Transit Insurance: Goods are deemed delivered once they leave our warehouse. Transit insurance is to be arranged by the buyer unless explicitly included in the quotation. We are not liable for any loss, damage, or delay caused during transportation.",
-];
+  ];
+}
 
 const IGST_RATE = 0.18;
 
@@ -95,8 +97,15 @@ function formatDate(d) {
   return `${mm}/${dd}/${dt.getFullYear()}`;
 }
 
-function formatMoney(value) {
-  return `₹${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£" };
+
+function currencySymbol(currency) {
+  if (!currency) return "₹";
+  return CURRENCY_SYMBOLS[currency.toUpperCase()] || `${currency.toUpperCase()} `;
+}
+
+function formatMoney(value, currency) {
+  return `${currencySymbol(currency)}${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /**
@@ -105,7 +114,7 @@ function formatMoney(value) {
  * Mirrors the company's existing Odoo-generated quotation PDF layout exactly,
  * so this can replace the manual Odoo-download step in the employee's flow.
  *
- * lines: [{ part_number, description, brand, lead_time, quantity, uom, selling_price }]
+ * lines: [{ part_number, description, brand, lead_time, quantity, uom, selling_price, currency }]
  */
 export default function QuotationDocument({
   quotationNumber,
@@ -125,6 +134,11 @@ export default function QuotationDocument({
   const untaxedAmount = computed.reduce((sum, l) => sum + l.amount, 0);
   const igstAmount = untaxedAmount * IGST_RATE;
   const total = untaxedAmount + igstAmount;
+  // Totals assume every line is priced in the same currency, which holds for
+  // the common case. If lines genuinely differ, this just uses whichever
+  // currency the first priced line carries rather than silently mislabeling
+  // a mixed total as INR.
+  const totalsCurrency = lines.find((l) => l.currency)?.currency || null;
 
   return (
     <Document>
@@ -199,9 +213,9 @@ export default function QuotationDocument({
               <Text style={[styles.colMake, styles.td]}>{l.brand || "-"}</Text>
               <Text style={[styles.colLead, styles.td]}>{l.lead_time || "—"}</Text>
               <Text style={[styles.colQty, styles.td]}>{l.quantity} {l.uom || ""}</Text>
-              <Text style={[styles.colUnit, styles.td]}>{formatMoney(l.selling_price)}</Text>
+              <Text style={[styles.colUnit, styles.td]}>{formatMoney(l.selling_price, l.currency)}</Text>
               <Text style={[styles.colTax, styles.td]}>IGST {Math.round(IGST_RATE * 100)}%</Text>
-              <Text style={[styles.colAmt, styles.td]}>{formatMoney(l.amount)}</Text>
+              <Text style={[styles.colAmt, styles.td]}>{formatMoney(l.amount, l.currency)}</Text>
             </View>
           ))}
         </View>
@@ -210,22 +224,22 @@ export default function QuotationDocument({
         <View style={styles.totalsBlock}>
           <View style={styles.totalsRow}>
             <Text style={styles.totalsLabelRed}>Untaxed Amount</Text>
-            <Text style={styles.totalsValue}>{formatMoney(untaxedAmount)}</Text>
+            <Text style={styles.totalsValue}>{formatMoney(untaxedAmount, totalsCurrency)}</Text>
           </View>
           <View style={styles.totalsRow}>
             <Text style={styles.totalsLabel}>IGST {Math.round(IGST_RATE * 100)}%</Text>
-            <Text style={styles.totalsValue}>{formatMoney(igstAmount)}</Text>
+            <Text style={styles.totalsValue}>{formatMoney(igstAmount, totalsCurrency)}</Text>
           </View>
           <View style={styles.totalsDivider} />
           <View style={styles.totalsRow}>
             <Text style={styles.totalsLabelRed}>Total</Text>
-            <Text style={styles.totalsValueBold}>{formatMoney(total)}</Text>
+            <Text style={styles.totalsValueBold}>{formatMoney(total, totalsCurrency)}</Text>
           </View>
         </View>
 
         {/* Terms and conditions */}
         <View style={styles.terms}>
-          {TERMS.map((t, i) => (
+          {buildTerms((totalsCurrency || "INR").toUpperCase()).map((t, i) => (
             <Text key={i} style={styles.termsItem}>{i + 1}. {t}</Text>
           ))}
         </View>

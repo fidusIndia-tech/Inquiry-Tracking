@@ -1602,9 +1602,9 @@ function InquiryTable({
               <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={16}>No inquiries found.</td></tr>
             )}
             {!isLoading && !error &&
-              rows.map(({ inquiry, item, isFirstItem, groupSize }, index) => (
+              rows.map(({ inquiry, item, isFirstItem, groupSize, isExpanded, isChildRow }, index) => (
                 <InquiryRow
-                  key={`${inquiry.id}-${item.id || index}`}
+                  key={`${inquiry.unique_code}-${item?.id || index}`}
                   srNo={index + 1}
                   inquiry={inquiry}
                   item={item}

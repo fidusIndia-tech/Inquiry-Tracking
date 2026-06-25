@@ -154,8 +154,9 @@ export default function EmployeeDashboard() {
   // the moment it was opened.
   const [detailModalCode,       setDetailModalCode]       = useState(null);
   const [expandedCodes,         setExpandedCodes]         = useState(new Set());
-  const knownAssignmentsRef = useRef(new Map());
-  const firstLoadRef        = useRef(true);
+  const knownAssignmentsRef  = useRef(new Map());
+  const knownPriceCountsRef  = useRef(new Map());
+  const firstLoadRef         = useRef(true);
 
   const loadInquiries = useCallback(async (userId, options = {}) => {
     const silent = Boolean(options.silent);
@@ -188,7 +189,25 @@ export default function EmployeeDashboard() {
         });
       }
 
+      // Vendor price notifications — only after first load so page-open doesn't spam
+      if (!firstLoadRef.current && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+        assigned.forEach((item) => {
+          const prevCount = knownPriceCountsRef.current.get(item.unique_code) ?? 0;
+          const currCount = Number(item.vendor_price_count) || 0;
+          if (currCount > prevCount) {
+            const label = item.client_name || item.sender_name || item.unique_code;
+            const opts  = { body: `${item.unique_code} · ${label}`, tag: `price-${item.unique_code}`, requireInteraction: true, icon: "/logo-dark.png" };
+            if ("serviceWorker" in navigator) {
+              navigator.serviceWorker.ready.then((reg) => reg.showNotification("Vendor price received", opts)).catch(() => new Notification("Vendor price received", opts));
+            } else {
+              new Notification("Vendor price received", opts);
+            }
+          }
+        });
+      }
+
       knownAssignmentsRef.current = new Map(assigned.map((item) => [item.unique_code, item.assigned_at || ""]));
+      knownPriceCountsRef.current = new Map(assigned.map((item) => [item.unique_code, Number(item.vendor_price_count) || 0]));
       firstLoadRef.current = false;
       setInquiries(assigned);
       setStatusDrafts(Object.fromEntries(assigned.map((item) => [item.unique_code, item.status || "assigned"])));

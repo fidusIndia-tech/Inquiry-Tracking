@@ -88,7 +88,8 @@ export default function AdminDashboard() {
   const [selectedReminder,   setSelectedReminder]   = useState(null);
   const [blockedClients,     setBlockedClients]     = useState([]);
   const [blockBusy,          setBlockBusy]          = useState(false);
-  const prevCountRef = useRef(0);
+  const prevCountRef      = useRef(0);
+  const knownPriceCountsRef = useRef(null); // null = not yet initialised, skip first-load notify
 
   const fetchBlockedClients = useCallback(async () => {
     try {
@@ -289,6 +290,35 @@ export default function AdminDashboard() {
       }
     }
     prevCountRef.current = curr;
+  }, [inquiries]);
+
+  /* Notify admin when vendor prices arrive for any inquiry */
+  useEffect(() => {
+    if (!inquiries.length) return;
+    const prev = knownPriceCountsRef.current;
+    const curr = new Map(inquiries.map((i) => [i.unique_code, Number(i.vendor_price_count) || 0]));
+
+    if (prev !== null && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+      inquiries.forEach((inq) => {
+        const prevCount = prev.get(inq.unique_code) ?? 0;
+        const currCount = Number(inq.vendor_price_count) || 0;
+        if (currCount > prevCount) {
+          const label = inq.client_name || inq.sender_name || inq.unique_code;
+          const opts  = {
+            body: `${inq.unique_code} · ${label}`,
+            tag:  `price-${inq.unique_code}`,
+            icon: "/logo-dark.png",
+            requireInteraction: true,
+          };
+          if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.ready.then((reg) => reg.showNotification("Vendor price received", opts)).catch(() => new Notification("Vendor price received", opts));
+          } else {
+            new Notification("Vendor price received", opts);
+          }
+        }
+      });
+    }
+    knownPriceCountsRef.current = curr;
   }, [inquiries]);
 
   const filteredInquiries = useMemo(() => {

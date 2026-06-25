@@ -220,6 +220,7 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
   const [newVendor,     setNewVendor]     = useState({ name: "", email: "", phone: "", brand: "", notes: "" });
   const [addingVendor,  setAddingVendor]  = useState(false);
   const [addError,      setAddError]      = useState("");
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Brand strings get captured at different times by different pipelines
   // (client email extraction, SerpAPI discovery, the legacy parts_table) and
@@ -244,7 +245,7 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
       })
       .catch(() => setError("Failed to load vendors"))
       .finally(() => setLoading(false));
-  }, [inquiry.unique_code]);
+  }, [inquiry.unique_code, refreshTrigger]);
 
   // Compound keys so selecting one (vendor, brand) row never silently selects
   // a different brand row for the same vendor — needed once brand filtering
@@ -679,16 +680,25 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
           )}
           {genError && <p className="text-[11px] text-rose-500 mt-0.5">{genError}</p>}
         </div>
-        <button
-          onClick={generateDrafts}
-          disabled={totalSelected === 0 || generating}
-          className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
-        >
-          {generating
-            ? <><RefreshCw size={13} className="animate-spin" />Generating…</>
-            : <><FileText size={13} />Generate RFQ Drafts</>}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setRefreshTrigger((n) => n + 1)}
+            className="flex h-9 items-center gap-1.5 rounded-xl border border-[#C8D6F0] bg-white px-3 text-[12px] font-semibold text-slate-600 transition hover:bg-[#EEF4FF] hover:text-[#4461A8]"
+          >
+            <RefreshCw size={12} />
+            Refresh
+          </button>
+          <button
+            onClick={generateDrafts}
+            disabled={totalSelected === 0 || generating}
+            className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
+          >
+            {generating
+              ? <><RefreshCw size={13} className="animate-spin" />Generating…</>
+              : <><FileText size={13} />Generate RFQ Drafts</>}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -889,8 +899,11 @@ function DraftCard({ draft, onChange }) {
 }
 
 function DraftsTab({ inquiry, initialDrafts }) {
-  const [drafts,  setDrafts]  = useState(initialDrafts);
-  const [loading, setLoading] = useState(initialDrafts === null);
+  const [drafts,      setDrafts]      = useState(initialDrafts);
+  const [loading,     setLoading]     = useState(initialDrafts === null);
+  const [selMode,     setSelMode]     = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [deleting,    setDeleting]    = useState(false);
 
   useEffect(() => {
     if (initialDrafts !== null) { setDrafts(initialDrafts); return; }
@@ -901,6 +914,34 @@ function DraftsTab({ inquiry, initialDrafts }) {
       .catch(() => setDrafts([]))
       .finally(() => setLoading(false));
   }, [inquiry.unique_code, initialDrafts]);
+
+  const toggleSelect = (id) => setSelectedIds((prev) => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
+  const toggleAll = () => setSelectedIds(
+    selectedIds.size === (drafts || []).length ? new Set() : new Set((drafts || []).map((d) => d.id))
+  );
+
+  const handleDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} draft${selectedIds.size !== 1 ? "s" : ""}? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/drafts", {
+        method:  "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ draft_ids: [...selectedIds] }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to delete");
+      setDrafts((prev) => prev.filter((d) => !selectedIds.has(d.id)));
+      setSelectedIds(new Set());
+      setSelMode(false);
+    } catch (e) {
+      alert("Delete failed: " + e.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -926,7 +967,8 @@ function DraftsTab({ inquiry, initialDrafts }) {
     );
   }
 
-  const approved = drafts.filter((d) => d.status === "approved").length;
+  const approved  = drafts.filter((d) => d.status === "approved").length;
+  const allChosen = selectedIds.size === drafts.length;
 
   return (
     <div className="p-5 space-y-4">
@@ -935,12 +977,58 @@ function DraftsTab({ inquiry, initialDrafts }) {
           <span className="font-semibold text-slate-800">{drafts.length}</span> draft{drafts.length !== 1 ? "s" : ""}
           {approved > 0 && <> · <span className="text-[#059669] font-semibold">{approved} approved</span></>}
         </p>
-        <p className="text-[10px] text-slate-400">Edits save automatically</p>
+        <div className="flex items-center gap-2">
+          {selMode ? (
+            <>
+              <button
+                onClick={toggleAll}
+                className="h-7 rounded-lg border border-[#C8D6F0] bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:bg-[#EEF4FF]"
+              >
+                {allChosen ? "Deselect All" : "Select All"}
+              </button>
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="h-7 rounded-lg bg-rose-600 px-3 text-[11px] font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
+                >
+                  {deleting ? "Deleting…" : `Delete Selected (${selectedIds.size})`}
+                </button>
+              )}
+              <button
+                onClick={() => { setSelMode(false); setSelectedIds(new Set()); }}
+                className="h-7 rounded-lg border border-[#C8D6F0] bg-white px-3 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-[10px] text-slate-400">Edits save automatically</p>
+              <button
+                onClick={() => setSelMode(true)}
+                className="h-7 rounded-lg border border-[#C8D6F0] bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:bg-[#EEF4FF] hover:text-[#4461A8]"
+              >
+                <Trash2 size={11} className="inline mr-1" />
+                Delete
+              </button>
+            </>
+          )}
+        </div>
       </div>
       {drafts.map((draft) => (
-        <DraftCard key={draft.id} draft={draft} onChange={(updated) =>
-          setDrafts((prev) => prev.map((d) => d.id === updated.id ? updated : d))
-        } />
+        <div key={draft.id} className={`relative ${selMode && selectedIds.has(draft.id) ? "ring-2 ring-[#4451E8] rounded-2xl" : ""}`}>
+          {selMode && (
+            <label className="absolute top-3.5 right-3.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded border-2 transition"
+                   style={{ borderColor: selectedIds.has(draft.id) ? "#4451E8" : "#CBD5E1", background: selectedIds.has(draft.id) ? "#4451E8" : "white" }}>
+              <input type="checkbox" checked={selectedIds.has(draft.id)} onChange={() => toggleSelect(draft.id)} className="sr-only" />
+              {selectedIds.has(draft.id) && <Check size={11} className="text-white" />}
+            </label>
+          )}
+          <DraftCard draft={draft} onChange={(updated) =>
+            setDrafts((prev) => prev.map((d) => d.id === updated.id ? updated : d))
+          } />
+        </div>
       ))}
     </div>
   );
@@ -1276,12 +1364,7 @@ export default function InquiryDetailModal({ inquiry, onClose, onBlockClient, on
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-sm" onClick={onClose} />
-      <div
-        className="relative z-10 flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white"
-        style={{ maxHeight: "90vh", boxShadow: "0 24px 64px rgba(0,0,0,0.18)" }}
-      >
+    <div className="fixed inset-0 z-50 flex flex-col bg-white">
         {/* Header */}
         <div
           className="flex shrink-0 items-center justify-between border-b border-[#EEF2F6] p-5"
@@ -1360,7 +1443,6 @@ export default function InquiryDetailModal({ inquiry, onClose, onBlockClient, on
             </button>
           </div>
         )}
-      </div>
     </div>
   );
 }

@@ -723,7 +723,7 @@ function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatus
                         const count     = Number(row.vendor_price_count) || 0;
                         const hasUnseen = Boolean(row.has_unseen_prices);
                         if (count === 0) return <p className="mt-0.5 text-[9px] text-slate-400">No prices yet</p>;
-                        if (!hasUnseen)  return <span className="mt-0.5 inline-block rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-medium text-slate-400">Prices arrived</span>;
+                        if (!hasUnseen)  return <span className="mt-0.5 inline-block rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[9px] font-medium text-sky-600">Prices viewed</span>;
                         if (count === 1) return <span className="mt-0.5 inline-block rounded-full bg-amber-50 border border-amber-300 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">Prices arrived</span>;
                         return <span className="mt-0.5 inline-block rounded-full bg-green-50 border border-green-300 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">More prices arrived</span>;
                       })()}

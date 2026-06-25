@@ -204,6 +204,19 @@ export async function POST(request) {
   }
 }
 
+export async function DELETE(request) {
+  try {
+    const { draft_ids } = await request.json();
+    if (!Array.isArray(draft_ids) || draft_ids.length === 0) {
+      return Response.json({ error: "draft_ids array is required" }, { status: 400 });
+    }
+    await query(`DELETE FROM vendor_drafts WHERE id = ANY($1::int[])`, [draft_ids.map(Number)]);
+    return Response.json({ success: true, deleted: draft_ids.length });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function PATCH(request) {
   try {
     await ensureDraftsSchema();

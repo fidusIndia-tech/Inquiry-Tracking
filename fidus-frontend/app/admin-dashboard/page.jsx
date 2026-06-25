@@ -88,6 +88,7 @@ export default function AdminDashboard() {
   const [selectedReminder,   setSelectedReminder]   = useState(null);
   const [blockedClients,     setBlockedClients]     = useState([]);
   const [blockBusy,          setBlockBusy]          = useState(false);
+  const [priceFilter,        setPriceFilter]        = useState("all");
   const prevCountRef      = useRef(0);
   const knownPriceCountsRef = useRef(null); // null = not yet initialised, skip first-load notify
 
@@ -351,6 +352,14 @@ export default function AdminDashboard() {
         if (toMs   !== null && d > toMs)   return false;
       }
 
+      if (priceFilter !== "all") {
+        const cnt      = Number(inquiry.vendor_price_count) || 0;
+        const unseen   = Boolean(inquiry.has_unseen_prices);
+        if (priceFilter === "none"   && cnt > 0)             return false;
+        if (priceFilter === "unread" && !unseen)             return false;
+        if (priceFilter === "viewed" && (cnt === 0 || unseen)) return false;
+      }
+
       if (tokens.length > 0) {
         const text = [
           inquiry.unique_code,
@@ -371,7 +380,7 @@ export default function AdminDashboard() {
 
       return true;
     });
-  }, [inquiries, searchText, statusFilter, assignmentFilter, executiveFilter, dateFrom, dateTo, now]);
+  }, [inquiries, searchText, statusFilter, assignmentFilter, executiveFilter, dateFrom, dateTo, priceFilter, now]);
 
   const counts = useMemo(() => ({
     total:    inquiries.length,
@@ -387,6 +396,16 @@ export default function AdminDashboard() {
   [users]);
 
   const PORTAL_URL = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://practical-amazement-production-3539.up.railway.app").replace(/\/$/, "");
+
+  const handleClearFilters = () => {
+    setSearchText("");
+    setStatusFilter("all");
+    setAssignmentFilter("all");
+    setExecutiveFilter("all");
+    setDateFrom("");
+    setDateTo("");
+    setPriceFilter("all");
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("role");
@@ -512,6 +531,9 @@ export default function AdminDashboard() {
                   setDateFrom={setDateFrom}
                   dateTo={dateTo}
                   setDateTo={setDateTo}
+                  priceFilter={priceFilter}
+                  setPriceFilter={setPriceFilter}
+                  onClearFilters={handleClearFilters}
                   totalCount={inquiries.length}
                   now={now}
                   onDeleteRequest={(inquiry)  => setDeleteConfirm(inquiry)}
@@ -1223,7 +1245,7 @@ function TopBar({ activeMenu, setActiveMenu, searchText, setSearchText, onRefres
             <button
               key={item.key}
               onClick={() => setActiveMenu(item.key)}
-              className={`relative flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-all duration-150 ${
+              className={`relative flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-all duration-150 whitespace-nowrap ${
                 activeMenu === item.key ? "text-white" : "text-slate-500 hover:bg-[#EEF2FF] hover:text-[#4451E8]"
               }`}
               style={activeMenu === item.key ? { background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" } : {}}
@@ -1279,7 +1301,7 @@ function TopBar({ activeMenu, setActiveMenu, searchText, setSearchText, onRefres
         <div className="h-5 w-px bg-[#D8E3F8]" />
         <button
           onClick={onLogout}
-          className="flex h-7 items-center gap-1.5 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[11px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200"
+          className="flex h-7 items-center gap-1.5 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[11px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 whitespace-nowrap"
           title="Sign out"
         >
           <LogOut size={12} />
@@ -1366,12 +1388,16 @@ function InquiryTable({
   executiveFilter, setExecutiveFilter,
   dateFrom, setDateFrom,
   dateTo, setDateTo,
+  priceFilter, setPriceFilter,
+  onClearFilters,
   totalCount,
   now,
   onDeleteRequest, onEditRequest, onSubjectOpen, onDetailOpen, onAssignToMeRequest, onAutoAssign,
 }) {
   const [colWidths, setColWidths] = useState(() => ADMIN_COLS.map((c) => c.defaultW));
-  const dragRef = useRef(null);
+  const dragRef    = useRef(null);
+  const [dateOpen, setDateOpen]   = useState(false);
+  const dateRef    = useRef(null);
 
   const [selected,       setSelected]       = useState(new Set());
   const [bulkDeleting,   setBulkDeleting]   = useState(false);
@@ -1495,6 +1521,13 @@ function InquiryTable({
     } catch {}
   };
 
+  useEffect(() => {
+    if (!dateOpen) return;
+    const handle = (e) => { if (!dateRef.current?.contains(e.target)) setDateOpen(false); };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [dateOpen]);
+
   const [expandedCodes, setExpandedCodes] = useState(new Set());
   const toggleExpand = (code) => {
     setExpandedCodes((prev) => {
@@ -1533,6 +1566,14 @@ function InquiryTable({
             </FilterButton>
           ))}
           <div className="ml-1 h-4 w-px bg-slate-200" />
+          {(statusFilter !== "all" || assignmentFilter !== "all" || executiveFilter !== "all" || dateFrom || dateTo || priceFilter !== "all") && (
+            <button
+              onClick={onClearFilters}
+              className="h-7 rounded-lg border border-rose-200 bg-rose-50 px-3 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-100"
+            >
+              Clear Filters
+            </button>
+          )}
           <button
             onClick={onAutoAssign}
             className="h-7 rounded-lg px-3 text-[11px] font-semibold text-white transition hover:opacity-90"
@@ -1603,40 +1644,77 @@ function InquiryTable({
                       className="h-3.5 w-3.5 cursor-pointer"
                     />
                   ) : col.label === "Received" ? (
-                    <div className="flex flex-col gap-0.5 pr-1">
-                      <span className="truncate text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">Received</span>
-                      <input
-                        type="date"
-                        value={dateFrom}
-                        onChange={(e) => setDateFrom(e.target.value)}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        max={dateTo || undefined}
-                        title="From date"
-                        className="h-5 w-full rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] text-slate-600 outline-none cursor-pointer normal-case tracking-normal focus:border-[#5BA7FF]"
-                        style={{ letterSpacing: 0 }}
-                      />
-                      <div className="flex items-center gap-0.5">
-                        <input
-                          type="date"
-                          value={dateTo}
-                          onChange={(e) => setDateTo(e.target.value)}
+                    <div className="relative pr-1" ref={dateRef}>
+                      <div className="flex items-center gap-1">
+                        <span className="truncate text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">Received</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setDateOpen((v) => !v); }}
                           onMouseDown={(e) => e.stopPropagation()}
-                          min={dateFrom || undefined}
-                          title="To date"
-                          className="h-5 w-full rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] text-slate-600 outline-none cursor-pointer normal-case tracking-normal focus:border-[#5BA7FF]"
-                          style={{ letterSpacing: 0 }}
-                        />
-                        {(dateFrom || dateTo) && (
-                          <button
-                            onClick={() => { setDateFrom(""); setDateTo(""); }}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            title="Clear date range"
-                            className="shrink-0 text-[10px] font-bold leading-none text-rose-400 hover:text-rose-600"
-                          >
-                            ×
-                          </button>
-                        )}
+                          className={`ml-auto flex h-5 items-center gap-0.5 rounded border px-1.5 text-[9px] font-semibold transition ${
+                            dateFrom || dateTo
+                              ? "border-[#5BA7FF] bg-[#EEF6FF] text-[#1D6FD8]"
+                              : "border-[#C8D6F0] bg-white/90 text-slate-500 hover:bg-[#EEF4FF]"
+                          }`}
+                        >
+                          {dateFrom || dateTo ? "●" : "▾"} Date
+                        </button>
                       </div>
+                      {dateOpen && (
+                        <div
+                          onMouseDown={(e) => e.stopPropagation()}
+                          className="absolute left-0 top-full z-50 mt-1 w-52 rounded-xl border border-[#D0DCF4] bg-white p-3 shadow-lg"
+                        >
+                          <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-slate-400">Date Range</p>
+                          <label className="mb-1 block text-[9px] text-slate-500">From</label>
+                          <input
+                            type="date"
+                            value={dateFrom}
+                            onChange={(e) => setDateFrom(e.target.value)}
+                            max={dateTo || undefined}
+                            className="mb-2 h-7 w-full rounded border border-[#C8D6F0] bg-white px-2 text-[10px] text-slate-700 outline-none focus:border-[#5BA7FF]"
+                          />
+                          <label className="mb-1 block text-[9px] text-slate-500">To</label>
+                          <input
+                            type="date"
+                            value={dateTo}
+                            onChange={(e) => setDateTo(e.target.value)}
+                            min={dateFrom || undefined}
+                            className="mb-3 h-7 w-full rounded border border-[#C8D6F0] bg-white px-2 text-[10px] text-slate-700 outline-none focus:border-[#5BA7FF]"
+                          />
+                          <div className="flex gap-2">
+                            {(dateFrom || dateTo) && (
+                              <button
+                                onClick={() => { setDateFrom(""); setDateTo(""); }}
+                                className="flex-1 h-7 rounded-lg border border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-600 hover:bg-rose-100"
+                              >
+                                Clear
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setDateOpen(false)}
+                              className="flex-1 h-7 rounded-lg border border-[#C8D6F0] bg-white text-[10px] font-semibold text-slate-600 hover:bg-[#EEF4FF]"
+                            >
+                              Done
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : col.label === "F Unique Code" ? (
+                    <div className="flex flex-col gap-1 pr-2">
+                      <span className="truncate text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">F Unique Code</span>
+                      <select
+                        value={priceFilter}
+                        onChange={(e) => setPriceFilter(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="h-5 w-full rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] font-semibold text-slate-600 outline-none cursor-pointer normal-case tracking-normal"
+                        style={{ letterSpacing: 0 }}
+                      >
+                        <option value="all">All Prices</option>
+                        <option value="none">No prices yet</option>
+                        <option value="unread">Unread prices</option>
+                        <option value="viewed">Prices viewed</option>
+                      </select>
                     </div>
                   ) : col.label === "Allocation" ? (
                     <div className="flex flex-col gap-1 pr-2">
@@ -1730,8 +1808,8 @@ function VendorPriceBadge({ count, hasUnseen }) {
   }
   if (!hasUnseen) {
     return (
-      <span className="mt-0.5 inline-block rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-medium text-slate-400">
-        Prices arrived
+      <span className="mt-0.5 inline-block rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[9px] font-medium text-sky-600">
+        Prices viewed
       </span>
     );
   }

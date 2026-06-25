@@ -1341,7 +1341,7 @@ function MetricCard({ icon, label, value, accent, delay }) {
 const ADMIN_COLS = [
   { label: "Select",        defaultW: 34  },
   { label: "Sr. No.",       defaultW: 52  },
-  { label: "Received",      defaultW: 190 },
+  { label: "Received",      defaultW: 150 },
   { label: "F Unique Code", defaultW: 110 },
   { label: "Client Name",   defaultW: 120 },
   { label: "Location",      defaultW: 100 },
@@ -1373,8 +1373,9 @@ function InquiryTable({
   const [colWidths, setColWidths] = useState(() => ADMIN_COLS.map((c) => c.defaultW));
   const dragRef = useRef(null);
 
-  const [selected, setSelected] = useState(new Set());
-  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [selected,       setSelected]       = useState(new Set());
+  const [bulkDeleting,   setBulkDeleting]   = useState(false);
+  const [selectionMode,  setSelectionMode]  = useState(false);
 
   const toggleSelect = (code) => {
     setSelected((prev) => {
@@ -1384,8 +1385,11 @@ function InquiryTable({
     });
   };
 
+  const enterSelectionMode  = () => setSelectionMode(true);
+  const cancelSelectionMode = () => { setSelectionMode(false); setSelected(new Set()); };
+
   const visibleCodes = Array.from(new Set(inquiries.map((i) => i.unique_code)));
-  const allSelected = visibleCodes.length > 0 && visibleCodes.every((c) => selected.has(c));
+  const allSelected  = visibleCodes.length > 0 && visibleCodes.every((c) => selected.has(c));
 
   const toggleSelectAll = () => {
     setSelected(allSelected ? new Set() : new Set(visibleCodes));
@@ -1408,6 +1412,7 @@ function InquiryTable({
       );
       setInquiries((current) => current.filter((i) => !selected.has(i.unique_code)));
       setSelected(new Set());
+      setSelectionMode(false);
     } catch (e) {
       alert(e.message || "Failed to delete selected inquiries");
     } finally {
@@ -1536,26 +1541,53 @@ function InquiryTable({
           >
             Auto Assign
           </button>
-          {selected.size > 0 && (
+          {!selectionMode ? (
             <button
-              onClick={handleBulkDelete}
-              disabled={bulkDeleting}
-              className="h-7 rounded-lg bg-rose-600 px-3 text-[11px] font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
+              onClick={enterSelectionMode}
+              className="h-7 rounded-lg border border-[#C8D6F0] bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:bg-[#EEF4FF] hover:text-[#4461A8]"
             >
-              {bulkDeleting ? "Deleting…" : `Delete Selected (${selected.size})`}
+              Select
             </button>
+          ) : (
+            <>
+              <button
+                onClick={cancelSelectionMode}
+                className="h-7 rounded-lg border border-[#C8D6F0] bg-white px-3 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              {selected.size > 0 && (
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="h-7 rounded-lg bg-rose-600 px-3 text-[11px] font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
+                >
+                  {bulkDeleting ? "Deleting…" : `Delete Selected (${selected.size})`}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
 
       <div>
+        {/* Derive visible column indices so the Select column is hidden outside selection mode
+            while keeping colWidths indices stable for the resize handler. */}
+        {(() => {
+          const visibleIdxs = ADMIN_COLS.map((_, i) => i).filter(
+            (i) => selectionMode || ADMIN_COLS[i].label !== "Select"
+          );
+          const colCount = visibleIdxs.length;
+          return (
         <table className="border-collapse text-[11px]" style={{ tableLayout: "fixed", width: "100%", minWidth: 900 }}>
           <colgroup>
-            {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
+            {visibleIdxs.map((origIdx) => <col key={origIdx} style={{ width: colWidths[origIdx] }} />)}
           </colgroup>
           <thead>
             <tr className="text-left">
-              {ADMIN_COLS.map((col, i) => (
+              {visibleIdxs.map((origIdx) => {
+                const col = ADMIN_COLS[origIdx];
+                return (
                 <th
                   key={col.label}
                   style={{ position: "sticky", top: 0, zIndex: 10, background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}
@@ -1571,20 +1603,19 @@ function InquiryTable({
                       className="h-3.5 w-3.5 cursor-pointer"
                     />
                   ) : col.label === "Received" ? (
-                    <div className="flex flex-col gap-1 pr-2">
+                    <div className="flex flex-col gap-0.5 pr-1">
                       <span className="truncate text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">Received</span>
+                      <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        max={dateTo || undefined}
+                        title="From date"
+                        className="h-5 w-full rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] text-slate-600 outline-none cursor-pointer normal-case tracking-normal focus:border-[#5BA7FF]"
+                        style={{ letterSpacing: 0 }}
+                      />
                       <div className="flex items-center gap-0.5">
-                        <input
-                          type="date"
-                          value={dateFrom}
-                          onChange={(e) => setDateFrom(e.target.value)}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          max={dateTo || undefined}
-                          title="From date"
-                          className="h-5 w-full min-w-0 rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] font-semibold text-slate-600 outline-none cursor-pointer normal-case tracking-normal"
-                          style={{ letterSpacing: 0 }}
-                        />
-                        <span className="text-[8px] text-slate-400">–</span>
                         <input
                           type="date"
                           value={dateTo}
@@ -1592,7 +1623,7 @@ function InquiryTable({
                           onMouseDown={(e) => e.stopPropagation()}
                           min={dateFrom || undefined}
                           title="To date"
-                          className="h-5 w-full min-w-0 rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] font-semibold text-slate-600 outline-none cursor-pointer normal-case tracking-normal"
+                          className="h-5 w-full rounded border border-[#C8D6F0] bg-white/90 px-1 text-[9px] text-slate-600 outline-none cursor-pointer normal-case tracking-normal focus:border-[#5BA7FF]"
                           style={{ letterSpacing: 0 }}
                         />
                         {(dateFrom || dateTo) && (
@@ -1600,7 +1631,7 @@ function InquiryTable({
                             onClick={() => { setDateFrom(""); setDateTo(""); }}
                             onMouseDown={(e) => e.stopPropagation()}
                             title="Clear date range"
-                            className="shrink-0 text-[9px] font-bold text-rose-500 hover:text-rose-700"
+                            className="shrink-0 text-[10px] font-bold leading-none text-rose-400 hover:text-rose-600"
                           >
                             ×
                           </button>
@@ -1639,21 +1670,22 @@ function InquiryTable({
                     <span className="truncate block pr-2">{col.label}</span>
                   )}
                   <div
-                    onMouseDown={(e) => startResize(i, e)}
+                    onMouseDown={(e) => startResize(origIdx, e)}
                     style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 6, cursor: "col-resize", zIndex: 1 }}
                     className="hover:bg-[#5BA7FF]/30 transition-colors"
                   />
                 </th>
-              ))}
+                );
+              })}
             </tr>
           </thead>
           <tbody>
             {isLoading && <LoadingRows />}
             {!isLoading && error && (
-              <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={16}>{error}</td></tr>
+              <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={colCount}>{error}</td></tr>
             )}
             {!isLoading && !error && inquiries.length === 0 && (
-              <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={16}>No inquiries found.</td></tr>
+              <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={colCount}>No inquiries found.</td></tr>
             )}
             {!isLoading && !error &&
               rows.map(({ inquiry, item, isFirstItem, groupSize, isExpanded, isChildRow }, index) => (
@@ -1666,6 +1698,7 @@ function InquiryTable({
                   groupSize={groupSize}
                   isExpanded={isExpanded}
                   isChildRow={isChildRow}
+                  selectionMode={selectionMode}
                   onToggleExpand={() => toggleExpand(inquiry.unique_code)}
                   now={now}
                   employees={employees}
@@ -1683,6 +1716,8 @@ function InquiryTable({
               ))}
           </tbody>
         </table>
+          );
+        })()}
       </div>
 
     </section>
@@ -1742,7 +1777,7 @@ function LoadingRows() {
   ));
 }
 
-function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, isExpanded, isChildRow, onToggleExpand, now, employees, selected, onToggleSelect, onAssignChange, onStatusChange, onDelete, onEdit, onSubjectOpen, onDetailOpen, onAssignToMe, onRemarkSave }) {
+function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, isExpanded, isChildRow, selectionMode, onToggleExpand, now, employees, selected, onToggleSelect, onAssignChange, onStatusChange, onDelete, onEdit, onSubjectOpen, onDetailOpen, onAssignToMe, onRemarkSave }) {
   const status = inquiry.status || "new";
   const part   = item.partNumber || "—";
   const brand  = item.brand      || "-";
@@ -1769,17 +1804,19 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, isExpanded, i
       onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(90deg,#EEF6FF 0%,#F5F9FF 100%)"; e.currentTarget.style.boxShadow = isChildRow ? "inset 6px 0 0 #93C5FD" : "inset 3px 0 0 #5BA7FF"; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = isChildRow ? "rgba(238,246,255,0.85)" : isFirstItem ? "rgba(255,255,255,0.9)" : "rgba(245,248,255,0.7)"; e.currentTarget.style.boxShadow = "none"; }}
     >
-      {/* Select */}
-      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
-        {isFirstItem && (
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={onToggleSelect}
-            className="h-3.5 w-3.5 cursor-pointer"
-          />
-        )}
-      </td>
+      {/* Select — only rendered when selection mode is active */}
+      {selectionMode && (
+        <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
+          {isFirstItem && (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelect}
+              className="h-3.5 w-3.5 cursor-pointer"
+            />
+          )}
+        </td>
+      )}
 
       {/* Sr No. */}
       <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">

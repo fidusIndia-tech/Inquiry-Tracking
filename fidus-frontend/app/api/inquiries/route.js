@@ -9,6 +9,49 @@ async function ensureInquiriesSchema() {
   await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS quoted_at TIMESTAMPTZ");
   await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS remark TEXT");
   await pool.query("ALTER TABLE inquiry_items ADD COLUMN IF NOT EXISTS brand_source TEXT");
+  // Ensure vendor_drafts and vendor_quotes exist so the price-count JOIN never fails.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vendor_drafts (
+      id                  SERIAL PRIMARY KEY,
+      inquiry_unique_code TEXT NOT NULL,
+      vendor_name         TEXT,
+      vendor_email        TEXT,
+      brand               TEXT,
+      part_number         TEXT,
+      subject             TEXT NOT NULL DEFAULT '',
+      body                TEXT NOT NULL DEFAULT '',
+      status              TEXT DEFAULT 'draft',
+      source              TEXT DEFAULT 'discovered',
+      thread_id           TEXT,
+      message_id          TEXT,
+      rfc_message_id      TEXT,
+      sent_at             TIMESTAMPTZ,
+      reminded_at         TIMESTAMPTZ,
+      replied_at          TIMESTAMPTZ,
+      created_at          TIMESTAMPTZ DEFAULT NOW(),
+      updated_at          TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vendor_quotes (
+      id                  SERIAL PRIMARY KEY,
+      inquiry_unique_code TEXT NOT NULL,
+      draft_id            INT REFERENCES vendor_drafts(id) ON DELETE CASCADE,
+      vendor_name         TEXT,
+      vendor_email        TEXT,
+      brand               TEXT,
+      part_number         TEXT,
+      unit_price          NUMERIC,
+      currency            TEXT,
+      moq                 TEXT,
+      lead_time           TEXT,
+      availability        TEXT,
+      remarks             TEXT,
+      raw_reply           TEXT,
+      raw_reply_is_html   BOOLEAN DEFAULT FALSE,
+      received_at         TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
   _inquiriesSchemaReady = true;
 }
 
@@ -53,12 +96,12 @@ export async function GET() {
           ) FILTER (WHERE ii.id IS NOT NULL),
           '[]'::json
         ) AS items,
-        COUNT(vp.id) AS vendor_price_count
+        COUNT(vq.id) AS vendor_price_count
       FROM inquiries i
       LEFT JOIN raw_email_items r ON r.id = i.raw_email_item_id
       LEFT JOIN inquiry_items ii ON ii.inquiry_id = i.id
       LEFT JOIN users u ON u.id = i.assigned_to
-      LEFT JOIN vendor_prices vp ON vp.inquiry_id = i.id
+      LEFT JOIN vendor_quotes vq ON LOWER(vq.inquiry_unique_code) = LOWER(i.unique_code)
       GROUP BY i.id, r.id, u.id
       ORDER BY i.email_date DESC NULLS LAST, i.created_at DESC
     `);

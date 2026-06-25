@@ -51,6 +51,27 @@ _QUERIES: list[tuple[str, dict]] = [
      {}),
 ]
 
+# Run only when the strict queries above come back nearly empty — niche,
+# specialized OEM/machinery brands often don't have anyone who markets
+# themselves as an "authorized dealer" in indexed text at all, even when
+# real suppliers exist. These drop that requirement entirely. Kept as a
+# separate, conditional pass rather than merged into _QUERIES so brands that
+# already get plenty of high-confidence results never pay for (or get
+# diluted by) the noisier, lower-confidence candidates this surfaces.
+_FALLBACK_QUERIES: list[tuple[str, dict]] = [
+    ('"{brand}" distributor India price contact',
+     {"gl": "in"}),
+
+    ('"{brand}" supplier contact email phone',
+     {}),
+
+    ('"{brand}" spare parts price quote',
+     {}),
+]
+
+# Below this many unique candidates from the strict pass, try the fallback.
+_FALLBACK_THRESHOLD = 5
+
 # Domains that are pure noise — excluded from results entirely.
 # B2B directories (indiamart, tradeindia) are intentionally NOT blocked:
 # they contain real authorized-dealer listings. Their pages are skipped at
@@ -163,25 +184,16 @@ def _is_noise_domain(dom: str) -> bool:
     return dom in _NOISE_DOMAINS or any(dom.endswith(s) for s in _NOISE_DOMAIN_SUFFIXES)
 
 
-def search_vendors(brand: str, part_number: str) -> list[dict]:
-    """
-    Run all queries against SerpAPI and return deduplicated result dicts.
-    Returns [] if SERPAPI_KEY is not configured.
-    """
-    if not getattr(settings, "SERPAPI_KEY", ""):
-        logger.warning("SERPAPI_KEY not set — vendor discovery skipped")
-        return []
+def _run_query_batch(
+    brand: str,
+    query_list: list[tuple[str, dict]],
+    seen_urls: set[str],
+    results: list[dict],
+) -> None:
+    """Run one batch of query templates, appending newly-seen URLs to `results`."""
+    from serpapi import GoogleSearch
 
-    try:
-        from serpapi import GoogleSearch
-    except ImportError:
-        logger.error("google-search-results not installed — run: pip install google-search-results")
-        return []
-
-    seen_urls: set[str] = set()
-    results: list[dict] = []
-
-    for template, geo_params in _QUERIES:
+    for template, geo_params in query_list:
         query = template.format(brand=brand)
         try:
             params = {
@@ -222,6 +234,35 @@ def search_vendors(brand: str, part_number: str) -> list[dict]:
             )
         except Exception as exc:
             logger.error("SerpAPI error for query '%s': %s", query[:70], exc)
+
+
+def search_vendors(brand: str, part_number: str) -> list[dict]:
+    """
+    Run all queries against SerpAPI and return deduplicated result dicts.
+    Returns [] if SERPAPI_KEY is not configured.
+    """
+    if not getattr(settings, "SERPAPI_KEY", ""):
+        logger.warning("SERPAPI_KEY not set — vendor discovery skipped")
+        return []
+
+    try:
+        import serpapi  # noqa: F401 — import check only; _run_query_batch does the real import
+    except ImportError:
+        logger.error("google-search-results not installed — run: pip install google-search-results")
+        return []
+
+    seen_urls: set[str] = set()
+    results: list[dict] = []
+
+    _run_query_batch(brand, _QUERIES, seen_urls, results)
+
+    if len(results) < _FALLBACK_THRESHOLD:
+        logger.info(
+            "Only %d candidate(s) from strict 'authorized dealer' search for '%s' — "
+            "trying broader fallback queries (niche/specialized brand)",
+            len(results), brand,
+        )
+        _run_query_batch(brand, _FALLBACK_QUERIES, seen_urls, results)
 
     logger.info("SerpAPI total unique URLs collected: %d", len(results))
     return results

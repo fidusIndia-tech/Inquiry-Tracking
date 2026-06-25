@@ -1108,8 +1108,13 @@ function QuotesTab({ inquiry }) {
                             />
                           </td>
                           <td className="px-3 py-2.5">
-                            <p className="font-semibold text-slate-900">{q.vendor_name || "—"}</p>
-                            <p className="text-[10px] text-slate-400">{q.vendor_email || ""}</p>
+                            <div
+                              className={q.raw_reply ? "cursor-pointer select-none" : ""}
+                              onClick={() => q.raw_reply && setExpanded((prev) => ({ ...prev, [q.id]: !prev[q.id] }))}
+                            >
+                              <p className="font-semibold text-slate-900">{q.vendor_name || "—"}</p>
+                              <p className="text-[10px] text-slate-400">{q.vendor_email || ""}</p>
+                            </div>
                           </td>
                           <td className="px-3 py-2.5">
                             <span className="font-semibold text-slate-800">{formatQuotePrice(q.unit_price, q.currency)}</span>

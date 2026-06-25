@@ -52,11 +52,13 @@ export async function GET() {
             )
           ) FILTER (WHERE ii.id IS NOT NULL),
           '[]'::json
-        ) AS items
+        ) AS items,
+        COUNT(vp.id) AS vendor_price_count
       FROM inquiries i
       LEFT JOIN raw_email_items r ON r.id = i.raw_email_item_id
       LEFT JOIN inquiry_items ii ON ii.inquiry_id = i.id
       LEFT JOIN users u ON u.id = i.assigned_to
+      LEFT JOIN vendor_prices vp ON vp.inquiry_id = i.id
       GROUP BY i.id, r.id, u.id
       ORDER BY i.email_date DESC NULLS LAST, i.created_at DESC
     `);

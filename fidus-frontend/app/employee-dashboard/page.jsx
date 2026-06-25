@@ -640,6 +640,12 @@ function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatus
                   title="Click to view details and vendors"
                 >
                   <p className="truncate font-semibold text-[#1D6FD8] text-[11px]">{row.unique_code}</p>
+                  {(() => {
+                    const count = Number(row.vendor_price_count) || 0;
+                    if (count === 0) return <p className="mt-0.5 text-[9px] text-slate-400">No vendor price yet</p>;
+                    if (count === 1) return <span className="mt-0.5 inline-block rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">Vendor price arrived</span>;
+                    return <span className="mt-0.5 inline-block rounded-full bg-green-50 border border-green-200 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">More prices arrived</span>;
+                  })()}
                 </td>
                 <td className="border-r border-[#DCE6F7] px-2 py-2.5">
                   <p className="truncate font-medium text-slate-800 text-[11px]">{row.client_name}</p>

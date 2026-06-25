@@ -1619,6 +1619,24 @@ function InquiryTable({
   );
 }
 
+function VendorPriceBadge({ count }) {
+  if (count === 0) {
+    return <p className="mt-0.5 text-[9px] text-slate-400">No vendor price yet</p>;
+  }
+  if (count === 1) {
+    return (
+      <span className="mt-0.5 inline-block rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
+        Vendor price arrived
+      </span>
+    );
+  }
+  return (
+    <span className="mt-0.5 inline-block rounded-full bg-green-50 border border-green-200 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">
+      More prices arrived
+    </span>
+  );
+}
+
 function FilterButton({ active, onClick, children }) {
   return (
     <button
@@ -1707,6 +1725,7 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
         {isFirstItem && groupSize > 1 && (
           <p className="mt-0.5 text-[11px] text-[#5BA7FF] font-medium">{groupSize} items</p>
         )}
+        {isFirstItem && <VendorPriceBadge count={Number(inquiry.vendor_price_count) || 0} />}
       </td>
 
       {/* Client Name */}

@@ -1142,7 +1142,14 @@ function QuotesTab({ inquiry }) {
                           <tr className="border-b border-[#EEF2F6]">
                             <td colSpan={6} className="bg-[#FAFBFF] px-4 py-3">
                               <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-slate-400">Vendor's Original Reply</p>
-                              <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-600">{q.raw_reply}</p>
+                              {q.raw_reply_is_html ? (
+                                <div
+                                  className="text-[11px] leading-relaxed text-slate-600 [&_table]:w-full [&_table]:border-collapse [&_table]:my-2 [&_td]:border [&_td]:border-[#E4E8EE] [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-[#E4E8EE] [&_th]:px-2 [&_th]:py-1 [&_th]:bg-[#F3F6FC] [&_th]:font-semibold [&_p]:my-1"
+                                  dangerouslySetInnerHTML={{ __html: q.raw_reply }}
+                                />
+                              ) : (
+                                <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-600">{q.raw_reply}</p>
+                              )}
                               {q.remarks && (
                                 <Fragment>
                                   <p className="mb-1 mt-2 text-[9px] font-bold uppercase tracking-widest text-slate-400">Remarks</p>

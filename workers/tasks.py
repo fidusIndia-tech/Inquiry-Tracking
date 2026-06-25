@@ -669,13 +669,18 @@ def extract_vendor_quote(self, message_id: str) -> dict:
         logger.info("extract_vendor_quote | no price found in reply | unique_code=%s", unique_code)
         return {"status": "no_quote_found", "unique_code": unique_code}
 
+    # Prefer the HTML body: vendors usually quote in a real table, and the
+    # plain-text alternative Gmail generates for that table just runs every
+    # cell together with no column structure — unreadable once rendered.
+    raw_reply_html = bool(parsed.get("body_html"))
     post_vendor_quote({
         "unique_code": unique_code,
         "draft_id": draft.get("id") if draft else None,
         "vendor_name": draft.get("vendor_name") if draft else None,
         "vendor_email": (draft.get("vendor_email") if draft else None) or sender_email,
         "brand": draft.get("brand") if draft else None,
-        "raw_reply": parsed.get("body_plain") or parsed.get("body_html"),
+        "raw_reply": parsed.get("body_html") or parsed.get("body_plain"),
+        "raw_reply_is_html": raw_reply_html,
         "quotes": quotes,
     })
 

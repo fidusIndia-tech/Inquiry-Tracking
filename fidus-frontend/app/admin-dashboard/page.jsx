@@ -1436,13 +1436,26 @@ function InquiryTable({
     } catch {}
   };
 
+  const [expandedCodes, setExpandedCodes] = useState(new Set());
+  const toggleExpand = (code) => {
+    setExpandedCodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code); else next.add(code);
+      return next;
+    });
+  };
+
   const rows = inquiries.flatMap((inquiry) => {
     const items = inquiry.items?.length ? inquiry.items : [{}];
-    return items.map((item, idx) => ({
+    const isExpanded = expandedCodes.has(inquiry.unique_code);
+    const visible = isExpanded ? items : [items[0]];
+    return visible.map((item, idx) => ({
       inquiry,
       item,
       isFirstItem: idx === 0,
       groupSize:   items.length,
+      isExpanded,
+      isChildRow:  isExpanded && idx > 0,
     }));
   });
 
@@ -1597,6 +1610,9 @@ function InquiryTable({
                   item={item}
                   isFirstItem={isFirstItem}
                   groupSize={groupSize}
+                  isExpanded={isExpanded}
+                  isChildRow={isChildRow}
+                  onToggleExpand={() => toggleExpand(inquiry.unique_code)}
                   now={now}
                   employees={employees}
                   selected={selected.has(inquiry.unique_code)}
@@ -1665,7 +1681,7 @@ function LoadingRows() {
   ));
 }
 
-function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employees, selected, onToggleSelect, onAssignChange, onStatusChange, onDelete, onEdit, onSubjectOpen, onDetailOpen, onAssignToMe, onRemarkSave }) {
+function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, isExpanded, isChildRow, onToggleExpand, now, employees, selected, onToggleSelect, onAssignChange, onStatusChange, onDelete, onEdit, onSubjectOpen, onDetailOpen, onAssignToMe, onRemarkSave }) {
   const status = inquiry.status || "new";
   const part   = item.partNumber || "—";
   const brand  = item.brand      || "-";
@@ -1688,9 +1704,9 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
   return (
     <tr
       className="border-b border-[#DCE6F7] transition-all duration-150 table-row-animate"
-      style={{ background: isFirstItem ? "rgba(255,255,255,0.9)" : "rgba(245,248,255,0.7)" }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(90deg,#EEF6FF 0%,#F5F9FF 100%)"; e.currentTarget.style.boxShadow = "inset 3px 0 0 #5BA7FF"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = isFirstItem ? "rgba(255,255,255,0.9)" : "rgba(245,248,255,0.7)"; e.currentTarget.style.boxShadow = "none"; }}
+      style={{ background: isChildRow ? "rgba(238,246,255,0.85)" : isFirstItem ? "rgba(255,255,255,0.9)" : "rgba(245,248,255,0.7)" }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(90deg,#EEF6FF 0%,#F5F9FF 100%)"; e.currentTarget.style.boxShadow = isChildRow ? "inset 6px 0 0 #93C5FD" : "inset 3px 0 0 #5BA7FF"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = isChildRow ? "rgba(238,246,255,0.85)" : isFirstItem ? "rgba(255,255,255,0.9)" : "rgba(245,248,255,0.7)"; e.currentTarget.style.boxShadow = "none"; }}
     >
       {/* Select */}
       <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
@@ -1721,11 +1737,28 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
         style={{ cursor: isFirstItem ? "pointer" : "default" }}
         title={isFirstItem ? "Double-click to view full details" : undefined}
       >
-        <p className="truncate font-semibold text-slate-900 text-[11px]">{inquiry.unique_code}</p>
-        {isFirstItem && groupSize > 1 && (
-          <p className="mt-0.5 text-[11px] text-[#5BA7FF] font-medium">{groupSize} items</p>
+        {isChildRow ? (
+          <p className="pl-4 text-[10px] text-slate-400 italic">↳ item</p>
+        ) : (
+          <>
+            <div className="flex items-center gap-1">
+              {groupSize > 1 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-[#C8D6F0] bg-white text-[10px] font-bold text-[#4461A8] hover:bg-[#EEF4FF] transition"
+                  title={isExpanded ? "Collapse items" : "Expand items"}
+                >
+                  {isExpanded ? "−" : "+"}
+                </button>
+              )}
+              <p className="truncate font-semibold text-slate-900 text-[11px]">{inquiry.unique_code}</p>
+            </div>
+            {groupSize > 1 && (
+              <p className="mt-0.5 text-[9px] text-[#5BA7FF] font-medium pl-5">{groupSize} items</p>
+            )}
+            <VendorPriceBadge count={Number(inquiry.vendor_price_count) || 0} />
+          </>
         )}
-        {isFirstItem && <VendorPriceBadge count={Number(inquiry.vendor_price_count) || 0} />}
       </td>
 
       {/* Client Name */}

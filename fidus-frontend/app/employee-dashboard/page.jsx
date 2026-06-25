@@ -153,6 +153,7 @@ export default function EmployeeDashboard() {
   // already-open modal showing live data instead of whatever existed at
   // the moment it was opened.
   const [detailModalCode,       setDetailModalCode]       = useState(null);
+  const [expandedCodes,         setExpandedCodes]         = useState(new Set());
   const knownAssignmentsRef = useRef(new Map());
   const firstLoadRef        = useRef(true);
 
@@ -231,35 +232,52 @@ export default function EmployeeDashboard() {
     return () => window.clearTimeout(t);
   }, [router, loadInquiries]);
 
+  const toggleExpand = useCallback((code) => {
+    setExpandedCodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code); else next.add(code);
+      return next;
+    });
+  }, []);
+
   const rows = useMemo(() => {
     const text = search.trim().toLowerCase();
-    return inquiries
-      .flatMap((inquiry) => {
-        const items = inquiry.items?.length ? inquiry.items : [{}];
-        return items.map((item, index) => ({
-          rowKey:      `${inquiry.unique_code}-${item.id || index}`,
-          unique_code: inquiry.unique_code,
-          email_date:  inquiry.email_date,
-          client_name: inquiry.client_name  || "-",
-          location:    inquiry.location     || "-",
-          sender_name: inquiry.sender_name  || "-",
-          subject:     inquiry.subject      || "-",
-          status:      inquiry.status       || "assigned",
-          remark:      inquiry.remark       || "",
-          isFirstItem: index === 0,
-          brand:       item.brand           || "-",
-          part_number: item.partNumber      || "-",
-          quantity:    item.quantity        ?? "-",
-          uom:         item.uom             || "-",
-          item_notes:  item.itemNotes       || "-",
-        }));
-      })
-      .filter((row) => {
-        if (!text) return true;
-        return [row.unique_code, row.client_name, row.location, row.sender_name, row.subject, row.brand, row.part_number]
-          .join(" ").toLowerCase().includes(text);
-      });
-  }, [inquiries, search]);
+    const filtered = text
+      ? inquiries.filter((inq) => {
+          const items = inq.items?.length ? inq.items : [{}];
+          return [inq.unique_code, inq.client_name, inq.location, inq.sender_name, inq.subject,
+            ...items.flatMap((it) => [it.brand, it.partNumber])
+          ].join(" ").toLowerCase().includes(text);
+        })
+      : inquiries;
+
+    return filtered.flatMap((inquiry) => {
+      const items = inquiry.items?.length ? inquiry.items : [{}];
+      const isExpanded = expandedCodes.has(inquiry.unique_code);
+      const visible = isExpanded ? items : [items[0]];
+      return visible.map((item, index) => ({
+        rowKey:           `${inquiry.unique_code}-${item?.id || index}`,
+        unique_code:      inquiry.unique_code,
+        vendor_price_count: inquiry.vendor_price_count,
+        email_date:       inquiry.email_date,
+        client_name:      inquiry.client_name  || "-",
+        location:         inquiry.location     || "-",
+        sender_name:      inquiry.sender_name  || "-",
+        subject:          inquiry.subject      || "-",
+        status:           inquiry.status       || "assigned",
+        remark:           inquiry.remark       || "",
+        isFirstItem:      index === 0,
+        isChildRow:       isExpanded && index > 0,
+        isExpanded,
+        groupSize:        items.length,
+        brand:            item?.brand           || "-",
+        part_number:      item?.partNumber      || "-",
+        quantity:         item?.quantity        ?? "-",
+        uom:              item?.uom             || "-",
+        item_notes:       item?.itemNotes       || "-",
+      }));
+    });
+  }, [inquiries, search, expandedCodes]);
 
   const changedStatuses = useMemo(
     () => inquiries.filter((item) => statusDrafts[item.unique_code] && statusDrafts[item.unique_code] !== item.status),
@@ -430,6 +448,7 @@ export default function EmployeeDashboard() {
                 originalStatuses={Object.fromEntries(inquiries.map((i) => [i.unique_code, i.status]))}
                 onStatusChange={updateDraftStatus}
                 onDetailOpen={openDetail}
+                onToggleExpand={toggleExpand}
               />
             </section>
       </main>
@@ -532,7 +551,7 @@ const EMP_COLS = [
   { label: "Remark",      defaultW: 160 },
 ];
 
-function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatusChange, onDetailOpen }) {
+function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatusChange, onDetailOpen, onToggleExpand }) {
   const [colWidths, setColWidths] = useState(() => EMP_COLS.map((c) => c.defaultW));
   const dragRef = useRef(null);
 
@@ -630,22 +649,46 @@ function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatus
               <tr
                 key={row.rowKey}
                 className="border-b border-[#EEF2F6] transition"
-                style={{ background: idx % 2 === 0 ? "white" : "#FAFBFF" }}
+                style={{ background: row.isChildRow ? "rgba(238,246,255,0.85)" : idx % 2 === 0 ? "white" : "#FAFBFF" }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = "#F0F6FF")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = idx % 2 === 0 ? "white" : "#FAFBFF")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = row.isChildRow ? "rgba(238,246,255,0.85)" : idx % 2 === 0 ? "white" : "#FAFBFF")}
               >
                 <td
-                  className="border-r border-[#DCE6F7] px-2 py-2.5 cursor-pointer"
-                  onClick={() => onDetailOpen(row.unique_code)}
-                  title="Click to view details and vendors"
+                  className="border-r border-[#DCE6F7] px-2 py-2.5"
+                  title={row.isFirstItem ? "Click to view details and vendors" : undefined}
                 >
-                  <p className="truncate font-semibold text-[#1D6FD8] text-[11px]">{row.unique_code}</p>
-                  {(() => {
-                    const count = Number(row.vendor_price_count) || 0;
-                    if (count === 0) return <p className="mt-0.5 text-[9px] text-slate-400">No vendor price yet</p>;
-                    if (count === 1) return <span className="mt-0.5 inline-block rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">Vendor price arrived</span>;
-                    return <span className="mt-0.5 inline-block rounded-full bg-green-50 border border-green-200 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">More prices arrived</span>;
-                  })()}
+                  {row.isChildRow ? (
+                    <p className="pl-4 text-[10px] text-slate-400 italic">↳ item</p>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-1">
+                        {row.groupSize > 1 && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onToggleExpand(row.unique_code); }}
+                            className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-[#C8D6F0] bg-white text-[10px] font-bold text-[#4461A8] hover:bg-[#EEF4FF] transition"
+                            title={row.isExpanded ? "Collapse items" : "Expand items"}
+                          >
+                            {row.isExpanded ? "−" : "+"}
+                          </button>
+                        )}
+                        <p
+                          className="truncate font-semibold text-[#1D6FD8] text-[11px] cursor-pointer"
+                          onClick={() => onDetailOpen(row.unique_code)}
+                        >
+                          {row.unique_code}
+                        </p>
+                      </div>
+                      {row.groupSize > 1 && (
+                        <p className="mt-0.5 text-[9px] text-[#5BA7FF] font-medium pl-5">{row.groupSize} items</p>
+                      )}
+                      {(() => {
+                        const count = Number(row.vendor_price_count) || 0;
+                        if (count === 0) return <p className="mt-0.5 text-[9px] text-slate-400">No vendor price yet</p>;
+                        if (count === 1) return <span className="mt-0.5 inline-block rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">Vendor price arrived</span>;
+                        return <span className="mt-0.5 inline-block rounded-full bg-green-50 border border-green-200 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">More prices arrived</span>;
+                      })()}
+                    </>
+                  )}
                 </td>
                 <td className="border-r border-[#DCE6F7] px-2 py-2.5">
                   <p className="truncate font-medium text-slate-800 text-[11px]">{row.client_name}</p>

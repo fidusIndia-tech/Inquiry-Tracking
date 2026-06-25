@@ -17,6 +17,7 @@ from gmail_service import (
     get_full_message,
     is_processable_inbox_message,
     fetch_new_message_ids_from_history,
+    mark_as_spam,
     HistoryExpiredError,
 )
 from history_tracker import get_latest_history_id, save_latest_history_id, get_all_user_ids
@@ -148,6 +149,10 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
             if _is_blocked_sender(parsed.get("sender")):
                 logger.info("DROP (blocked client) | %s | %s", parsed.get("sender", ""), parsed.get("subject", ""))
                 stats["blocked_dropped"] += 1
+                try:
+                    mark_as_spam(service, msg_id)
+                except Exception as exc:
+                    logger.warning("Failed to move blocked-sender message %s to Spam: %s", msg_id, exc)
                 continue
 
             # 2. Layer 1: fast rule-based filter.

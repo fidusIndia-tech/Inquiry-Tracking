@@ -127,30 +127,38 @@ export async function PATCH(request) {
 
 export async function DELETE(request) {
   try {
-    const { unique_code } = await request.json();
+    const { unique_code, sender_email } = await request.json();
 
-    if (!unique_code) {
-      return Response.json({ error: "unique_code is required" }, { status: 400 });
+    if (!unique_code && !sender_email) {
+      return Response.json({ error: "unique_code or sender_email is required" }, { status: 400 });
     }
 
+    let deletedCount = 0;
+
     await withTransaction(async (client) => {
-      const inqResult = await client.query(
-        `SELECT id FROM inquiries WHERE unique_code = $1`,
-        [unique_code]
-      );
+      const inqResult = sender_email
+        ? await client.query(
+            `SELECT id FROM inquiries WHERE LOWER(sender_email) = LOWER($1)`,
+            [sender_email.trim()]
+          )
+        : await client.query(
+            `SELECT id FROM inquiries WHERE unique_code = $1`,
+            [unique_code]
+          );
 
       if (!inqResult.rows.length) {
-        throw new Error("Inquiry not found");
+        if (!sender_email) throw new Error("Inquiry not found");
+        return;
       }
 
-      const inquiryId = inqResult.rows[0].id;
-
-      await client.query(`DELETE FROM inquiry_items WHERE inquiry_id = $1`, [inquiryId]);
-      await client.query(`DELETE FROM inquiries    WHERE id = $1`,          [inquiryId]);
+      const inquiryIds = inqResult.rows.map((r) => r.id);
+      await client.query(`DELETE FROM inquiry_items WHERE inquiry_id = ANY($1)`, [inquiryIds]);
+      await client.query(`DELETE FROM inquiries    WHERE id = ANY($1)`,          [inquiryIds]);
       await client.query("SELECT pg_notify('inquiries_changed', '')");
+      deletedCount = inquiryIds.length;
     });
 
-    return Response.json({ success: true });
+    return Response.json({ success: true, deleted: deletedCount });
   } catch (error) {
     return Response.json(
       { error: error.message || "Failed to delete inquiry" },

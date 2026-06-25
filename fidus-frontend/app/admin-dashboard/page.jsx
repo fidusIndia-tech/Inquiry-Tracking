@@ -1285,6 +1285,7 @@ function MetricCard({ icon, label, value, accent, delay }) {
    INQUIRY TABLE
 ─────────────────────────────────────────────── */
 const ADMIN_COLS = [
+  { label: "Select",        defaultW: 34  },
   { label: "Sr. No.",       defaultW: 52  },
   { label: "Received",      defaultW: 190 },
   { label: "F Unique Code", defaultW: 110 },
@@ -1317,6 +1318,48 @@ function InquiryTable({
 }) {
   const [colWidths, setColWidths] = useState(() => ADMIN_COLS.map((c) => c.defaultW));
   const dragRef = useRef(null);
+
+  const [selected, setSelected] = useState(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const toggleSelect = (code) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code); else next.add(code);
+      return next;
+    });
+  };
+
+  const visibleCodes = Array.from(new Set(inquiries.map((i) => i.unique_code)));
+  const allSelected = visibleCodes.length > 0 && visibleCodes.every((c) => selected.has(c));
+
+  const toggleSelectAll = () => {
+    setSelected(allSelected ? new Set() : new Set(visibleCodes));
+  };
+
+  const handleBulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`Delete ${selected.size} selected inquiry(ies)? This cannot be undone.`)) return;
+    setBulkDeleting(true);
+    const codes = Array.from(selected);
+    try {
+      await Promise.all(
+        codes.map((code) =>
+          fetch("/api/inquiries", {
+            method:  "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({ unique_code: code }),
+          })
+        )
+      );
+      setInquiries((current) => current.filter((i) => !selected.has(i.unique_code)));
+      setSelected(new Set());
+    } catch (e) {
+      alert(e.message || "Failed to delete selected inquiries");
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   const startResize = (colIdx, e) => {
     e.preventDefault();
@@ -1426,6 +1469,15 @@ function InquiryTable({
           >
             Auto Assign
           </button>
+          {selected.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="h-7 rounded-lg bg-rose-600 px-3 text-[11px] font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
+            >
+              {bulkDeleting ? "Deleting…" : `Delete Selected (${selected.size})`}
+            </button>
+          )}
         </div>
       </div>
 
@@ -1442,7 +1494,16 @@ function InquiryTable({
                   style={{ position: "sticky", top: 0, zIndex: 10, background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}
                   className="align-top border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-2 py-2 text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0 select-none"
                 >
-                  {col.label === "Received" ? (
+                  {col.label === "Select" ? (
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      title="Select all"
+                      className="h-3.5 w-3.5 cursor-pointer"
+                    />
+                  ) : col.label === "Received" ? (
                     <div className="flex flex-col gap-1 pr-2">
                       <span className="truncate text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">Received</span>
                       <div className="flex items-center gap-0.5">
@@ -1522,10 +1583,10 @@ function InquiryTable({
           <tbody>
             {isLoading && <LoadingRows />}
             {!isLoading && error && (
-              <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={15}>{error}</td></tr>
+              <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={16}>{error}</td></tr>
             )}
             {!isLoading && !error && inquiries.length === 0 && (
-              <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={15}>No inquiries found.</td></tr>
+              <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={16}>No inquiries found.</td></tr>
             )}
             {!isLoading && !error &&
               rows.map(({ inquiry, item, isFirstItem, groupSize }, index) => (
@@ -1538,6 +1599,8 @@ function InquiryTable({
                   groupSize={groupSize}
                   now={now}
                   employees={employees}
+                  selected={selected.has(inquiry.unique_code)}
+                  onToggleSelect={() => toggleSelect(inquiry.unique_code)}
                   onAssignChange={(v)  => handleAssignChange(inquiry.unique_code, v)}
                   onStatusChange={(v)  => handleStatusChange(inquiry.unique_code, v)}
                   onDelete={() => onDeleteRequest(inquiry)}
@@ -1575,16 +1638,16 @@ function FilterButton({ active, onClick, children }) {
 function LoadingRows() {
   return Array.from({ length: 6 }, (_, rowIndex) => (
     <tr key={rowIndex}>
-      {Array.from({ length: 15 }, (_, cellIndex) => (
+      {Array.from({ length: 16 }, (_, cellIndex) => (
         <td key={cellIndex} className="border-b border-r border-[#DCE6F7] px-2 py-2.5 last:border-r-0">
-          <div className="skeleton h-3.5" style={{ width: cellIndex === 8 ? "75%" : cellIndex === 3 ? "65%" : "55%" }} />
+          <div className="skeleton h-3.5" style={{ width: cellIndex === 9 ? "75%" : cellIndex === 4 ? "65%" : "55%" }} />
         </td>
       ))}
     </tr>
   ));
 }
 
-function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employees, onAssignChange, onStatusChange, onDelete, onEdit, onSubjectOpen, onDetailOpen, onAssignToMe, onRemarkSave }) {
+function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employees, selected, onToggleSelect, onAssignChange, onStatusChange, onDelete, onEdit, onSubjectOpen, onDetailOpen, onAssignToMe, onRemarkSave }) {
   const status = inquiry.status || "new";
   const part   = item.partNumber || "—";
   const brand  = item.brand      || "-";
@@ -1611,6 +1674,18 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, now, employee
       onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(90deg,#EEF6FF 0%,#F5F9FF 100%)"; e.currentTarget.style.boxShadow = "inset 3px 0 0 #5BA7FF"; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = isFirstItem ? "rgba(255,255,255,0.9)" : "rgba(245,248,255,0.7)"; e.currentTarget.style.boxShadow = "none"; }}
     >
+      {/* Select */}
+      <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
+        {isFirstItem && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            className="h-3.5 w-3.5 cursor-pointer"
+          />
+        )}
+      </td>
+
       {/* Sr No. */}
       <td className="border-r border-[#DCE6F7] px-2 py-2 align-middle">
         <p className="text-[11px] font-medium text-slate-500 tabular-nums">{srNo}</p>

@@ -69,6 +69,15 @@ def is_processable_inbox_message(raw: dict) -> bool:
     return "INBOX" in labels and labels.isdisjoint(blocked)
 
 
+def mark_as_spam(service, msg_id: str) -> None:
+    """Move a message out of the inbox into Gmail Spam. Requires gmail.modify scope."""
+    service.users().messages().modify(
+        userId="me",
+        id=msg_id,
+        body={"addLabelIds": ["SPAM"], "removeLabelIds": ["INBOX", "UNREAD"]},
+    ).execute()
+
+
 class HistoryExpiredError(Exception):
     """Gmail returned 404 for the historyId — it is too old (Gmail keeps ~30 days)."""
 

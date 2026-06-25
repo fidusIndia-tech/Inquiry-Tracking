@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRETS_FILE: str = "client_secret.json"
     GOOGLE_REDIRECT_URI: str = "http://127.0.0.1:8000/auth/google/callback"
     GOOGLE_SCOPES: list[str] = [
-        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/userinfo.email",
         "openid",
     ]

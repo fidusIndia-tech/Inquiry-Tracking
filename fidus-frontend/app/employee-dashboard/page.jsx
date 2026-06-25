@@ -377,14 +377,14 @@ export default function EmployeeDashboard() {
     <div className="min-h-screen text-slate-900 dashboard-bg flex flex-col" style={{ height: "100vh", overflow: "hidden" }}>
       {/* ── Top bar ── */}
       <header
-        className="flex h-12 shrink-0 items-center justify-between border-b border-[#D0D8F0] px-4"
+        className="flex h-14 shrink-0 items-center border-b border-[#D0D8F0] px-5"
         style={{ background: "rgba(255,255,255,0.88)", backdropFilter: "blur(12px)" }}
       >
-        <div className="flex items-center gap-3">
-          <Image src="/logo-dark.png" alt="FIAPL" width={110} height={36} className="h-7 w-auto object-contain shrink-0" priority />
+        <div className="flex shrink-0 items-center gap-3">
+          <Image src="/logo-dark.png" alt="FIAPL" width={120} height={40} className="h-8 w-auto object-contain shrink-0" priority />
           <div className="h-5 w-px bg-[#D8E3F8]" />
           <button
-            className="flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold text-white"
+            className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold text-white whitespace-nowrap"
             style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
           >
             <LayoutDashboard size={12} />
@@ -392,7 +392,7 @@ export default function EmployeeDashboard() {
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           <div
             className="hidden sm:flex h-8 min-w-48 items-center gap-2 rounded-lg border border-[#E4E8EE] bg-white px-3 transition focus-within:border-[#5BA7FF] focus-within:ring-2 focus-within:ring-[#5BA7FF]/10"
           >
@@ -422,7 +422,7 @@ export default function EmployeeDashboard() {
           <div className="h-5 w-px bg-[#D8E3F8]" />
           <button
             onClick={handleLogout}
-            className="flex h-7 items-center gap-1.5 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[11px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200"
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E4E8EE] bg-white px-3 text-[11px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 whitespace-nowrap"
           >
             <LogOut size={12} />
             <span className="hidden sm:inline">Sign out</span>

@@ -1236,16 +1236,17 @@ function AppSwitcher() {
 
 function TopBar({ activeMenu, setActiveMenu, searchText, setSearchText, onRefresh, onLogout, notifBadge, onClearNotif, remindersCount }) {
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-[#D8E3F8] px-4 backdrop-blur-md" style={{ background: "linear-gradient(90deg, rgba(255,255,255,0.92) 0%, rgba(240,246,255,0.95) 100%)" }}>
-      <div className="flex items-center gap-3">
-        <Image src="/logo-dark.png" alt="FIAPL" width={110} height={36} className="h-7 w-auto object-contain shrink-0" priority />
+    <header className="flex h-14 shrink-0 items-center border-b border-[#D8E3F8] px-5 backdrop-blur-md" style={{ background: "linear-gradient(90deg, rgba(255,255,255,0.92) 0%, rgba(240,246,255,0.95) 100%)" }}>
+      {/* Left: logo + separator + nav */}
+      <div className="flex shrink-0 items-center gap-3">
+        <Image src="/logo-dark.png" alt="FIAPL" width={120} height={40} className="h-8 w-auto object-contain shrink-0" priority />
         <div className="h-5 w-px bg-[#D8E3F8]" />
-        <div className="flex items-center gap-0.5">
+        <nav className="flex items-center gap-1">
           {TOP_NAV.map((item) => (
             <button
               key={item.key}
               onClick={() => setActiveMenu(item.key)}
-              className={`relative flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-all duration-150 whitespace-nowrap ${
+              className={`relative flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold transition-all duration-150 whitespace-nowrap ${
                 activeMenu === item.key ? "text-white" : "text-slate-500 hover:bg-[#EEF2FF] hover:text-[#4451E8]"
               }`}
               style={activeMenu === item.key ? { background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" } : {}}
@@ -1259,12 +1260,13 @@ function TopBar({ activeMenu, setActiveMenu, searchText, setSearchText, onRefres
               )}
             </button>
           ))}
-        </div>
+        </nav>
       </div>
 
-      <div className="flex items-center gap-2">
+      {/* Right: search + action buttons — pushed to far right with ml-auto */}
+      <div className="ml-auto flex items-center gap-2">
         <div
-          className="hidden sm:flex items-center gap-2 h-8 px-3 rounded-lg border bg-[#F8FAFC] min-w-48 transition-all duration-150 focus-within:bg-white"
+          className="hidden sm:flex items-center gap-2 h-8 px-3 rounded-lg border bg-[#F8FAFC] w-52 transition-all duration-150 focus-within:bg-white"
           style={{ borderColor: "#E4E8EE" }}
           onFocusCapture={(e) => { e.currentTarget.style.borderColor = "#5BA7FF"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(91,167,255,0.10)"; }}
           onBlurCapture={(e)  => { e.currentTarget.style.borderColor = "#E4E8EE"; e.currentTarget.style.boxShadow = "none"; }}
@@ -1301,7 +1303,7 @@ function TopBar({ activeMenu, setActiveMenu, searchText, setSearchText, onRefres
         <div className="h-5 w-px bg-[#D8E3F8]" />
         <button
           onClick={onLogout}
-          className="flex h-7 items-center gap-1.5 rounded-lg border border-[#E4E8EE] bg-white px-2.5 text-[11px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 whitespace-nowrap"
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E4E8EE] bg-white px-3 text-[11px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 whitespace-nowrap"
           title="Sign out"
         >
           <LogOut size={12} />

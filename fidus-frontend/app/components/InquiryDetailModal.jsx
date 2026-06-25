@@ -1243,7 +1243,7 @@ function QuotesTab({ inquiry }) {
 /* ─────────────────────────────────────────────
    Main modal
 ───────────────────────────────────────────── */
-export default function InquiryDetailModal({ inquiry, onClose, onBlockClient }) {
+export default function InquiryDetailModal({ inquiry, onClose, onBlockClient, onPricesSeen }) {
   const [activeTab,          setActiveTab]          = useState("details");
   const [draftsFromGenerate, setDraftsFromGenerate] = useState(null);
 
@@ -1260,9 +1260,11 @@ export default function InquiryDetailModal({ inquiry, onClose, onBlockClient }) 
     setActiveTab("drafts");
   };
 
-  // Reset drafts state when switching away from drafts tab so re-opening fetches fresh
+  // Reset drafts state when switching away from drafts tab so re-opening fetches fresh.
+  // Mark vendor prices as seen when user opens the Reply to Client tab.
   const handleTabChange = (tabId) => {
     if (activeTab === "drafts" && tabId !== "drafts") setDraftsFromGenerate(null);
+    if (tabId === "quotes") onPricesSeen?.();
     setActiveTab(tabId);
   };
 

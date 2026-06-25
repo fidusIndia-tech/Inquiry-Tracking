@@ -163,7 +163,8 @@ export default function EmployeeDashboard() {
     setError("");
     if (!silent) setNotice("");
     try {
-      const res  = await fetch("/api/inquiries", { cache: "no-store" });
+      const url  = userId ? `/api/inquiries?userId=${encodeURIComponent(userId)}` : "/api/inquiries";
+      const res  = await fetch(url, { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load assigned inquiries");
 
@@ -240,6 +241,22 @@ export default function EmployeeDashboard() {
     });
   }, []);
 
+  const handlePricesSeen = useCallback(async (uniqueCode) => {
+    if (!uniqueCode || !employeeId) return;
+    setInquiries((current) =>
+      current.map((inq) =>
+        inq.unique_code === uniqueCode ? { ...inq, has_unseen_prices: false } : inq
+      )
+    );
+    try {
+      await fetch("/api/inquiries/prices-seen", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ unique_code: uniqueCode, user_id: Number(employeeId) }),
+      });
+    } catch {}
+  }, [employeeId]);
+
   const rows = useMemo(() => {
     const text = search.trim().toLowerCase();
     const filtered = text
@@ -256,9 +273,10 @@ export default function EmployeeDashboard() {
       const isExpanded = expandedCodes.has(inquiry.unique_code);
       const visible = isExpanded ? items : [items[0]];
       return visible.map((item, index) => ({
-        rowKey:           `${inquiry.unique_code}-${item?.id || index}`,
-        unique_code:      inquiry.unique_code,
-        vendor_price_count: inquiry.vendor_price_count,
+        rowKey:              `${inquiry.unique_code}-${item?.id || index}`,
+        unique_code:         inquiry.unique_code,
+        vendor_price_count:  inquiry.vendor_price_count,
+        has_unseen_prices:   Boolean(inquiry.has_unseen_prices),
         email_date:       inquiry.email_date,
         client_name:      inquiry.client_name  || "-",
         location:         inquiry.location     || "-",
@@ -457,6 +475,7 @@ export default function EmployeeDashboard() {
         <InquiryDetailModal
           inquiry={detailModal}
           onClose={() => setDetailModalCode(null)}
+          onPricesSeen={() => handlePricesSeen(detailModal.unique_code)}
         />
       )}
     </div>
@@ -682,10 +701,12 @@ function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatus
                         <p className="mt-0.5 text-[9px] text-[#5BA7FF] font-medium pl-5">{row.groupSize} items</p>
                       )}
                       {(() => {
-                        const count = Number(row.vendor_price_count) || 0;
-                        if (count === 0) return <p className="mt-0.5 text-[9px] text-slate-400">No vendor price yet</p>;
-                        if (count === 1) return <span className="mt-0.5 inline-block rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">Vendor price arrived</span>;
-                        return <span className="mt-0.5 inline-block rounded-full bg-green-50 border border-green-200 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">More prices arrived</span>;
+                        const count     = Number(row.vendor_price_count) || 0;
+                        const hasUnseen = Boolean(row.has_unseen_prices);
+                        if (count === 0) return <p className="mt-0.5 text-[9px] text-slate-400">No prices yet</p>;
+                        if (!hasUnseen)  return <span className="mt-0.5 inline-block rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-medium text-slate-400">Prices arrived</span>;
+                        if (count === 1) return <span className="mt-0.5 inline-block rounded-full bg-amber-50 border border-amber-300 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">Prices arrived</span>;
+                        return <span className="mt-0.5 inline-block rounded-full bg-green-50 border border-green-300 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">More prices arrived</span>;
                       })()}
                     </>
                   )}

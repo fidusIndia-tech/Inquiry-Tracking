@@ -52,12 +52,25 @@ async function ensureInquiriesSchema() {
       received_at         TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // Per-user read tracking: when a user last viewed vendor prices for each inquiry.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inquiry_price_views (
+      inquiry_unique_code TEXT    NOT NULL,
+      user_id             INTEGER NOT NULL,
+      last_seen_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (inquiry_unique_code, user_id)
+    )
+  `);
   _inquiriesSchemaReady = true;
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureInquiriesSchema();
+
+    const { searchParams } = new URL(request.url);
+    const rawUserId = searchParams.get("userId");
+    const userIdParam = rawUserId ? (parseInt(rawUserId, 10) || null) : null;
 
     const result = await query(`
       SELECT
@@ -96,15 +109,27 @@ export async function GET() {
           ) FILTER (WHERE ii.id IS NOT NULL),
           '[]'::json
         ) AS items,
-        COUNT(vq.id) AS vendor_price_count
+        COUNT(vq.id)         AS vendor_price_count,
+        MAX(vq.received_at)  AS latest_price_received_at,
+        MAX(ipv.last_seen_at) AS last_price_seen_at,
+        CASE
+          WHEN $1::INTEGER IS NOT NULL
+            AND COUNT(vq.id) > 0
+            AND (MAX(ipv.last_seen_at) IS NULL OR MAX(vq.received_at) > MAX(ipv.last_seen_at))
+          THEN true
+          ELSE false
+        END AS has_unseen_prices
       FROM inquiries i
-      LEFT JOIN raw_email_items r ON r.id = i.raw_email_item_id
-      LEFT JOIN inquiry_items ii ON ii.inquiry_id = i.id
-      LEFT JOIN users u ON u.id = i.assigned_to
-      LEFT JOIN vendor_quotes vq ON LOWER(vq.inquiry_unique_code) = LOWER(i.unique_code)
+      LEFT JOIN raw_email_items r  ON r.id = i.raw_email_item_id
+      LEFT JOIN inquiry_items  ii  ON ii.inquiry_id = i.id
+      LEFT JOIN users          u   ON u.id = i.assigned_to
+      LEFT JOIN vendor_quotes  vq  ON LOWER(vq.inquiry_unique_code) = LOWER(i.unique_code)
+      LEFT JOIN inquiry_price_views ipv
+        ON ipv.inquiry_unique_code = i.unique_code
+        AND ($1::INTEGER IS NOT NULL AND ipv.user_id = $1::INTEGER)
       GROUP BY i.id, r.id, u.id
       ORDER BY i.email_date DESC NULLS LAST, i.created_at DESC
-    `);
+    `, [userIdParam]);
 
     return Response.json({ inquiries: result.rows });
   } catch (error) {

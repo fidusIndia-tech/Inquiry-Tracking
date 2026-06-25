@@ -150,11 +150,16 @@ export default function AdminDashboard() {
 
   const unreadRemindersCount = reminders.filter((r) => r.status === "unread").length;
 
+  const inquiriesUrl = () => {
+    const uid = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
+    return uid ? `/api/inquiries?userId=${encodeURIComponent(uid)}` : "/api/inquiries";
+  };
+
   async function loadInquiries() {
     try {
       setIsLoadingInquiries(true);
       setInquiriesError("");
-      const response = await fetch("/api/inquiries");
+      const response = await fetch(inquiriesUrl());
       const data     = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to load inquiries");
       setInquiries(data.inquiries || []);
@@ -164,6 +169,24 @@ export default function AdminDashboard() {
       setIsLoadingInquiries(false);
     }
   }
+
+  const handlePricesSeen = useCallback(async (uniqueCode) => {
+    if (!uniqueCode) return;
+    const userId = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
+    if (!userId) return;
+    setInquiries((current) =>
+      current.map((inq) =>
+        inq.unique_code === uniqueCode ? { ...inq, has_unseen_prices: false } : inq
+      )
+    );
+    try {
+      await fetch("/api/inquiries/prices-seen", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ unique_code: uniqueCode, user_id: Number(userId) }),
+      });
+    } catch {} // silent — badge will self-correct on next poll
+  }, []);
 
   async function loadUsers() {
     try {
@@ -185,7 +208,7 @@ export default function AdminDashboard() {
       try {
         setIsLoadingInquiries(true);
         setInquiriesError("");
-        const response = await fetch("/api/inquiries");
+        const response = await fetch(inquiriesUrl());
         const data     = await response.json();
         if (!response.ok) throw new Error(data.error || "Failed to load inquiries");
         if (isMounted) { lastFetchAt = Date.now(); setInquiries(data.inquiries || []); }
@@ -200,7 +223,7 @@ export default function AdminDashboard() {
       if (Date.now() - lastFetchAt < 2000) return; // debounce: skip if fetched <2s ago
       lastFetchAt = Date.now();
       try {
-        const response = await fetch("/api/inquiries");
+        const response = await fetch(inquiriesUrl());
         const data     = await response.json();
         if (!response.ok || !isMounted) return;
         setInquiries(data.inquiries || []);
@@ -636,6 +659,7 @@ export default function AdminDashboard() {
           inquiry={detailModal}
           onClose={() => setDetailModalCode(null)}
           onBlockClient={(senderEmail, clientName) => handleBlockClient(senderEmail, clientName)}
+          onPricesSeen={() => handlePricesSeen(detailModal.unique_code)}
         />
       )}
 
@@ -1635,19 +1659,26 @@ function InquiryTable({
   );
 }
 
-function VendorPriceBadge({ count }) {
+function VendorPriceBadge({ count, hasUnseen }) {
   if (count === 0) {
-    return <p className="mt-0.5 text-[9px] text-slate-400">No vendor price yet</p>;
+    return <p className="mt-0.5 text-[9px] text-slate-400">No prices yet</p>;
+  }
+  if (!hasUnseen) {
+    return (
+      <span className="mt-0.5 inline-block rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-medium text-slate-400">
+        Prices arrived
+      </span>
+    );
   }
   if (count === 1) {
     return (
-      <span className="mt-0.5 inline-block rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
-        Vendor price arrived
+      <span className="mt-0.5 inline-block rounded-full bg-amber-50 border border-amber-300 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
+        Prices arrived
       </span>
     );
   }
   return (
-    <span className="mt-0.5 inline-block rounded-full bg-green-50 border border-green-200 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">
+    <span className="mt-0.5 inline-block rounded-full bg-green-50 border border-green-300 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">
       More prices arrived
     </span>
   );
@@ -1756,7 +1787,7 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, isExpanded, i
             {groupSize > 1 && (
               <p className="mt-0.5 text-[9px] text-[#5BA7FF] font-medium pl-5">{groupSize} items</p>
             )}
-            <VendorPriceBadge count={Number(inquiry.vendor_price_count) || 0} />
+            <VendorPriceBadge count={Number(inquiry.vendor_price_count) || 0} hasUnseen={Boolean(inquiry.has_unseen_prices)} />
           </>
         )}
       </td>

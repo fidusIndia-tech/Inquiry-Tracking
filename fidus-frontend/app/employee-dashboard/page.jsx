@@ -583,7 +583,7 @@ function EmpRemarkCell({ uniqueCode, initialRemark }) {
 }
 
 const EMP_COLS = [
-  { label: "Code",        defaultW: 110 },
+  { label: "Code",        defaultW: 145 },
   { label: "Client",      defaultW: 120 },
   { label: "Location",    defaultW: 100 },
   { label: "Brand",       defaultW: 90  },
@@ -716,7 +716,7 @@ function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatus
                           </button>
                         )}
                         <p
-                          className="truncate font-semibold text-[#1D6FD8] text-[11px] cursor-pointer"
+                          className="whitespace-nowrap font-semibold text-[#1D6FD8] text-[11px] cursor-pointer"
                           onClick={() => onDetailOpen(row.unique_code)}
                         >
                           {row.unique_code}

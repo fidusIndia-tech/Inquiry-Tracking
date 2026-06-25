@@ -1377,7 +1377,7 @@ const ADMIN_COLS = [
   { label: "Select",        defaultW: 34  },
   { label: "Sr. No.",       defaultW: 52  },
   { label: "Received",      defaultW: 150 },
-  { label: "F Unique Code", defaultW: 110 },
+  { label: "F Unique Code", defaultW: 145 },
   { label: "Client Name",   defaultW: 120 },
   { label: "Location",      defaultW: 100 },
   { label: "User Name",     defaultW: 110 },
@@ -1940,7 +1940,7 @@ const InquiryRow = memo(function InquiryRow({ srNo, inquiry, item, isFirstItem, 
                   {isExpanded ? "−" : "+"}
                 </button>
               )}
-              <p className="truncate font-semibold text-slate-900 text-[11px]">{inquiry.unique_code}</p>
+              <p className="whitespace-nowrap font-semibold text-slate-900 text-[11px]">{inquiry.unique_code}</p>
             </div>
             {groupSize > 1 && (
               <p className="mt-0.5 text-[9px] text-[#5BA7FF] font-medium pl-5">{groupSize} items</p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Award, Ban, Bot, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCopy, FileText, Globe,
   History, Mail, MapPin, Phone, RefreshCw, Send, Store, Tag, Trash2, UserPlus, X,
@@ -228,7 +228,10 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
   // The backend matches brands case-insensitively (SQL ILIKE); this filter
   // must too, or it silently hides rows the API correctly returned.
   const normBrand = (b) => (b || "").trim().toLowerCase();
-  const brands = [...new Set((inquiry.items || []).map((i) => i.brand).filter(Boolean))];
+  const brands = useMemo(
+    () => [...new Set((inquiry.items || []).map((i) => i.brand).filter(Boolean))],
+    [inquiry.items]
+  );
   const [selectedBrands, setSelectedBrands] = useState(() => new Set(brands.map(normBrand)));
 
   useEffect(() => {
@@ -707,7 +710,7 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
 /* ─────────────────────────────────────────────
    Drafts Tab
 ───────────────────────────────────────────── */
-function DraftCard({ draft, onChange }) {
+const DraftCard = memo(function DraftCard({ draft, onChange }) {
   const [subject,  setSubject]  = useState(draft.subject || "");
   const [body,     setBody]     = useState(draft.body    || "");
   const [saving,   setSaving]   = useState(false);
@@ -896,7 +899,7 @@ function DraftCard({ draft, onChange }) {
       )}
     </div>
   );
-}
+});
 
 function DraftsTab({ inquiry, initialDrafts }) {
   const [drafts,      setDrafts]      = useState(initialDrafts);
@@ -1091,31 +1094,36 @@ function QuotesTab({ inquiry }) {
     );
   }
 
-  const byPart = {};
-  for (const q of quotes) {
-    const key = q.part_number || "—";
-    (byPart[key] = byPart[key] || []).push(q);
-  }
-  const partNumbers = Object.keys(byPart);
+  const { byPart, partNumbers } = useMemo(() => {
+    const map = {};
+    for (const q of quotes) {
+      const key = q.part_number || "—";
+      (map[key] = map[key] || []).push(q);
+    }
+    // Sort each part's quotes cheapest-first once here instead of on every render.
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => {
+        const pa = Number(a.unit_price); const pb = Number(b.unit_price);
+        const va = isNaN(pa) || pa <= 0; const vb = isNaN(pb) || pb <= 0;
+        if (va && vb) return 0; if (va) return 1; if (vb) return -1;
+        return pa - pb;
+      });
+    }
+    return { byPart: map, partNumbers: Object.keys(map) };
+  }, [quotes]);
 
-  const itemQty = (partNumber) => {
-    const item = (inquiry.items || []).find((i) => (i.partNumber || "") === partNumber);
-    return item?.quantity ?? null;
-  };
-  const itemUom = (partNumber) => {
-    const item = (inquiry.items || []).find((i) => (i.partNumber || "") === partNumber);
-    return item?.uom || null;
-  };
-  const itemDescription = (partNumber) => {
-    const item = (inquiry.items || []).find((i) => (i.partNumber || "") === partNumber);
-    return item?.itemNotes || null;
-  };
-  const itemBrand = (partNumber) => {
-    const item = (inquiry.items || []).find((i) => (i.partNumber || "") === partNumber);
-    return item?.brand || null;
-  };
+  // Single lookup map — replaces 4 separate linear scans per rendered part row.
+  const itemByPart = useMemo(() => {
+    const m = {};
+    for (const i of (inquiry.items || [])) m[i.partNumber || ""] = i;
+    return m;
+  }, [inquiry.items]);
+  const itemQty         = (pn) => itemByPart[pn]?.quantity ?? null;
+  const itemUom         = (pn) => itemByPart[pn]?.uom || null;
+  const itemDescription = (pn) => itemByPart[pn]?.itemNotes || null;
+  const itemBrand       = (pn) => itemByPart[pn]?.brand || null;
 
-  const readyLines = partNumbers
+  const readyLines = useMemo(() => partNumbers
     .filter((pn) => selected[pn] && sellingPrices[pn])
     .map((pn) => {
       const q = byPart[pn].find((x) => String(x.id) === String(selected[pn]));
@@ -1129,7 +1137,7 @@ function QuotesTab({ inquiry }) {
         selling_price: sellingPrices[pn],
         lead_time: leadTimes[pn] || q?.lead_time || "",
       };
-    });
+    }), [partNumbers, selected, sellingPrices, leadTimes, byPart, itemByPart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sendQuote = async () => {
     setSending(true); setSendError("");
@@ -1153,12 +1161,8 @@ function QuotesTab({ inquiry }) {
     <div className="flex flex-col" style={{ minHeight: 0 }}>
       <div className="flex-1 overflow-y-auto p-5 space-y-5">
         {partNumbers.map((pn) => {
-          // Cheapest valid price first — nulls/NaN sink to the bottom.
-          const rows = [...byPart[pn]].sort((a, b) => {
-            const pa = Number(a.unit_price);
-            const pb = Number(b.unit_price);
-            return (Number.isFinite(pa) ? pa : Infinity) - (Number.isFinite(pb) ? pb : Infinity);
-          });
+          // Already sorted cheapest-first by the byPart useMemo above.
+          const rows = byPart[pn];
           const bestId = rows.find((q) => Number.isFinite(Number(q.unit_price)))?.id;
           const qty = itemQty(pn);
           return (

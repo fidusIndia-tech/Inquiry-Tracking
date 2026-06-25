@@ -142,6 +142,7 @@ export default function EmployeeDashboard() {
   const [inquiries,             setInquiries]             = useState([]);
   const [statusDrafts,          setStatusDrafts]          = useState({});
   const [search,                setSearch]                = useState("");
+  const [debouncedSearch,       setDebouncedSearch]       = useState("");
   const [loading,               setLoading]               = useState(true);
   const [saving,                setSaving]                = useState(false);
   const [error,                 setError]                 = useState("");
@@ -219,6 +220,11 @@ export default function EmployeeDashboard() {
   }, []);
 
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
     if (!employeeId) return undefined;
     const es    = new EventSource("/api/inquiries/stream");
     es.onmessage = () => loadInquiries(employeeId, { silent: true });
@@ -277,7 +283,7 @@ export default function EmployeeDashboard() {
   }, [employeeId]);
 
   const rows = useMemo(() => {
-    const text = search.trim().toLowerCase();
+    const text = debouncedSearch.trim().toLowerCase();
     const filtered = text
       ? inquiries.filter((inq) => {
           const items = inq.items?.length ? inq.items : [{}];
@@ -314,7 +320,7 @@ export default function EmployeeDashboard() {
         item_notes:       item?.itemNotes       || "-",
       }));
     });
-  }, [inquiries, search, expandedCodes]);
+  }, [inquiries, debouncedSearch, expandedCodes]);
 
   const changedStatuses = useMemo(
     () => inquiries.filter((item) => statusDrafts[item.unique_code] && statusDrafts[item.unique_code] !== item.status),

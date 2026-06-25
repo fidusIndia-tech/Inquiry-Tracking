@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import InquiryDetailModal from "@/app/components/InquiryDetailModal";
 import Image from "next/image";
@@ -66,6 +66,7 @@ export default function AdminDashboard() {
   const [users,              setUsers]              = useState([]);
   const [usersError,         setUsersError]         = useState("");
   const [searchText,         setSearchText]         = useState("");
+  const [debouncedSearch,    setDebouncedSearch]    = useState("");
   const [statusFilter,       setStatusFilter]       = useState("all");
   const [assignmentFilter,   setAssignmentFilter]   = useState("all");
   const [executiveFilter,    setExecutiveFilter]    = useState("all");
@@ -91,6 +92,11 @@ export default function AdminDashboard() {
   const [priceFilter,        setPriceFilter]        = useState("all");
   const prevCountRef      = useRef(0);
   const knownPriceCountsRef = useRef(null); // null = not yet initialised, skip first-load notify
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchText), 250);
+    return () => clearTimeout(t);
+  }, [searchText]);
 
   const fetchBlockedClients = useCallback(async () => {
     try {
@@ -323,16 +329,20 @@ export default function AdminDashboard() {
   }, [inquiries]);
 
   const filteredInquiries = useMemo(() => {
-    const tokens = searchText.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const tokens = debouncedSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const fromMs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
     const toMs   = dateTo   ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
+    // Use a single timestamp captured at filter-run time rather than the
+    // `now` state variable, so the 30-second clock tick never invalidates
+    // this memo and re-filters the entire list unnecessarily.
+    const filterNow = Date.now();
 
     return inquiries.filter((inquiry) => {
       if (statusFilter !== "all" && inquiry.status !== statusFilter) return false;
 
       if (assignmentFilter !== "all") {
         const assignedAtMs = inquiry.assigned_at ? new Date(inquiry.assigned_at).getTime() : null;
-        const ageHours = assignedAtMs ? (now - assignedAtMs) / 36e5 : null;
+        const ageHours = assignedAtMs ? (filterNow - assignedAtMs) / 36e5 : null;
         if (assignmentFilter === "over24h" && !(ageHours !== null && ageHours > 24)) return false;
         if (assignmentFilter === "over48h" && !(ageHours !== null && ageHours > 48)) return false;
       }
@@ -380,7 +390,7 @@ export default function AdminDashboard() {
 
       return true;
     });
-  }, [inquiries, searchText, statusFilter, assignmentFilter, executiveFilter, dateFrom, dateTo, priceFilter, now]);
+  }, [inquiries, debouncedSearch, statusFilter, assignmentFilter, executiveFilter, dateFrom, dateTo, priceFilter]);
 
   const counts = useMemo(() => ({
     total:    inquiries.length,
@@ -399,6 +409,7 @@ export default function AdminDashboard() {
 
   const handleClearFilters = () => {
     setSearchText("");
+    setDebouncedSearch("");
     setStatusFilter("all");
     setAssignmentFilter("all");
     setExecutiveFilter("all");
@@ -1531,15 +1542,15 @@ function InquiryTable({
   }, [dateOpen]);
 
   const [expandedCodes, setExpandedCodes] = useState(new Set());
-  const toggleExpand = (code) => {
+  const toggleExpand = useCallback((code) => {
     setExpandedCodes((prev) => {
       const next = new Set(prev);
       if (next.has(code)) next.delete(code); else next.add(code);
       return next;
     });
-  };
+  }, []);
 
-  const rows = inquiries.flatMap((inquiry) => {
+  const rows = useMemo(() => inquiries.flatMap((inquiry) => {
     const items = inquiry.items?.length ? inquiry.items : [{}];
     const isExpanded = expandedCodes.has(inquiry.unique_code);
     const visible = isExpanded ? items : [items[0]];
@@ -1551,10 +1562,10 @@ function InquiryTable({
       isExpanded,
       isChildRow:  isExpanded && idx > 0,
     }));
-  });
+  }), [inquiries, expandedCodes]);
 
   return (
-    <section className="rounded-2xl" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
+    <section className="rounded-2xl" style={{ background: "#ffffff", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
       <div className="flex flex-col gap-3 border-b border-[#D8E3F8] px-5 py-4 lg:flex-row lg:items-center lg:justify-between rounded-t-2xl overflow-hidden" style={{ background: "linear-gradient(90deg,#F5F8FF 0%,#F0F6FF 100%)" }}>
         <div>
           <h3 className="text-[15px] font-semibold text-slate-900">Inquiries</h3>
@@ -1857,7 +1868,7 @@ function LoadingRows() {
   ));
 }
 
-function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, isExpanded, isChildRow, selectionMode, onToggleExpand, now, employees, selected, onToggleSelect, onAssignChange, onStatusChange, onDelete, onEdit, onSubjectOpen, onDetailOpen, onAssignToMe, onRemarkSave }) {
+const InquiryRow = memo(function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, isExpanded, isChildRow, selectionMode, onToggleExpand, now, employees, selected, onToggleSelect, onAssignChange, onStatusChange, onDelete, onEdit, onSubjectOpen, onDetailOpen, onAssignToMe, onRemarkSave }) {
   const status = inquiry.status || "new";
   const part   = item.partNumber || "—";
   const brand  = item.brand      || "-";
@@ -2127,7 +2138,23 @@ function InquiryRow({ srNo, inquiry, item, isFirstItem, groupSize, isExpanded, i
       </td>
     </tr>
   );
-}
+// Custom comparator: skip re-render unless the row's DATA changed.
+// Function props (handlers) are intentionally excluded — they close over
+// stable values and re-creating them with new references does not change
+// their behaviour. `now` is excluded so the 30-second clock tick does not
+// force every visible row to re-render.
+}, (prev, next) =>
+  prev.srNo          === next.srNo          &&
+  prev.inquiry       === next.inquiry       &&
+  prev.item          === next.item          &&
+  prev.isFirstItem   === next.isFirstItem   &&
+  prev.groupSize     === next.groupSize     &&
+  prev.isExpanded    === next.isExpanded    &&
+  prev.isChildRow    === next.isChildRow    &&
+  prev.selectionMode === next.selectionMode &&
+  prev.selected      === next.selected      &&
+  prev.employees     === next.employees
+);
 
 function StatusBadge({ status }) {
   return (

@@ -20,10 +20,11 @@ Public API:
 
 import re
 from datetime import datetime, timezone
-from .searcher import search_vendors
-from .scraper  import fetch_vendor_page, fetch_contact_page, extract_contacts
-from .parser   import parse_vendor_with_llm
-from .client   import post_vendor, get_brand_status, link_brand_vendors_to_inquiry
+from .searcher     import search_vendors
+from .scraper      import fetch_vendor_page, fetch_contact_page, extract_contacts
+from .parser       import parse_vendor_with_llm
+from .client       import post_vendor, get_brand_status, link_brand_vendors_to_inquiry
+from .site_filter  import validate_site
 from config import get_settings
 from logging_setup import get_logger
 
@@ -187,6 +188,15 @@ def discover_and_store_vendors(
         # ── Pre-filter 3: drop job postings, institutions, noise ──────────────
         if _is_job_or_noise(title, snippet, url):
             logger.info("Noise result skipped | %s | title=%s", domain, title[:60])
+            continue
+
+        # ── Pre-filter 4: government / Hindi / fund-NGO / spam rejection ──────
+        accepted, reject_reason = validate_site(url, domain, title, snippet)
+        if not accepted:
+            logger.info(
+                "Dropped site: %s | %s | title=%.60s",
+                domain, reject_reason, title,
+            )
             continue
 
         # ── Step 1: regex on snippet (free, no HTTP call) ────────────────────

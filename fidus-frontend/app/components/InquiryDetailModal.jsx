@@ -1049,6 +1049,34 @@ function formatQuotePrice(value, currency) {
   return `${symbol}${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
+const INR = (v) =>
+  "₹" + Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const GST_OPTIONS = [
+  { label: "No GST / 0%",                    type: "NONE",      rate: 0  },
+  { label: "CGST + SGST @ 18%",              type: "CGST_SGST", rate: 18 },
+  { label: "IGST @ 18%",                     type: "IGST",      rate: 18 },
+  { label: "CGST + SGST @ 12%",              type: "CGST_SGST", rate: 12 },
+  { label: "IGST @ 12%",                     type: "IGST",      rate: 12 },
+  { label: "CGST + SGST @ 5%",               type: "CGST_SGST", rate: 5  },
+  { label: "IGST @ 5%",                      type: "IGST",      rate: 5  },
+  { label: "CGST + SGST @ 28%",              type: "CGST_SGST", rate: 28 },
+  { label: "IGST @ 28%",                     type: "IGST",      rate: 28 },
+  { label: "Export / LUT / Zero Rated @ 0%", type: "EXPORT",    rate: 0  },
+];
+
+function calcGst(readyLines, gstOpt) {
+  const taxable = readyLines.reduce(
+    (s, l) => s + (parseFloat(String(l.selling_price).replace(/[^0-9.]/g, "")) || 0) * (Number(l.quantity) || 1),
+    0
+  );
+  let cgst = 0, sgst = 0, igst = 0;
+  if (gstOpt.type === "CGST_SGST") { cgst = sgst = taxable * (gstOpt.rate / 2) / 100; }
+  if (gstOpt.type === "IGST")      { igst = taxable * gstOpt.rate / 100; }
+  const totalGst = cgst + sgst + igst;
+  return { taxable, cgst, sgst, igst, totalGst, grandTotal: taxable + totalGst };
+}
+
 function QuotesTab({ inquiry }) {
   const [quotes,        setQuotes]        = useState([]);
   const [loading,       setLoading]       = useState(true);
@@ -1056,6 +1084,7 @@ function QuotesTab({ inquiry }) {
   const [sellingPrices, setSellingPrices] = useState({}); // part_number -> string
   const [leadTimes,     setLeadTimes]     = useState({}); // part_number -> string
   const [salesperson,   setSalesperson]   = useState("");
+  const [gstOption,     setGstOption]     = useState(GST_OPTIONS[1]); // default: CGST+SGST@18%
   const [expanded,      setExpanded]      = useState({}); // quote id -> bool
   const [sending,       setSending]       = useState(false);
   const [sendError,     setSendError]     = useState("");
@@ -1144,7 +1173,7 @@ function QuotesTab({ inquiry }) {
       const res = await fetch("/api/quotes/send-to-client", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ unique_code: inquiry.unique_code, lines: readyLines, salesperson }),
+        body:    JSON.stringify({ unique_code: inquiry.unique_code, lines: readyLines, salesperson, gstOption }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send quote");
@@ -1286,9 +1315,11 @@ function QuotesTab({ inquiry }) {
       </div>
 
       {/* Sticky bottom action bar */}
-      <div className="shrink-0 border-t border-[#EEF2F6] bg-white px-5 py-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-4">
-          {!sentOk && (
+      <div className="shrink-0 border-t border-[#EEF2F6] bg-white px-5 py-3">
+        {/* Row 1: Salesperson + GST selector + live totals */}
+        {!sentOk && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2.5">
+            {/* Salesperson */}
             <div className="flex items-center gap-2">
               <label className="text-[11px] font-semibold text-slate-500">Salesperson</label>
               <input
@@ -1299,7 +1330,51 @@ function QuotesTab({ inquiry }) {
                 className="w-32 rounded-lg border border-[#E4E8EE] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
               />
             </div>
-          )}
+
+            {/* GST selector */}
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] font-semibold text-slate-500">GST</label>
+              <select
+                value={GST_OPTIONS.indexOf(gstOption)}
+                onChange={(e) => setGstOption(GST_OPTIONS[Number(e.target.value)])}
+                className="h-7 rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10 cursor-pointer"
+              >
+                {GST_OPTIONS.map((o, i) => (
+                  <option key={i} value={i}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Live GST preview — only when at least one part is priced */}
+            {readyLines.length > 0 && (() => {
+              const g = calcGst(readyLines, gstOption);
+              return (
+                <div className="flex items-center gap-3 rounded-lg border border-[#FDE68A] bg-[#FFFDF5] px-3 py-1.5">
+                  {gstOption.type === "CGST_SGST" && (
+                    <span className="text-[11px] text-slate-500">
+                      CGST {gstOption.rate / 2}%: <span className="font-semibold text-slate-700">{INR(g.cgst)}</span>
+                      <span className="mx-1.5 text-slate-300">|</span>
+                      SGST {gstOption.rate / 2}%: <span className="font-semibold text-slate-700">{INR(g.sgst)}</span>
+                    </span>
+                  )}
+                  {gstOption.type === "IGST" && (
+                    <span className="text-[11px] text-slate-500">
+                      IGST {gstOption.rate}%: <span className="font-semibold text-slate-700">{INR(g.igst)}</span>
+                    </span>
+                  )}
+                  {(gstOption.type === "NONE" || gstOption.type === "EXPORT") && (
+                    <span className="text-[11px] text-slate-500">GST: <span className="font-semibold text-slate-700">₹0.00</span></span>
+                  )}
+                  <span className="text-[11px] text-slate-300">|</span>
+                  <span className="text-[12px] font-bold text-[#B45309]">Total: {INR(g.grandTotal)}</span>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Row 2: Status text + send button */}
+        <div className="flex items-center justify-between gap-3">
           <div>
             {sentOk ? (
               <p className="flex items-center gap-1.5 text-[12px] font-semibold text-[#059669]">
@@ -1314,18 +1389,18 @@ function QuotesTab({ inquiry }) {
             )}
             {sendError && <p className="text-[11px] text-rose-500 mt-0.5">{sendError}</p>}
           </div>
+          {!sentOk && (
+            <button
+              onClick={sendQuote}
+              disabled={readyLines.length === 0 || sending || !salesperson.trim()}
+              title={!salesperson.trim() ? "Enter the salesperson name first" : ""}
+              className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
+            >
+              {sending ? <><RefreshCw size={13} className="animate-spin" />Sending…</> : <><Send size={13} />Send Quote to Client</>}
+            </button>
+          )}
         </div>
-        {!sentOk && (
-          <button
-            onClick={sendQuote}
-            disabled={readyLines.length === 0 || sending || !salesperson.trim()}
-            title={!salesperson.trim() ? "Enter the salesperson name first" : ""}
-            className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
-          >
-            {sending ? <><RefreshCw size={13} className="animate-spin" />Sending…</> : <><Send size={13} />Send Quote to Client</>}
-          </button>
-        )}
       </div>
     </div>
   );

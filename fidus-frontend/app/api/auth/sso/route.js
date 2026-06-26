@@ -12,10 +12,24 @@ function b64urlToBuffer(str) {
 }
 
 // Verify a portal-issued HS256 JWT without pulling in a JWT dependency.
+//
+// Diagnostic logging: the POST handler below returns the same generic
+// "Invalid or expired SSO token" message for every failure mode here, so
+// when that error shows up in the field there's no way to tell from the
+// user's screenshot whether it was a real clock-based expiry, a bad/missing
+// SSO_SECRET, or a malformed token. Logging the specific reason server-side
+// (never sent to the client) lets the next occurrence be diagnosed from logs
+// instead of guessed at.
 function verifySsoToken(token) {
-  if (!SSO_SECRET) throw new Error("SSO_SECRET is not configured");
+  if (!SSO_SECRET) {
+    console.error("SSO verify failed: SSO_SECRET is not configured on this service");
+    throw new Error("SSO_SECRET is not configured");
+  }
   const parts = String(token || "").split(".");
-  if (parts.length !== 3) throw new Error("Malformed token");
+  if (parts.length !== 3) {
+    console.error("SSO verify failed: malformed token (expected 3 dot-separated parts, got %d)", parts.length);
+    throw new Error("Malformed token");
+  }
   const [header, payload, signature] = parts;
 
   const expected = crypto
@@ -24,12 +38,24 @@ function verifySsoToken(token) {
     .digest();
   const actual = b64urlToBuffer(signature);
   if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
+    console.error(
+      "SSO verify failed: bad signature — SSO_SECRET likely differs between this app and the portal"
+    );
     throw new Error("Bad signature");
   }
 
   const claims = JSON.parse(b64urlToBuffer(payload).toString("utf8"));
-  if (claims.type !== "sso") throw new Error("Not an SSO token");
-  if (claims.exp && Date.now() / 1000 > claims.exp) throw new Error("Token expired");
+  if (claims.type !== "sso") {
+    console.error("SSO verify failed: token type is '%s', not 'sso'", claims.type);
+    throw new Error("Not an SSO token");
+  }
+  if (claims.exp && Date.now() / 1000 > claims.exp) {
+    console.error(
+      "SSO verify failed: token expired %ds ago (exp=%s, now=%s, email=%s)",
+      Math.round(Date.now() / 1000 - claims.exp), claims.exp, Math.round(Date.now() / 1000), claims.email || "?"
+    );
+    throw new Error("Token expired");
+  }
   return claims;
 }
 

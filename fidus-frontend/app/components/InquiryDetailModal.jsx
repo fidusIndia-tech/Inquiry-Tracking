@@ -1065,42 +1065,18 @@ function QuotesTab({ inquiry }) {
     setLoading(true);
     fetch(`/api/quotes?unique_code=${encodeURIComponent(inquiry.unique_code)}`)
       .then((r) => r.json())
-      .then((d) => setQuotes(d.quotes || []))
+      .then((d) => setQuotes(Array.isArray(d.quotes) ? d.quotes : []))
       .catch(() => setQuotes([]))
       .finally(() => setLoading(false));
   }, [inquiry.unique_code]);
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 py-16">
-        <RefreshCw size={20} className="animate-spin text-[#4451E8]" />
-        <p className="text-[12px] text-slate-400">Loading vendor quotes…</p>
-      </div>
-    );
-  }
-
-  if (quotes.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 py-16 px-6">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl"
-             style={{ background: "linear-gradient(135deg,#EFFAF6,#A7F3D0)" }}>
-          <Tag size={20} className="text-[#059669]" />
-        </div>
-        <p className="text-[13px] font-semibold text-slate-700">No vendor quotes received yet</p>
-        <p className="text-[11px] text-slate-400 text-center max-w-xs">
-          Once a vendor replies with pricing to a sent RFQ draft, their quote will appear here automatically.
-        </p>
-      </div>
-    );
-  }
-
+  // All useMemo hooks must be declared before any early return (Rules of Hooks).
   const { byPart, partNumbers } = useMemo(() => {
     const map = {};
     for (const q of quotes) {
       const key = q.part_number || "—";
       (map[key] = map[key] || []).push(q);
     }
-    // Sort each part's quotes cheapest-first once here instead of on every render.
     for (const key of Object.keys(map)) {
       map[key].sort((a, b) => {
         const pa = Number(a.unit_price); const pb = Number(b.unit_price);
@@ -1112,7 +1088,6 @@ function QuotesTab({ inquiry }) {
     return { byPart: map, partNumbers: Object.keys(map) };
   }, [quotes]);
 
-  // Single lookup map — replaces 4 separate linear scans per rendered part row.
   const itemByPart = useMemo(() => {
     const m = {};
     for (const i of (inquiry.items || [])) m[i.partNumber || ""] = i;
@@ -1138,6 +1113,30 @@ function QuotesTab({ inquiry }) {
         lead_time: leadTimes[pn] || q?.lead_time || "",
       };
     }), [partNumbers, selected, sellingPrices, leadTimes, byPart, itemByPart]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16">
+        <RefreshCw size={20} className="animate-spin text-[#4451E8]" />
+        <p className="text-[12px] text-slate-400">Loading vendor quotes…</p>
+      </div>
+    );
+  }
+
+  if (quotes.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16 px-6">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl"
+             style={{ background: "linear-gradient(135deg,#EFFAF6,#A7F3D0)" }}>
+          <Tag size={20} className="text-[#059669]" />
+        </div>
+        <p className="text-[13px] font-semibold text-slate-700">No vendor quotes received yet</p>
+        <p className="text-[11px] text-slate-400 text-center max-w-xs">
+          Once a vendor replies with pricing to a sent RFQ draft, their quote will appear here automatically.
+        </p>
+      </div>
+    );
+  }
 
   const sendQuote = async () => {
     setSending(true); setSendError("");

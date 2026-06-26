@@ -106,36 +106,48 @@ export async function GET(request) {
         i.created_at,
         r.message_id,
         r.thread_id,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'id', ii.id,
-              'brand', ii.brand,
-              'brandSource', ii.brand_source,
-              'partNumber', ii.part_number,
-              'quantity', ii.quantity,
-              'uom', ii.uom,
-              'vendor', ii.vendor,
-              'itemNotes', ii.item_notes
-            )
-          ) FILTER (WHERE ii.id IS NOT NULL),
-          '[]'::json
-        ) AS items,
-        COUNT(vq.id)         AS vendor_price_count,
-        MAX(vq.received_at)  AS latest_price_received_at,
-        MAX(ipv.last_seen_at) AS last_price_seen_at,
+        COALESCE(items_agg.items, '[]'::json)       AS items,
+        COALESCE(vq_agg.vendor_price_count, 0)       AS vendor_price_count,
+        vq_agg.latest_price_received_at,
+        ipv.last_seen_at AS last_price_seen_at,
         CASE
           WHEN $1::INTEGER IS NOT NULL
-            AND COUNT(vq.id) > 0
-            AND (MAX(ipv.last_seen_at) IS NULL OR MAX(vq.received_at) > MAX(ipv.last_seen_at))
+            AND COALESCE(vq_agg.vendor_price_count, 0) > 0
+            AND (ipv.last_seen_at IS NULL OR vq_agg.latest_price_received_at > ipv.last_seen_at)
           THEN true
           ELSE false
         END AS has_unseen_prices
       FROM inquiries i
-      LEFT JOIN raw_email_items r  ON r.id = i.raw_email_item_id
-      LEFT JOIN inquiry_items  ii  ON ii.inquiry_id = i.id
-      LEFT JOIN users          u   ON u.id = i.assigned_to
-      LEFT JOIN vendor_quotes  vq  ON LOWER(vq.inquiry_unique_code) = LOWER(i.unique_code)
+      LEFT JOIN raw_email_items r ON r.id = i.raw_email_item_id
+      LEFT JOIN users          u  ON u.id = i.assigned_to
+      -- Pre-aggregated in its own subquery — joining inquiry_items and
+      -- vendor_quotes directly in one query (each a separate one-to-many
+      -- relation off the same inquiry) produces a Cartesian product before
+      -- GROUP BY collapses it, so json_agg(items) silently duplicates every
+      -- item once per vendor quote as soon as ANY prices arrive. Isolating
+      -- each aggregation in its own LATERAL subquery means neither one can
+      -- fan out the other.
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+          json_build_object(
+            'id', ii.id,
+            'brand', ii.brand,
+            'brandSource', ii.brand_source,
+            'partNumber', ii.part_number,
+            'quantity', ii.quantity,
+            'uom', ii.uom,
+            'vendor', ii.vendor,
+            'itemNotes', ii.item_notes
+          )
+        ) AS items
+        FROM inquiry_items ii
+        WHERE ii.inquiry_id = i.id
+      ) items_agg ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) AS vendor_price_count, MAX(received_at) AS latest_price_received_at
+        FROM vendor_quotes vq
+        WHERE LOWER(vq.inquiry_unique_code) = LOWER(i.unique_code)
+      ) vq_agg ON true
       LEFT JOIN inquiry_price_views ipv
         ON ipv.inquiry_unique_code = i.unique_code
         AND ($1::INTEGER IS NOT NULL AND ipv.user_id = $1::INTEGER)
@@ -143,7 +155,6 @@ export async function GET(request) {
         SELECT 1 FROM blocked_clients bc
         WHERE LOWER(TRIM(bc.sender_email)) = LOWER(TRIM(i.sender_email))
       )
-      GROUP BY i.id, r.id, u.id
       ORDER BY i.email_date DESC NULLS LAST, i.created_at DESC
     `, [userIdParam]);
 

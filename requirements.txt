@@ -26,9 +26,9 @@ cryptography>=42.0.0
 # LLM
 openai>=1.30.0
 
-# Vendor Discovery
-google-search-results>=2.4.2
- 
+# Vendor Discovery — calls SearchApi.io directly over HTTP (urllib, stdlib),
+# no SDK dependency needed.
+
 # Attachment parsing
 pdfplumber>=0.11.0
 openpyxl>=3.1.0

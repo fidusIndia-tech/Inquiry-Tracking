@@ -35,7 +35,7 @@ celery_app.conf.update(
         "workers.tasks.process_email_chunk":    {"queue": "emails"},
         "workers.tasks.poll_inbox":             {"queue": "emails"},
         "workers.tasks.poll_all_users":         {"queue": "emails"},
-        # Vendor discovery — slow, network-bound (SerpAPI + scraping).
+        # Vendor discovery — slow, network-bound (SearchApi.io + scraping).
         "workers.tasks.discover_vendors_task":  {"queue": "vendors"},
         # Vendor reply pipeline — single dedicated mailbox.
         "workers.tasks.poll_vendor_replies":    {"queue": "vendor_replies"},

@@ -1,7 +1,8 @@
 """
 vendor_discovery/searcher.py
 ----------------------------
-Call SerpAPI to find authorized dealer/distributor URLs for a given brand.
+Call SearchApi.io (a Google-search-results API, same organic_results JSON
+shape as SerpAPI) to find authorized dealer/distributor URLs for a brand.
 
 Strategy: 8 queries total — 5 India-targeted + 3 global — written like a
 procurement professional hunting for official brand-authorized dealers.
@@ -12,12 +13,46 @@ Target: 8 queries × 20 results = up to 160 raw URLs → ~60-80 unique domains
 after deduplication → enough candidates to find 10+ authorized dealers.
 """
 
+import json
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
 from config import get_settings
 from logging_setup import get_logger
 
 logger = get_logger(__name__)
 settings = get_settings()
+
+_SEARCHAPI_ENDPOINT = "https://www.searchapi.io/api/v1/search"
+
+
+def _searchapi_request(query: str, num: int = 20, **extra_params) -> dict:
+    """
+    Run one Google-search query against SearchApi.io and return the parsed
+    JSON response. SearchApi.io mirrors SerpAPI's organic_results shape
+    (title/link/snippet per result), so callers check the same fields.
+    On an API-level failure (bad key, quota, etc.) the returned dict carries
+    an "error" key instead of raising — callers check for that explicitly.
+    """
+    params = {
+        "engine":  "google",
+        "q":       query,
+        "api_key": settings.SEARCHAPI_KEY,
+        "num":     num,
+        "hl":      "en",
+        **extra_params,
+    }
+    url = f"{_SEARCHAPI_ENDPOINT}?{urllib.parse.urlencode(params)}"
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        try:
+            return json.loads(body)
+        except ValueError:
+            return {"error": f"HTTP {exc.code}: {body[:200]}"}
 
 # Each entry: (query_template, extra_serpapi_params)
 # India-targeted queries use gl=in/cr=countryIN for local results.
@@ -191,28 +226,18 @@ def _run_query_batch(
     results: list[dict],
 ) -> None:
     """Run one batch of query templates, appending newly-seen URLs to `results`."""
-    from serpapi import GoogleSearch
-
     for template, geo_params in query_list:
         query = template.format(brand=brand)
         try:
-            params = {
-                "q":       query,
-                "api_key": settings.SERPAPI_KEY,
-                "num":     20,      # 20 results per query for better coverage
-                "hl":      "en",
-                **geo_params,
-            }
-            search = GoogleSearch(params)
-            data = search.get_dict()
+            data = _searchapi_request(query, **geo_params)
 
-            # SerpAPI returns a 200 with an "error" key (quota exhausted,
-            # bad key, etc.) rather than raising — left unchecked, this
-            # looks identical to "Google genuinely found nothing" in the
-            # logs, which is exactly the wrong thing to hide.
+            # SearchApi.io returns an "error" key on an API-level failure
+            # (bad key, quota, etc.) rather than always raising — left
+            # unchecked, this looks identical to "Google genuinely found
+            # nothing" in the logs, which is exactly the wrong thing to hide.
             api_error = data.get("error")
             if api_error:
-                logger.error("SerpAPI error for query '%s': %s", query[:70], api_error)
+                logger.error("SearchApi error for query '%s': %s", query[:70], api_error)
                 continue
 
             organic = data.get("organic_results", [])
@@ -230,25 +255,19 @@ def _run_query_batch(
                     })
                     added += 1
             logger.info(
-                "SerpAPI | '%s' → %d raw / %d new unique", query[:70], len(organic), added
+                "SearchApi | '%s' → %d raw / %d new unique", query[:70], len(organic), added
             )
         except Exception as exc:
-            logger.error("SerpAPI error for query '%s': %s", query[:70], exc)
+            logger.error("SearchApi error for query '%s': %s", query[:70], exc)
 
 
 def search_vendors(brand: str, part_number: str) -> list[dict]:
     """
-    Run all queries against SerpAPI and return deduplicated result dicts.
-    Returns [] if SERPAPI_KEY is not configured.
+    Run all queries against SearchApi.io and return deduplicated result dicts.
+    Returns [] if SEARCHAPI_KEY is not configured.
     """
-    if not getattr(settings, "SERPAPI_KEY", ""):
-        logger.warning("SERPAPI_KEY not set — vendor discovery skipped")
-        return []
-
-    try:
-        import serpapi  # noqa: F401 — import check only; _run_query_batch does the real import
-    except ImportError:
-        logger.error("google-search-results not installed — run: pip install google-search-results")
+    if not getattr(settings, "SEARCHAPI_KEY", ""):
+        logger.warning("SEARCHAPI_KEY not set — vendor discovery skipped")
         return []
 
     seen_urls: set[str] = set()
@@ -264,5 +283,5 @@ def search_vendors(brand: str, part_number: str) -> list[dict]:
         )
         _run_query_batch(brand, _FALLBACK_QUERIES, seen_urls, results)
 
-    logger.info("SerpAPI total unique URLs collected: %d", len(results))
+    logger.info("SearchApi total unique URLs collected: %d", len(results))
     return results

@@ -24,24 +24,14 @@ client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 def _search(query: str) -> list[dict]:
-    if not getattr(settings, "SERPAPI_KEY", ""):
+    if not getattr(settings, "SEARCHAPI_KEY", ""):
         return []
     try:
-        from serpapi import GoogleSearch
-    except ImportError:
-        logger.error("google-search-results not installed — brand lookup skipped")
-        return []
-    try:
-        search = GoogleSearch({
-            "q": query,
-            "api_key": settings.SERPAPI_KEY,
-            "num": 10,
-            "hl": "en",
-        })
-        data = search.get_dict()
+        from vendor_discovery.searcher import _searchapi_request
+        data = _searchapi_request(query, num=10)
         return data.get("organic_results", []) or []
     except Exception as exc:
-        logger.error("Brand lookup SerpAPI error for '%s': %s", query[:70], exc)
+        logger.error("Brand lookup SearchApi error for '%s': %s", query[:70], exc)
         return []
 
 

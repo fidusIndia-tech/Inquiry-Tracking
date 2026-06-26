@@ -42,7 +42,7 @@ def post_vendor(payload: dict) -> dict:
 def get_brand_status(brand: str) -> dict:
     """
     Returns {"count": int, "last_discovered_at": str|None} for a brand —
-    used to decide whether a fresh SerpAPI search is worth paying for.
+    used to decide whether a fresh SearchApi.io search is worth paying for.
     """
     settings = get_settings()
     url = f"{settings.NEXT_VENDORS_BRAND_STATUS_API_URL}?brand={urllib.parse.quote(brand)}"

@@ -328,7 +328,7 @@ def trigger_vendors(unique_code: str, brand: str, part_number: str):
         "brand": brand,
         "part_number": part_number,
         "NEXT_VENDORS_API_URL": settings.NEXT_VENDORS_API_URL,
-        "SERPAPI_KEY": "SET" if settings.SERPAPI_KEY else "NOT SET",
+        "SEARCHAPI_KEY": "SET" if settings.SEARCHAPI_KEY else "NOT SET",
     }
 
     try:
@@ -424,7 +424,7 @@ def debug_vendors(brand: str = "SERO", part_number: str = "SOHB113WG2V10"):
     """
     report = {
         "config": {
-            "SERPAPI_KEY": "SET" if settings.SERPAPI_KEY else "NOT SET — discovery will be skipped",
+            "SEARCHAPI_KEY": "SET" if settings.SEARCHAPI_KEY else "NOT SET — discovery will be skipped",
             "NEXT_VENDORS_API_URL": settings.NEXT_VENDORS_API_URL or "NOT SET",
         },
         "brand": brand,
@@ -432,60 +432,41 @@ def debug_vendors(brand: str = "SERO", part_number: str = "SOHB113WG2V10"):
         "steps": {},
     }
 
-    # Step 1: Check if serpapi package is importable
+    # Step 1: Raw SearchApi.io call (one query, expose full response)
     try:
-        from serpapi import GoogleSearch
-        report["steps"]["package_import"] = {"status": "ok", "package": "serpapi/GoogleSearch imported"}
-    except ImportError as exc:
-        report["steps"]["package_import"] = {
-            "status": "ERROR — package not installed",
-            "detail": str(exc),
-            "fix": "Add 'google-search-results>=2.4.2' to requirements.txt and redeploy",
-        }
-        return report
-
-    # Step 2: Raw SerpAPI call (one query, expose full response)
-    try:
-        search = GoogleSearch({
-            "q":       f'"{brand}" {part_number} distributor India',
-            "api_key": settings.SERPAPI_KEY,
-            "num":     5,
-            "gl":      "in",
-            "hl":      "en",
-        })
-        raw = search.get_dict()
+        from vendor_discovery.searcher import _searchapi_request
+        raw = _searchapi_request(f'"{brand}" {part_number} distributor India', num=5, gl="in")
         organic = raw.get("organic_results", [])
         error   = raw.get("error", None)
-        report["steps"]["serpapi_raw"] = {
+        report["steps"]["searchapi_raw"] = {
             "status":          "error" if error else ("ok" if organic else "empty"),
-            "serpapi_error":   error,
+            "searchapi_error": error,
             "results_count":   len(organic),
             "sample_titles":   [r.get("title") for r in organic[:3]],
-            "account_info":    raw.get("search_metadata", {}).get("status"),
         }
         if error or not organic:
             return report
     except Exception as exc:
-        report["steps"]["serpapi_raw"] = {"status": "exception", "detail": str(exc)}
+        report["steps"]["searchapi_raw"] = {"status": "exception", "detail": str(exc)}
         return report
 
-    # Step 3: Full discovery search
+    # Step 2: Full discovery search
     try:
         from vendor_discovery.searcher import search_vendors
         results = search_vendors(brand, part_number)
-        report["steps"]["serpapi_search"] = {
+        report["steps"]["searchapi_search"] = {
             "status": "ok" if results else "empty",
             "results_count": len(results),
             "sample": results[:3],
         }
     except Exception as exc:
-        report["steps"]["serpapi_search"] = {"status": "error", "detail": str(exc)}
+        report["steps"]["searchapi_search"] = {"status": "error", "detail": str(exc)}
         return report
 
     if not results:
         return report
 
-    # Step 2: Contact extraction on first result
+    # Step 3: Contact extraction on first result
     try:
         from vendor_discovery.scraper import fetch_vendor_page, extract_contacts
         first = results[0]
@@ -501,7 +482,7 @@ def debug_vendors(brand: str = "SERO", part_number: str = "SOHB113WG2V10"):
     except Exception as exc:
         report["steps"]["contact_extraction"] = {"status": "error", "detail": str(exc)}
 
-    # Step 3: POST to Next.js vendor API
+    # Step 4: POST to Next.js vendor API
     try:
         from vendor_discovery.client import post_vendor
         test_payload = {

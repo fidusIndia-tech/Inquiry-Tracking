@@ -64,13 +64,14 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = ""
 
-    # Vendor Discovery
-    SERPAPI_KEY: str = ""
+    # Vendor Discovery — SearchApi.io key (searchapi.io, NOT serpapi.com —
+    # different company, despite the similar name; see vendor_discovery/searcher.py)
+    SEARCHAPI_KEY: str = ""
     NEXT_VENDORS_API_URL: str = "http://localhost:3000/api/parser/vendors"
     NEXT_VENDORS_BRAND_STATUS_API_URL: str = "http://localhost:3000/api/parser/vendors/brand-status"
     NEXT_VENDORS_LINK_API_URL: str = "http://localhost:3000/api/parser/vendors/link"
 
-    # Days to wait before re-running a paid SerpAPI search for a brand we've
+    # Days to wait before re-running a paid SearchApi.io search for a brand we've
     # already discovered vendors for. Within the window, new inquiries for
     # the same brand just reuse the existing vendor pool instead of paying
     # for a search that reliably returns the same top results.

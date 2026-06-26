@@ -460,7 +460,7 @@ def poll_all_users(self) -> dict:
     max_retries=2,
     retry_backoff=30,
     retry_jitter=True,
-    # Multiple brands × 8 SerpAPI queries × scraping candidates can legitimately
+    # Multiple brands × 8 SearchApi.io queries × scraping candidates can legitimately
     # run several minutes — longer than the global task_time_limit default.
     time_limit=900,
     soft_time_limit=840,
@@ -478,7 +478,7 @@ def discover_vendors_task(unique_code: str, line_items: list[dict]) -> dict:
     )
 
     # Deduplicate by brand — queries are brand-focused so running the same
-    # brand multiple times (e.g. 5 Siemens parts in one RFQ) wastes SerpAPI
+    # brand multiple times (e.g. 5 Siemens parts in one RFQ) wastes SearchApi.io
     # credits and produces identical results. One run per unique brand.
     seen_brands: set[str] = set()
     total_stored = 0

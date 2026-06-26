@@ -4,7 +4,7 @@ vendor_discovery/__init__.py
 Main discovery pipeline.
 
 Given brand + part_number:
-  1. SerpAPI (8 queries → up to 160 URLs)
+  1. SearchApi.io (8 queries → up to 160 URLs)
   2. Pre-filter: drop job postings, news pages, URL path noise
   3. Regex contact extraction from snippet
   4. Fetch page when email or auth not yet confirmed
@@ -129,7 +129,7 @@ def discover_and_store_vendors(
 
     # ── Cooldown check ────────────────────────────────────────────────────
     # Search is brand-only (see searcher.py) — Google's top results for the
-    # same brand barely change day to day, so re-running SerpAPI for a brand
+    # same brand barely change day to day, so re-running SearchApi.io for a brand
     # we already have vendors for is mostly paying to rediscover the same
     # dealer. Within the cooldown window, reuse the existing pool instead;
     # once it expires, search fresh again so the pool can still grow over
@@ -269,7 +269,7 @@ def discover_and_store_vendors(
             "brand":                brand,
             "part_number":          part_number,
             "inquiry_unique_code":  inquiry_unique_code,
-            "source":               "serpapi",
+            "source":               "searchapi",
         }
 
         try:

@@ -498,9 +498,16 @@ export default function AdminDashboard() {
     }
   };
 
-  const detailModal = detailModalCode
-    ? inquiries.find((i) => i.unique_code === detailModalCode) || null
-    : null;
+  // Merge every raw row sharing this FIAPL code (not just the first match)
+  // so the modal/Drafts tab sees the complete item list even if the backend
+  // ever returns more than one inquiries-table row for the same code.
+  const detailModal = useMemo(() => {
+    if (!detailModalCode) return null;
+    const matches = inquiries.filter((i) => i.unique_code === detailModalCode);
+    if (matches.length === 0) return null;
+    if (matches.length === 1) return matches[0];
+    return { ...matches[0], items: matches.flatMap((m) => m.items || []) };
+  }, [inquiries, detailModalCode]);
 
   return (
     <div className="min-h-screen text-slate-900 dashboard-bg flex flex-col" style={{ height: "100vh", overflow: "hidden" }}>
@@ -1416,6 +1423,36 @@ function InquiryTable({
   const [bulkDeleting,   setBulkDeleting]   = useState(false);
   const [selectionMode,  setSelectionMode]  = useState(false);
 
+  // Group raw inquiry rows by normalized FIAPL unique code. This is the
+  // single source of truth for "one parent row per query" — defensive even
+  // against the backend ever returning more than one inquiries-table row
+  // for the same FIAPL code (e.g. a re-parsed duplicate email), which would
+  // otherwise render as two separate parent queries instead of merging into
+  // one. `parent` carries the union of every merged row's items so the
+  // detail modal / Drafts tab always sees the complete item list.
+  const groupedInquiries = useMemo(() => {
+    const groups = new Map();
+    const order  = [];
+    for (const row of inquiries) {
+      const key = String(
+        row.unique_code || row.fiapl_unique_code || row.f_unique_code || row.id || ""
+      ).trim().toUpperCase();
+      if (!key) continue;
+      let group = groups.get(key);
+      if (!group) {
+        group = { queryKey: key, firstRow: row, items: [] };
+        groups.set(key, group);
+        order.push(key);
+      }
+      if (row.items?.length) group.items.push(...row.items);
+    }
+    return order.map((key) => {
+      const group = groups.get(key);
+      const items = group.items.length ? group.items : [{}];
+      return { queryKey: group.queryKey, parent: { ...group.firstRow, items }, items };
+    });
+  }, [inquiries]);
+
   const toggleSelect = (code) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -1427,7 +1464,7 @@ function InquiryTable({
   const enterSelectionMode  = () => setSelectionMode(true);
   const cancelSelectionMode = () => { setSelectionMode(false); setSelected(new Set()); };
 
-  const visibleCodes = Array.from(new Set(inquiries.map((i) => i.unique_code)));
+  const visibleCodes = groupedInquiries.map((g) => g.queryKey);
   const allSelected  = visibleCodes.length > 0 && visibleCodes.every((c) => selected.has(c));
 
   const toggleSelectAll = () => {
@@ -1438,7 +1475,9 @@ function InquiryTable({
     if (selected.size === 0) return;
     if (!confirm(`Delete ${selected.size} selected inquiry(ies)? This cannot be undone.`)) return;
     setBulkDeleting(true);
-    const codes = Array.from(selected);
+    const codes = groupedInquiries
+      .filter((g) => selected.has(g.queryKey))
+      .map((g) => g.parent.unique_code);
     try {
       await Promise.all(
         codes.map((code) =>
@@ -1449,7 +1488,7 @@ function InquiryTable({
           })
         )
       );
-      setInquiries((current) => current.filter((i) => !selected.has(i.unique_code)));
+      setInquiries((current) => current.filter((i) => !codes.includes(i.unique_code)));
       setSelected(new Set());
       setSelectionMode(false);
     } catch (e) {
@@ -1550,26 +1589,27 @@ function InquiryTable({
     });
   }, []);
 
-  const rows = useMemo(() => inquiries.flatMap((inquiry) => {
-    const items = inquiry.items?.length ? inquiry.items : [{}];
-    const isExpanded = expandedCodes.has(inquiry.unique_code);
+  const rows = useMemo(() => groupedInquiries.flatMap((group) => {
+    const items = group.items;
+    const isExpanded = expandedCodes.has(group.queryKey);
     const visible = isExpanded ? items : [items[0]];
     return visible.map((item, idx) => ({
-      inquiry,
+      inquiry:     group.parent,
       item,
+      queryKey:    group.queryKey,
       isFirstItem: idx === 0,
       groupSize:   items.length,
       isExpanded,
       isChildRow:  isExpanded && idx > 0,
     }));
-  }), [inquiries, expandedCodes]);
+  }), [groupedInquiries, expandedCodes]);
 
   return (
     <section className="rounded-2xl" style={{ background: "#ffffff", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
       <div className="flex flex-col gap-3 border-b border-[#D8E3F8] px-5 py-4 lg:flex-row lg:items-center lg:justify-between rounded-t-2xl overflow-hidden" style={{ background: "linear-gradient(90deg,#F5F8FF 0%,#F0F6FF 100%)" }}>
         <div>
           <h3 className="text-[15px] font-semibold text-slate-900">Inquiries</h3>
-          <p className="text-[11px] text-slate-400 mt-0.5">{inquiries.length} of {totalCount} groups</p>
+          <p className="text-[11px] text-slate-400 mt-0.5">{groupedInquiries.length} of {totalCount} groups</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <FilterButton active={statusFilter === "all"} onClick={() => setStatusFilter("all")}>All</FilterButton>
@@ -1775,13 +1815,13 @@ function InquiryTable({
             {!isLoading && error && (
               <tr><td className="px-4 py-8 text-[13px] text-rose-600" colSpan={colCount}>{error}</td></tr>
             )}
-            {!isLoading && !error && inquiries.length === 0 && (
+            {!isLoading && !error && groupedInquiries.length === 0 && (
               <tr><td className="px-4 py-10 text-[13px] text-slate-400 text-center" colSpan={colCount}>No inquiries found.</td></tr>
             )}
             {!isLoading && !error &&
-              rows.map(({ inquiry, item, isFirstItem, groupSize, isExpanded, isChildRow }, index) => (
+              rows.map(({ inquiry, item, queryKey, isFirstItem, groupSize, isExpanded, isChildRow }, index) => (
                 <InquiryRow
-                  key={`${inquiry.unique_code}-${item?.id || index}`}
+                  key={`${queryKey}-${item?.id || index}`}
                   srNo={index + 1}
                   inquiry={inquiry}
                   item={item}
@@ -1790,11 +1830,11 @@ function InquiryTable({
                   isExpanded={isExpanded}
                   isChildRow={isChildRow}
                   selectionMode={selectionMode}
-                  onToggleExpand={() => toggleExpand(inquiry.unique_code)}
+                  onToggleExpand={() => toggleExpand(queryKey)}
                   now={now}
                   employees={employees}
-                  selected={selected.has(inquiry.unique_code)}
-                  onToggleSelect={() => toggleSelect(inquiry.unique_code)}
+                  selected={selected.has(queryKey)}
+                  onToggleSelect={() => toggleSelect(queryKey)}
                   onAssignChange={(v)  => handleAssignChange(inquiry.unique_code, v)}
                   onStatusChange={(v)  => handleStatusChange(inquiry.unique_code, v)}
                   onDelete={() => onDeleteRequest(inquiry)}
@@ -1943,7 +1983,11 @@ const InquiryRow = memo(function InquiryRow({ srNo, inquiry, item, isFirstItem, 
               <p className="whitespace-nowrap font-semibold text-slate-900 text-[11px]">{inquiry.unique_code}</p>
             </div>
             {groupSize > 1 && (
-              <p className="mt-0.5 text-[9px] text-[#5BA7FF] font-medium pl-5">{groupSize} items</p>
+              <p className="mt-0.5 text-[9px] text-[#5BA7FF] font-medium pl-5">
+                {isExpanded
+                  ? `Showing ${groupSize} items`
+                  : `${groupSize - 1} more item${groupSize - 1 > 1 ? "s" : ""}`}
+              </p>
             )}
             <VendorPriceBadge count={Number(inquiry.vendor_price_count) || 0} hasUnseen={Boolean(inquiry.has_unseen_prices)} />
           </>

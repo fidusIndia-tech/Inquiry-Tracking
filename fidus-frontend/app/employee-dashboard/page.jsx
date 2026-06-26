@@ -282,7 +282,14 @@ export default function EmployeeDashboard() {
     } catch {}
   }, [employeeId]);
 
-  const rows = useMemo(() => {
+  // Group raw inquiry rows by normalized FIAPL unique code first — the
+  // single source of truth for "one parent row per query". Defensive
+  // against the backend ever returning more than one inquiries-table row
+  // for the same FIAPL code, which would otherwise render as two separate
+  // parent queries instead of merging into one. Search runs on the raw
+  // rows before grouping so a match on any item inside a query still
+  // surfaces the whole group.
+  const groupedInquiries = useMemo(() => {
     const text = debouncedSearch.trim().toLowerCase();
     const filtered = text
       ? inquiries.filter((inq) => {
@@ -293,34 +300,57 @@ export default function EmployeeDashboard() {
         })
       : inquiries;
 
-    return filtered.flatMap((inquiry) => {
-      const items = inquiry.items?.length ? inquiry.items : [{}];
-      const isExpanded = expandedCodes.has(inquiry.unique_code);
-      const visible = isExpanded ? items : [items[0]];
-      return visible.map((item, index) => ({
-        rowKey:              `${inquiry.unique_code}-${item?.id || index}`,
-        unique_code:         inquiry.unique_code,
-        vendor_price_count:  inquiry.vendor_price_count,
-        has_unseen_prices:   Boolean(inquiry.has_unseen_prices),
-        email_date:       inquiry.email_date,
-        client_name:      inquiry.client_name  || "-",
-        location:         inquiry.location     || "-",
-        sender_name:      inquiry.sender_name  || "-",
-        subject:          inquiry.subject      || "-",
-        status:           inquiry.status       || "assigned",
-        remark:           inquiry.remark       || "",
-        isFirstItem:      index === 0,
-        isChildRow:       isExpanded && index > 0,
-        isExpanded,
-        groupSize:        items.length,
-        brand:            item?.brand           || "-",
-        part_number:      item?.partNumber      || "-",
-        quantity:         item?.quantity        ?? "-",
-        uom:              item?.uom             || "-",
-        item_notes:       item?.itemNotes       || "-",
-      }));
+    const groups = new Map();
+    const order  = [];
+    for (const row of filtered) {
+      const key = String(
+        row.unique_code || row.fiapl_unique_code || row.f_unique_code || row.id || ""
+      ).trim().toUpperCase();
+      if (!key) continue;
+      let group = groups.get(key);
+      if (!group) {
+        group = { queryKey: key, firstRow: row, items: [] };
+        groups.set(key, group);
+        order.push(key);
+      }
+      if (row.items?.length) group.items.push(...row.items);
+    }
+    return order.map((key) => {
+      const group = groups.get(key);
+      const items = group.items.length ? group.items : [{}];
+      return { queryKey: group.queryKey, parent: { ...group.firstRow, items }, items };
     });
-  }, [inquiries, debouncedSearch, expandedCodes]);
+  }, [inquiries, debouncedSearch]);
+
+  const rows = useMemo(() => groupedInquiries.flatMap((group) => {
+    const inquiry = group.parent;
+    const items = group.items;
+    const isExpanded = expandedCodes.has(group.queryKey);
+    const visible = isExpanded ? items : [items[0]];
+    return visible.map((item, index) => ({
+      rowKey:              `${group.queryKey}-${item?.id || index}`,
+      queryKey:            group.queryKey,
+      unique_code:         inquiry.unique_code,
+      vendor_price_count:  inquiry.vendor_price_count,
+      has_unseen_prices:   Boolean(inquiry.has_unseen_prices),
+      email_date:       inquiry.email_date,
+      client_name:      inquiry.client_name  || "-",
+      location:         inquiry.location     || "-",
+      sender_name:      inquiry.sender_name  || "-",
+      subject:          inquiry.subject      || "-",
+      status:           inquiry.status       || "assigned",
+      remark:           inquiry.remark       || "",
+      isFirstItem:      index === 0,
+      isChildRow:       isExpanded && index > 0,
+      isExpanded,
+      groupSize:        items.length,
+      brand:            item?.brand           || "-",
+      part_number:      item?.partNumber      || "-",
+      quantity:         item?.quantity        ?? "-",
+      uom:              item?.uom             || "-",
+      item_notes:       item?.itemNotes       || "-",
+    }));
+  }), [groupedInquiries, expandedCodes]);
 
   const changedStatuses = useMemo(
     () => inquiries.filter((item) => statusDrafts[item.unique_code] && statusDrafts[item.unique_code] !== item.status),
@@ -339,8 +369,11 @@ export default function EmployeeDashboard() {
   const openDetail = (uniqueCode) => {
     setDetailModalCode(uniqueCode);
   };
+  // Use the merged group's parent (not a raw .find on `inquiries`) so the
+  // modal/Drafts tab always sees every item even if the backend ever
+  // returns more than one raw row for the same FIAPL code.
   const detailModal = detailModalCode
-    ? inquiries.find((i) => i.unique_code === detailModalCode) || null
+    ? groupedInquiries.find((g) => g.queryKey === String(detailModalCode).trim().toUpperCase())?.parent || null
     : null;
 
   const updateDraftStatus = (uniqueCode, value) => {
@@ -440,7 +473,7 @@ export default function EmployeeDashboard() {
       <main className="flex-1 overflow-auto p-4 lg:p-5">
             {/* Metric cards */}
             <section className="mb-4 flex gap-3">
-              <MetricCard icon={<FileText size={15} />}     label="Assigned"     value={loading ? "—" : inquiries.length} accent="blue"   />
+              <MetricCard icon={<FileText size={15} />}     label="Assigned"     value={loading ? "—" : groupedInquiries.length} accent="blue"   />
               <MetricCard icon={<LayoutDashboard size={15}/>} label="Line Items"  value={loading ? "—" : rows.length}      accent="indigo" />
               <MetricCard icon={<Clock3 size={15} />}       label="Pending Save" value={loading ? "—" : changedStatuses.length} accent={changedStatuses.length > 0 ? "amber" : "mint"} />
             </section>
@@ -708,7 +741,7 @@ function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatus
                       <div className="flex items-center gap-1">
                         {row.groupSize > 1 && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); onToggleExpand(row.unique_code); }}
+                            onClick={(e) => { e.stopPropagation(); onToggleExpand(row.queryKey); }}
                             className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-[#C8D6F0] bg-white text-[10px] font-bold text-[#4461A8] hover:bg-[#EEF4FF] transition"
                             title={row.isExpanded ? "Collapse items" : "Expand items"}
                           >
@@ -723,7 +756,11 @@ function EmployeeTable({ rows, loading, statusDrafts, originalStatuses, onStatus
                         </p>
                       </div>
                       {row.groupSize > 1 && (
-                        <p className="mt-0.5 text-[9px] text-[#5BA7FF] font-medium pl-5">{row.groupSize} items</p>
+                        <p className="mt-0.5 text-[9px] text-[#5BA7FF] font-medium pl-5">
+                          {row.isExpanded
+                            ? `Showing ${row.groupSize} items`
+                            : `${row.groupSize - 1} more item${row.groupSize - 1 > 1 ? "s" : ""}`}
+                        </p>
                       )}
                       {(() => {
                         const count     = Number(row.vendor_price_count) || 0;

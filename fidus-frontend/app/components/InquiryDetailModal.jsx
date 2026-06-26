@@ -1063,18 +1063,30 @@ const GST_OPTIONS = [
   { label: "CGST + SGST @ 28%",              type: "CGST_SGST", rate: 28 },
   { label: "IGST @ 28%",                     type: "IGST",      rate: 28 },
   { label: "Export / LUT / Zero Rated @ 0%", type: "EXPORT",    rate: 0  },
+  { label: "Custom Tax",                     type: "CUSTOM",    rate: 0  },
 ];
 
-function calcGst(readyLines, gstOpt) {
+function calcGst(readyLines, gstOpt, customTax = {}) {
   const taxable = readyLines.reduce(
     (s, l) => s + (parseFloat(String(l.selling_price).replace(/[^0-9.]/g, "")) || 0) * (Number(l.quantity) || 1),
     0
   );
-  let cgst = 0, sgst = 0, igst = 0;
+  let cgst = 0, sgst = 0, igst = 0, customAmount = 0;
   if (gstOpt.type === "CGST_SGST") { cgst = sgst = taxable * (gstOpt.rate / 2) / 100; }
   if (gstOpt.type === "IGST")      { igst = taxable * gstOpt.rate / 100; }
-  const totalGst = cgst + sgst + igst;
-  return { taxable, cgst, sgst, igst, totalGst, grandTotal: taxable + totalGst };
+  if (gstOpt.type === "CUSTOM") {
+    const rate = Math.max(0, parseFloat(String(customTax.rate).replace(/[^0-9.]/g, "")) || 0);
+    customAmount = taxable * rate / 100;
+  }
+  const totalGst = cgst + sgst + igst + customAmount;
+  return { taxable, cgst, sgst, igst, customAmount, totalGst, grandTotal: taxable + totalGst };
+}
+
+// Custom tax name must be non-empty and rate must be a finite number >= 0.
+function isCustomTaxValid(customTax) {
+  const name = String(customTax?.name || "").trim();
+  const rate = parseFloat(String(customTax?.rate ?? "").replace(/[^0-9.]/g, ""));
+  return name.length > 0 && Number.isFinite(rate) && rate >= 0;
 }
 
 function QuotesTab({ inquiry }) {
@@ -1085,6 +1097,8 @@ function QuotesTab({ inquiry }) {
   const [leadTimes,     setLeadTimes]     = useState({}); // part_number -> string
   const [salesperson,   setSalesperson]   = useState("");
   const [gstOption,     setGstOption]     = useState(GST_OPTIONS[1]); // default: CGST+SGST@18%
+  const [customTaxName, setCustomTaxName] = useState("");
+  const [customTaxRate, setCustomTaxRate] = useState("");
   const [expanded,      setExpanded]      = useState({}); // quote id -> bool
   const [sending,       setSending]       = useState(false);
   const [sendError,     setSendError]     = useState("");
@@ -1167,13 +1181,25 @@ function QuotesTab({ inquiry }) {
     );
   }
 
+  const customTax = { name: customTaxName, rate: customTaxRate };
+
   const sendQuote = async () => {
+    if (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax)) {
+      setSendError("Enter a valid custom tax name and a non-negative percentage first.");
+      return;
+    }
     setSending(true); setSendError("");
     try {
       const res = await fetch("/api/quotes/send-to-client", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ unique_code: inquiry.unique_code, lines: readyLines, salesperson, gstOption }),
+        body:    JSON.stringify({
+          unique_code: inquiry.unique_code,
+          lines: readyLines,
+          salesperson,
+          gstOption,
+          customTax: gstOption.type === "CUSTOM" ? customTax : null,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send quote");
@@ -1345,9 +1371,33 @@ function QuotesTab({ inquiry }) {
               </select>
             </div>
 
+            {/* Custom tax inputs — only when "Custom Tax" is selected */}
+            {gstOption.type === "CUSTOM" && (
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] font-semibold text-slate-500">Tax Name</label>
+                <input
+                  type="text"
+                  value={customTaxName}
+                  onChange={(e) => setCustomTaxName(e.target.value)}
+                  placeholder="e.g. TCS"
+                  className="w-24 rounded-lg border border-[#E4E8EE] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                />
+                <label className="text-[11px] font-semibold text-slate-500">Tax %</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={customTaxRate}
+                  onChange={(e) => setCustomTaxRate(e.target.value)}
+                  placeholder="e.g. 1"
+                  className="w-20 rounded-lg border border-[#E4E8EE] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                />
+              </div>
+            )}
+
             {/* Live GST preview — only when at least one part is priced */}
             {readyLines.length > 0 && (() => {
-              const g = calcGst(readyLines, gstOption);
+              const g = calcGst(readyLines, gstOption, customTax);
               return (
                 <div className="flex items-center gap-3 rounded-lg border border-[#FDE68A] bg-[#FFFDF5] px-3 py-1.5">
                   {gstOption.type === "CGST_SGST" && (
@@ -1364,6 +1414,16 @@ function QuotesTab({ inquiry }) {
                   )}
                   {(gstOption.type === "NONE" || gstOption.type === "EXPORT") && (
                     <span className="text-[11px] text-slate-500">GST: <span className="font-semibold text-slate-700">₹0.00</span></span>
+                  )}
+                  {gstOption.type === "CUSTOM" && (
+                    isCustomTaxValid(customTax) ? (
+                      <span className="text-[11px] text-slate-500">
+                        {customTaxName.trim() || "Custom Tax"} @ {parseFloat(String(customTaxRate).replace(/[^0-9.]/g, "")) || 0}%:{" "}
+                        <span className="font-semibold text-slate-700">{INR(g.customAmount)}</span>
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-rose-500">Enter tax name &amp; valid %</span>
+                    )
                   )}
                   <span className="text-[11px] text-slate-300">|</span>
                   <span className="text-[12px] font-bold text-[#B45309]">Total: {INR(g.grandTotal)}</span>
@@ -1392,8 +1452,15 @@ function QuotesTab({ inquiry }) {
           {!sentOk && (
             <button
               onClick={sendQuote}
-              disabled={readyLines.length === 0 || sending || !salesperson.trim()}
-              title={!salesperson.trim() ? "Enter the salesperson name first" : ""}
+              disabled={
+                readyLines.length === 0 || sending || !salesperson.trim() ||
+                (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax))
+              }
+              title={
+                !salesperson.trim() ? "Enter the salesperson name first"
+                : (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax)) ? "Enter a valid custom tax name and percentage first"
+                : ""
+              }
               className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
             >
@@ -1417,7 +1484,7 @@ export default function InquiryDetailModal({ inquiry, onClose, onBlockClient, on
 
   const handleBlock = () => {
     if (!inquiry.sender_email) { alert("This inquiry has no sender email to block."); return; }
-    if (!confirm(`Block ${inquiry.sender_email}? Future mail from this client will be skipped before parsing.`)) return;
+    if (!confirm("Are you sure you want to block this client? Future inquiries from this email will not appear in the dashboard.")) return;
     onBlockClient?.(inquiry.sender_email, inquiry.client_name);
   };
 

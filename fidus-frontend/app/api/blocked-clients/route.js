@@ -11,6 +11,16 @@ const ENSURE_TABLE = `
   )
 `;
 
+const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+
+// Accepts a bare address or a display-name header like
+// `ABC Company <client@example.com>` and always returns the bare,
+// lowercased, trimmed address (or "" if none could be found).
+function normalizeSenderEmail(raw) {
+  const match = String(raw || "").match(EMAIL_RE);
+  return match ? match[0].trim().toLowerCase() : "";
+}
+
 export async function GET() {
   try {
     await query(ENSURE_TABLE);
@@ -31,9 +41,9 @@ export async function POST(request) {
   try {
     await query(ENSURE_TABLE);
     const { sender_email, client_name, reason, blocked_by } = await request.json();
-    const email = sender_email?.trim().toLowerCase();
+    const email = normalizeSenderEmail(sender_email);
     if (!email) {
-      return Response.json({ error: "sender_email is required" }, { status: 400 });
+      return Response.json({ error: "A valid sender_email is required" }, { status: 400 });
     }
     const result = await query(
       `INSERT INTO blocked_clients (sender_email, client_name, reason, blocked_by)

@@ -37,6 +37,25 @@ const STATUS_OPTIONS = [
   { value: "dropped",     label: "Dropped"     },
 ];
 
+// Single source of truth for "which parent query does this row belong to".
+// Prefers the FIAPL unique code; only falls back to a raw row id when no
+// code exists at all (e.g. a manually-created inquiry with no code yet).
+// Never group by part number, brand, or row index — those are per-item,
+// not per-query, and would silently merge unrelated inquiries together.
+function getInquiryGroupKey(row) {
+  return String(
+    row?.unique_code ||
+    row?.fiapl_unique_code ||
+    row?.f_unique_code ||
+    row?.f_unique_code_display ||
+    row?.inquiry_code ||
+    row?.inquiry_id ||
+    row?.parent_inquiry_id ||
+    row?.id ||
+    ""
+  ).trim().toUpperCase();
+}
+
 const statusClasses = {
   new:         "text-[#1D6FD8] border-[#BFDBFE]",
   assigned:    "text-[#4451E8] border-[#A5B4FC]",
@@ -124,6 +143,15 @@ export default function AdminDashboard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to block client");
       await fetchBlockedClients();
+      // Hide this client's inquiries from the current view immediately —
+      // don't wait for the next poll/SSE refresh. Historical data in the
+      // database is untouched; this only affects what's rendered right now.
+      const blockedEmail = String(senderEmail).trim().toLowerCase();
+      setInquiries((current) =>
+        current.filter((inq) => String(inq.sender_email || "").trim().toLowerCase() !== blockedEmail)
+      );
+      setDetailModalCode(null);
+      alert("Client blocked. Future inquiries from this email will be skipped.");
     } catch (e) { alert(e.message); }
     finally { setBlockBusy(false); }
   };
@@ -1434,9 +1462,7 @@ function InquiryTable({
     const groups = new Map();
     const order  = [];
     for (const row of inquiries) {
-      const key = String(
-        row.unique_code || row.fiapl_unique_code || row.f_unique_code || row.id || ""
-      ).trim().toUpperCase();
+      const key = getInquiryGroupKey(row);
       if (!key) continue;
       let group = groups.get(key);
       if (!group) {
@@ -1449,7 +1475,17 @@ function InquiryTable({
     return order.map((key) => {
       const group = groups.get(key);
       const items = group.items.length ? group.items : [{}];
-      return { queryKey: group.queryKey, parent: { ...group.firstRow, items }, items };
+      // mainItem = first item only (the visible parent row's product columns).
+      // hiddenItems = everything else — never repeats mainItem when expanded.
+      return {
+        queryKey:        group.queryKey,
+        parent:          { ...group.firstRow, items },
+        items,
+        mainItem:        items[0],
+        hiddenItems:     items.slice(1),
+        totalItems:      items.length,
+        hiddenItemCount: Math.max(items.length - 1, 0),
+      };
     });
   }, [inquiries]);
 

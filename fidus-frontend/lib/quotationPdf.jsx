@@ -135,11 +135,12 @@ export default function QuotationDocument({
   const totalsCurrency = lines.find((l) => l.currency)?.currency || null;
 
   // Use server-computed gstData; fall back to zero-GST if missing.
-  const gst = gstData || { type: "NONE", rate: 0, label: "No GST", taxable: computed.reduce((s, l) => s + l.amount, 0), cgst: 0, sgst: 0, igst: 0, totalGst: 0, grandTotal: computed.reduce((s, l) => s + l.amount, 0) };
+  const gst = gstData || { type: "NONE", rate: 0, label: "No GST", taxable: computed.reduce((s, l) => s + l.amount, 0), cgst: 0, sgst: 0, igst: 0, customName: "", customRate: 0, customAmount: 0, totalGst: 0, grandTotal: computed.reduce((s, l) => s + l.amount, 0) };
 
   // Per-line tax label shown in the "Taxes" column.
   const taxLabel = gst.type === "CGST_SGST" ? `CGST+SGST ${gst.rate}%`
                  : gst.type === "IGST"       ? `IGST ${gst.rate}%`
+                 : gst.type === "CUSTOM"     ? `${gst.customName} ${gst.customRate}%`
                  : gst.type === "EXPORT"     ? "Export / LUT"
                  : "Nil";
 
@@ -245,6 +246,12 @@ export default function QuotationDocument({
             <View style={styles.totalsRow}>
               <Text style={styles.totalsLabel}>IGST @ {gst.rate}%</Text>
               <Text style={styles.totalsValue}>{formatMoney(gst.igst, totalsCurrency)}</Text>
+            </View>
+          )}
+          {gst.type === "CUSTOM" && (
+            <View style={styles.totalsRow}>
+              <Text style={styles.totalsLabel}>{gst.customName} @ {gst.customRate}%</Text>
+              <Text style={styles.totalsValue}>{formatMoney(gst.customAmount, totalsCurrency)}</Text>
             </View>
           )}
           {(gst.type === "NONE" || gst.type === "EXPORT") && (

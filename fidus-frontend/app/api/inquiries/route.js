@@ -61,6 +61,18 @@ async function ensureInquiriesSchema() {
       PRIMARY KEY (inquiry_unique_code, user_id)
     )
   `);
+  // Must exist before the blocked-client backup filter below ever runs —
+  // same table the /api/blocked-clients route owns; idempotent, never drops data.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS blocked_clients (
+      id            SERIAL  PRIMARY KEY,
+      sender_email  TEXT    NOT NULL UNIQUE,
+      client_name   TEXT,
+      reason        TEXT,
+      blocked_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
   _inquiriesSchemaReady = true;
 }
 
@@ -127,6 +139,10 @@ export async function GET(request) {
       LEFT JOIN inquiry_price_views ipv
         ON ipv.inquiry_unique_code = i.unique_code
         AND ($1::INTEGER IS NOT NULL AND ipv.user_id = $1::INTEGER)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM blocked_clients bc
+        WHERE LOWER(TRIM(bc.sender_email)) = LOWER(TRIM(i.sender_email))
+      )
       GROUP BY i.id, r.id, u.id
       ORDER BY i.email_date DESC NULLS LAST, i.created_at DESC
     `, [userIdParam]);

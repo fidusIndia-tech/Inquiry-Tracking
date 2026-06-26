@@ -6,18 +6,29 @@ import QuotationDocument from "@/lib/quotationPdf";
 const PYTHON_BACKEND_URL = (process.env.PYTHON_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
 const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£" };
 
-function computeGstData(lines, gstOpt) {
+function computeGstData(lines, gstOpt, customTax) {
   const taxable = lines.reduce(
     (s, l) => s + (Number(l.quantity) || 1) * (Number(l.selling_price) || 0),
     0
   );
   const type = gstOpt?.type || "NONE";
   const rate = Number(gstOpt?.rate) || 0;
-  let cgst = 0, sgst = 0, igst = 0;
+  let cgst = 0, sgst = 0, igst = 0, customAmount = 0;
+  let customName = "", customRate = 0;
   if (type === "CGST_SGST") { cgst = sgst = taxable * (rate / 2) / 100; }
   if (type === "IGST")      { igst = taxable * rate / 100; }
-  const totalGst = cgst + sgst + igst;
-  return { type, rate, label: gstOpt?.label || "No GST", taxable, cgst, sgst, igst, totalGst, grandTotal: taxable + totalGst };
+  if (type === "CUSTOM") {
+    customName = String(customTax?.name || "").trim() || "Custom Tax";
+    customRate = Math.max(0, Number(customTax?.rate) || 0);
+    customAmount = taxable * customRate / 100;
+  }
+  const totalGst = cgst + sgst + igst + customAmount;
+  return {
+    type, rate, label: gstOpt?.label || "No GST",
+    taxable, cgst, sgst, igst,
+    customName, customRate, customAmount,
+    totalGst, grandTotal: taxable + totalGst,
+  };
 }
 
 let _schemaReady = false;
@@ -67,6 +78,8 @@ function buildGstRows(gstData) {
     rows.push(td(`SGST @ ${gstData.rate / 2}%`, fmtINR(gstData.sgst)));
   } else if (gstData.type === "IGST") {
     rows.push(td(`IGST @ ${gstData.rate}%`, fmtINR(gstData.igst)));
+  } else if (gstData.type === "CUSTOM") {
+    rows.push(td(`${gstData.customName} @ ${gstData.customRate}%`, fmtINR(gstData.customAmount)));
   } else if (gstData.type === "EXPORT") {
     rows.push(td("GST (Export / LUT / Zero Rated)", "₹0.00"));
   } else {
@@ -129,8 +142,8 @@ function buildQuoteEmail(clientName, quotationNumber, lines, gstData) {
 export async function POST(request) {
   try {
     await ensureQuotationsSchema();
-    const { unique_code, lines, salesperson, gstOption } = await request.json();
-    const gstData = computeGstData(lines, gstOption);
+    const { unique_code, lines, salesperson, gstOption, customTax } = await request.json();
+    const gstData = computeGstData(lines, gstOption, customTax);
     if (!unique_code || !lines?.length) {
       return Response.json({ error: "unique_code and lines are required" }, { status: 400 });
     }

@@ -19,6 +19,23 @@ import {
 
 const PORTAL_BASE_EMP = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://practical-amazement-production-3539.up.railway.app").replace(/\/$/, "");
 
+// Single source of truth for "which parent query does this row belong to".
+// Prefers the FIAPL unique code; only falls back to a raw row id when no
+// code exists at all. Never group by part number, brand, or row index.
+function getInquiryGroupKey(row) {
+  return String(
+    row?.unique_code ||
+    row?.fiapl_unique_code ||
+    row?.f_unique_code ||
+    row?.f_unique_code_display ||
+    row?.inquiry_code ||
+    row?.inquiry_id ||
+    row?.parent_inquiry_id ||
+    row?.id ||
+    ""
+  ).trim().toUpperCase();
+}
+
 function AppSwitcherEmp() {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, right: 0 });
@@ -303,9 +320,7 @@ export default function EmployeeDashboard() {
     const groups = new Map();
     const order  = [];
     for (const row of filtered) {
-      const key = String(
-        row.unique_code || row.fiapl_unique_code || row.f_unique_code || row.id || ""
-      ).trim().toUpperCase();
+      const key = getInquiryGroupKey(row);
       if (!key) continue;
       let group = groups.get(key);
       if (!group) {
@@ -318,7 +333,15 @@ export default function EmployeeDashboard() {
     return order.map((key) => {
       const group = groups.get(key);
       const items = group.items.length ? group.items : [{}];
-      return { queryKey: group.queryKey, parent: { ...group.firstRow, items }, items };
+      return {
+        queryKey:        group.queryKey,
+        parent:          { ...group.firstRow, items },
+        items,
+        mainItem:        items[0],
+        hiddenItems:     items.slice(1),
+        totalItems:      items.length,
+        hiddenItemCount: Math.max(items.length - 1, 0),
+      };
     });
   }, [inquiries, debouncedSearch]);
 

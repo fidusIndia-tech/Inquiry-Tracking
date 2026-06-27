@@ -6,12 +6,16 @@ import InquiryDetailModal from "@/app/components/InquiryDetailModal";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
+  Award,
   Ban,
   Bell,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Download,
+  Eye,
+  ExternalLink,
   FileText,
   Inbox,
   LayoutDashboard,
@@ -19,9 +23,11 @@ import {
   Menu,
   Pencil,
   Plus,
+  Receipt,
   RefreshCw,
   Search,
   Store,
+  TrendingUp,
   Trash2,
   Users,
   X,
@@ -627,6 +633,12 @@ export default function AdminDashboard() {
                 <VendorsPanel />
               </div>
             )}
+
+            {activeMenu === "quotes" && (
+              <div className="pt-4 lg:pt-5">
+                <QuotationSummaryPanel onOpenInquiry={(code) => setDetailModalCode(code)} />
+              </div>
+            )}
       </main>
 
       {/* ── Delete confirmation modal ── */}
@@ -1176,6 +1188,7 @@ const TOP_NAV = [
   { key: "access",    label: "Access Control", icon: <Users size={12} /> },
   { key: "reminders", label: "Reminders",      icon: <Bell size={12} /> },
   { key: "vendors",   label: "Vendors",        icon: <Store size={12} /> },
+  { key: "quotes",    label: "Quotes",         icon: <FileText size={12} /> },
 ];
 
 const PORTAL_BASE = (process.env.NEXT_PUBLIC_PORTAL_URL || "https://practical-amazement-production-3539.up.railway.app").replace(/\/$/, "");
@@ -1368,6 +1381,8 @@ const ACCENT_PALETTE = {
   indigo: { bg: "linear-gradient(135deg,#EEF0FF 0%,#C7D2FE 100%)", icon: "#4451E8", border: "#A5B4FC", top: "#6D7CFF", glow: "rgba(109,124,255,0.22)", grad: "linear-gradient(135deg,#6D7CFF,#8C9EFF)" },
   mint:   { bg: "linear-gradient(135deg,#EFFAF6 0%,#A7F3D0 100%)", icon: "#059669", border: "#6EE7B7", top: "#7FD8BE", glow: "rgba(127,216,190,0.22)", grad: "linear-gradient(135deg,#7FD8BE,#34D399)" },
   violet: { bg: "linear-gradient(135deg,#F5F3FF 0%,#DDD6FE 100%)", icon: "#6D28D9", border: "#C4B5FD", top: "#8C9EFF", glow: "rgba(140,158,255,0.22)", grad: "linear-gradient(135deg,#8C9EFF,#A78BFA)" },
+  amber:  { bg: "linear-gradient(135deg,#FFFBEB 0%,#FDE68A 100%)", icon: "#B45309", border: "#FDE68A", top: "#F59E0B", glow: "rgba(245,158,11,0.22)", grad: "linear-gradient(135deg,#F59E0B,#FBBF24)" },
+  rose:   { bg: "linear-gradient(135deg,#FFF1F2 0%,#FECDD3 100%)", icon: "#BE123C", border: "#FECDD3", top: "#FB7185", glow: "rgba(251,113,133,0.22)", grad: "linear-gradient(135deg,#FB7185,#F43F5E)" },
 };
 
 function MetricCard({ icon, label, value, accent, delay }) {
@@ -3281,5 +3296,341 @@ function VendorsPanel() {
         </table>
       </div>
     </section>
+  );
+}
+
+/* ──────────────────────────────────────────────
+   QUOTATION SUMMARY PANEL
+─────────────────────────────────────────────── */
+const QUOTATION_STATUS_OPTIONS = [
+  { value: "",          label: "All Statuses" },
+  { value: "draft",     label: "Draft" },
+  { value: "sent",      label: "Sent" },
+  { value: "revised",   label: "Revised" },
+  { value: "accepted",  label: "Accepted" },
+  { value: "lost",      label: "Lost" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+const REVISION_FILTER_OPTIONS = [
+  { value: "all",      label: "All" },
+  { value: "original", label: "Original Quotes" },
+  { value: "revised",  label: "Revised Quotes Only" },
+];
+
+const QUOTE_STATUS_BADGE = {
+  draft:     { bg: "#F3F4F6", text: "#6B7280", label: "Draft" },
+  sent:      { bg: "#EFF6FF", text: "#1D6FD8", label: "Sent" },
+  revised:   { bg: "#F5F3FF", text: "#6D28D9", label: "Revised" },
+  accepted:  { bg: "#ECFDF5", text: "#059669", label: "Accepted" },
+  lost:      { bg: "#FFF1F2", text: "#BE123C", label: "Lost" },
+  cancelled: { bg: "#FFF1F2", text: "#BE123C", label: "Cancelled" },
+};
+
+function fmtQuoteINR(v) {
+  return "₹" + Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+}
+
+function fmtQuoteDate(v) {
+  if (!v) return "—";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function QuoteStatusBadge({ status }) {
+  const s = QUOTE_STATUS_BADGE[status] || QUOTE_STATUS_BADGE.sent;
+  return (
+    <span className="inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[9px] font-bold" style={{ background: s.bg, color: s.text }}>
+      {s.label}
+    </span>
+  );
+}
+
+function StatList({ title, rows, primary, showValue = true }) {
+  return (
+    <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
+      <h3 className="mb-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">{title}</h3>
+      {(!rows || rows.length === 0) ? (
+        <p className="text-[11px] text-slate-400">No data yet</p>
+      ) : (
+        <div className="space-y-1.5">
+          {rows.slice(0, 6).map((r, i) => (
+            <div key={i} className="flex items-center justify-between gap-2 text-[12px]">
+              <span className="truncate text-slate-700">{r[primary] || "Unassigned"}</span>
+              <span className="shrink-0 font-semibold text-slate-900 whitespace-nowrap">
+                {r.count}{showValue && r.value ? ` · ${fmtQuoteINR(r.value)}` : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuotationSummaryPanel({ onOpenInquiry }) {
+  const [summary,    setSummary]    = useState(null);
+  const [quotations, setQuotations] = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState("");
+
+  const [search,            setSearch]            = useState("");
+  const [statusFilter,      setStatusFilter]      = useState("");
+  const [salespersonFilter, setSalespersonFilter] = useState("");
+  const [dateFrom,          setDateFrom]          = useState("");
+  const [dateTo,            setDateTo]            = useState("");
+  const [revisionFilter,    setRevisionFilter]    = useState("all");
+
+  const [viewId,      setViewId]      = useState(null);
+  const [viewData,    setViewData]    = useState(null);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/quotations/summary")
+      .then((r) => r.json())
+      .then((d) => setSummary(d.error ? null : d))
+      .catch(() => setSummary(null));
+  }, []);
+
+  // Debounced so typing in the search box doesn't fire a request per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoading(true); setError("");
+      const params = new URLSearchParams();
+      if (search.trim())           params.set("search", search.trim());
+      if (statusFilter)            params.set("status", statusFilter);
+      if (salespersonFilter)       params.set("salesperson", salespersonFilter);
+      if (dateFrom)                params.set("date_from", dateFrom);
+      if (dateTo)                  params.set("date_to", dateTo);
+      if (revisionFilter !== "all") params.set("revision", revisionFilter);
+      fetch(`/api/quotations?${params.toString()}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.error) throw new Error(d.error);
+          setQuotations(d.quotations || []);
+        })
+        .catch((e) => setError(e.message || "Failed to load quotations"))
+        .finally(() => setLoading(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search, statusFilter, salespersonFilter, dateFrom, dateTo, revisionFilter]);
+
+  const openView = (id) => {
+    setViewId(id); setViewLoading(true); setViewData(null);
+    fetch(`/api/quotations?id=${id}`)
+      .then((r) => r.json())
+      .then((d) => setViewData(d.quotation || null))
+      .catch(() => setViewData(null))
+      .finally(() => setViewLoading(false));
+  };
+
+  const salespersonOptions = useMemo(
+    () => [...new Set(quotations.map((q) => q.salesperson).filter(Boolean))],
+    [quotations]
+  );
+
+  const hasFilters = search || statusFilter || salespersonFilter || dateFrom || dateTo || revisionFilter !== "all";
+  const clearFilters = () => {
+    setSearch(""); setStatusFilter(""); setSalespersonFilter("");
+    setDateFrom(""); setDateTo(""); setRevisionFilter("all");
+  };
+
+  const s = summary || {};
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Summary cards */}
+      <section className="flex flex-wrap gap-3">
+        <MetricCard icon={<FileText size={15} />}      label="Total Quotations"      value={summary ? s.total : "—"}                accent="blue"   delay="0ms" />
+        <MetricCard icon={<Pencil size={15} />}         label="Draft"                 value={summary ? s.draft : "—"}                accent="indigo" delay="40ms" />
+        <MetricCard icon={<CheckCircle2 size={15} />}   label="Sent"                  value={summary ? s.sent : "—"}                 accent="mint"   delay="80ms" />
+        <MetricCard icon={<RefreshCw size={15} />}      label="Revised"               value={summary ? s.revised : "—"}              accent="violet" delay="120ms" />
+        <MetricCard icon={<Award size={15} />}          label="Converted / Accepted"  value={summary ? s.converted : "—"}            accent="mint"   delay="160ms" />
+        <MetricCard icon={<Ban size={15} />}            label="Lost / Cancelled"      value={summary ? s.lost : "—"}                 accent="rose"   delay="200ms" />
+        <MetricCard icon={<Receipt size={15} />}        label="Total Quoted Value"    value={summary ? fmtQuoteINR(s.total_value) : "—"}   accent="amber" delay="240ms" />
+        <MetricCard icon={<TrendingUp size={15} />}     label="This Month Value"      value={summary ? fmtQuoteINR(s.monthly_value) : "—"} accent="blue"  delay="280ms" />
+      </section>
+
+      {/* Stats */}
+      {summary && (
+        <section className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+          <StatList title="By Salesperson"       rows={s.by_salesperson} primary="salesperson" />
+          <StatList title="Most Quoted Clients"  rows={s.by_client}      primary="client_name" />
+          <StatList title="Most Quoted Brands"   rows={s.by_brand}       primary="brand" showValue={false} />
+          <StatList title="By Month"             rows={s.by_month}       primary="month" />
+        </section>
+      )}
+
+      {/* Filters + table */}
+      <section className="rounded-2xl overflow-hidden" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(12px)", boxShadow: "0 0 0 1px #D0D8F0, 0 4px 24px rgba(91,167,255,0.08)" }}>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E4EDFF] px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.30)" }}>
+              <FileText size={15} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-[13px] font-bold text-slate-800">Quotation Summary</h2>
+              <p className="text-[10px] text-slate-400">All quotations sent by the system, including revisions</p>
+            </div>
+          </div>
+          <span className="rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-0.5 text-[11px] font-semibold text-[#1D6FD8]">{quotations.length} shown</span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-b border-[#E4EDFF] px-4 py-2.5">
+          <div className="flex h-8 items-center gap-2 rounded-lg border border-[#E4E8EE] bg-[#F8FAFC] px-3 transition focus-within:border-[#5BA7FF] focus-within:bg-white">
+            <Search size={12} className="shrink-0 text-slate-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search quotation, client, FIAPL code…"
+              className="w-48 flex-1 bg-transparent text-[12px] text-slate-800 outline-none placeholder:text-slate-400"
+            />
+          </div>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-8 rounded-lg border border-[#E4E8EE] bg-[#F8FAFC] px-2 text-[11px] text-slate-700 outline-none focus:border-[#5BA7FF]">
+            {QUOTATION_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <select value={salespersonFilter} onChange={(e) => setSalespersonFilter(e.target.value)} className="h-8 rounded-lg border border-[#E4E8EE] bg-[#F8FAFC] px-2 text-[11px] text-slate-700 outline-none focus:border-[#5BA7FF]">
+            <option value="">All Salespersons</option>
+            {salespersonOptions.map((sp) => <option key={sp} value={sp}>{sp}</option>)}
+          </select>
+          <select value={revisionFilter} onChange={(e) => setRevisionFilter(e.target.value)} className="h-8 rounded-lg border border-[#E4E8EE] bg-[#F8FAFC] px-2 text-[11px] text-slate-700 outline-none focus:border-[#5BA7FF]">
+            {REVISION_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-8 rounded-lg border border-[#E4E8EE] bg-[#F8FAFC] px-2 text-[11px] text-slate-700 outline-none focus:border-[#5BA7FF]" />
+          <span className="text-[11px] text-slate-400">to</span>
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-8 rounded-lg border border-[#E4E8EE] bg-[#F8FAFC] px-2 text-[11px] text-slate-700 outline-none focus:border-[#5BA7FF]" />
+          {hasFilters && (
+            <button onClick={clearFilters} className="text-[11px] font-semibold text-[#4451E8] hover:underline">
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[11px]" style={{ minWidth: 1100 }}>
+            <thead>
+              <tr style={{ background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}>
+                {["Quotation No", "FIAPL Code", "Client", "Salesperson", "Quotation Date", "Amendment Code", "Amendment Date", "Status", "Taxable", "Tax", "Grand Total", "Actions"].map((h) => (
+                  <th key={h} className="whitespace-nowrap border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-3 py-2 text-left text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && Array.from({ length: 6 }, (_, r) => (
+                <tr key={r}>
+                  {Array.from({ length: 12 }, (_, c) => (
+                    <td key={c} className="border-b border-r border-[#DCE6F7] px-3 py-2.5 last:border-r-0">
+                      <div className="skeleton h-3" style={{ width: "60%" }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              {!loading && error && (
+                <tr><td colSpan={12} className="px-4 py-8 text-[12px] text-rose-600">{error}</td></tr>
+              )}
+              {!loading && !error && quotations.length === 0 && (
+                <tr>
+                  <td colSpan={12} className="px-4 py-14 text-center">
+                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)" }}>
+                      <FileText size={20} className="text-[#1D6FD8]" />
+                    </div>
+                    <p className="text-[13px] font-semibold text-slate-700">No quotations found</p>
+                    <p className="mt-1 text-[11px] text-slate-400">Quotations sent to clients will show up here.</p>
+                  </td>
+                </tr>
+              )}
+              {!loading && !error && quotations.map((q, i) => (
+                <tr
+                  key={q.id}
+                  className="border-b border-[#EEF2F6] transition"
+                  style={{ background: i % 2 === 0 ? "white" : "#FAFBFF" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#F0F6FF")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = i % 2 === 0 ? "white" : "#FAFBFF")}
+                >
+                  <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2 font-mono text-[10px] font-semibold text-slate-700">{q.quotation_number || "—"}</td>
+                  <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2 font-mono text-[10px] font-semibold text-[#4451E8]">{q.inquiry_unique_code}</td>
+                  <td className="max-w-[150px] truncate border-r border-[#DCE6F7] px-3 py-2" title={q.client_name}>{q.client_name || "—"}</td>
+                  <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2">{q.salesperson || "—"}</td>
+                  <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2">{fmtQuoteDate(q.quoted_at)}</td>
+                  <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2">{q.amendment_code || "—"}</td>
+                  <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2">{q.amendment_date ? fmtQuoteDate(q.amendment_date) : "—"}</td>
+                  <td className="border-r border-[#DCE6F7] px-3 py-2"><QuoteStatusBadge status={q.display_status} /></td>
+                  <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2 text-right">{fmtQuoteINR(q.taxable_amount)}</td>
+                  <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2 text-right">{fmtQuoteINR(q.tax_amount)}</td>
+                  <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2 text-right font-semibold">{fmtQuoteINR(q.grand_total)}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => openView(q.id)} title="View" className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#EEF2FF] hover:text-[#4451E8]">
+                        <Eye size={13} />
+                      </button>
+                      <a href={`/api/quotations/pdf?id=${q.id}`} title="Download PDF" className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#EEF2FF] hover:text-[#4451E8]">
+                        <Download size={13} />
+                      </a>
+                      <button onClick={() => onOpenInquiry?.(q.inquiry_unique_code)} title="Open Inquiry" className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#EEF2FF] hover:text-[#4451E8]">
+                        <ExternalLink size={13} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* View modal */}
+      {viewId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-sm" onClick={() => { setViewId(null); setViewData(null); }} />
+          <div className="relative z-10 max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 card-shadow-lg animate-modal">
+            <button
+              onClick={() => { setViewId(null); setViewData(null); }}
+              className="absolute top-4 right-4 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-[#F3F5F7] hover:text-slate-700"
+            >
+              <X size={15} />
+            </button>
+            {viewLoading && <p className="text-[12px] text-slate-400">Loading…</p>}
+            {!viewLoading && !viewData && <p className="text-[12px] text-rose-500">Quotation not found</p>}
+            {!viewLoading && viewData && (
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-[15px] font-bold text-slate-900">{viewData.quotation_number}</h3>
+                  <p className="text-[11px] text-slate-400">{viewData.inquiry_unique_code} · {fmtQuoteDate(viewData.quoted_at)}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div><span className="text-slate-400">Client:</span> {viewData.client_name || "—"}</div>
+                  <div><span className="text-slate-400">Salesperson:</span> {viewData.salesperson || "—"}</div>
+                  <div><span className="text-slate-400">Amendment Code:</span> {viewData.amendment_code || "—"}</div>
+                  <div><span className="text-slate-400">Amendment Date:</span> {viewData.amendment_date ? fmtQuoteDate(viewData.amendment_date) : "—"}</div>
+                  <div><span className="text-slate-400">Taxable Amount:</span> {fmtQuoteINR(viewData.taxable_amount)}</div>
+                  <div><span className="text-slate-400">Tax Amount:</span> {fmtQuoteINR(viewData.tax_amount)}</div>
+                  <div className="col-span-2"><span className="text-slate-400">Grand Total:</span> <span className="font-bold">{fmtQuoteINR(viewData.grand_total)}</span></div>
+                </div>
+                <div className="border-t border-[#EEF2F6] pt-2">
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Line Items</p>
+                  <div className="space-y-1">
+                    {(viewData.lines || []).map((l, i) => (
+                      <div key={i} className="flex items-center justify-between text-[11px]">
+                        <span>{l.part_number} {l.brand ? `(${l.brand})` : ""}</span>
+                        <span className="text-slate-500">{l.quantity} × {l.selling_price}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <a
+                  href={`/api/quotations/pdf?id=${viewData.id}`}
+                  className="flex items-center justify-center gap-1.5 rounded-lg border border-[#C7D2FE] bg-white px-3 py-2 text-[11px] font-semibold text-[#4451E8] transition hover:bg-[#EEF0FF]"
+                >
+                  <Download size={12} />Download PDF
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

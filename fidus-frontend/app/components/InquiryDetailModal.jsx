@@ -1217,6 +1217,13 @@ function QuotesTab({ inquiry }) {
   const [sending,       setSending]       = useState(false);
   const [sendError,     setSendError]     = useState("");
   const [sentOk,        setSentOk]        = useState(false);
+  const [sentInfo,      setSentInfo]      = useState(null); // { quotation_number, amendment_code }
+
+  // How many quotations already exist for this FIAPL code — drives the
+  // "this will be a revision" warning and the next revision's amendment
+  // code, before the employee even sends. Distinct from /api/quotes above,
+  // which is vendor reply data, not client quotations.
+  const [priorQuotationCount, setPriorQuotationCount] = useState(0);
 
   useEffect(() => {
     setLoading(true);
@@ -1225,6 +1232,17 @@ function QuotesTab({ inquiry }) {
       .then((d) => setQuotes(Array.isArray(d.quotes) ? d.quotes : []))
       .catch(() => setQuotes([]))
       .finally(() => setLoading(false));
+
+    fetch(`/api/quotations?unique_code=${encodeURIComponent(inquiry.unique_code)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const rows = Array.isArray(d.quotations) ? d.quotations : [];
+        // Raw `status` column, not `display_status` — counting must match
+        // exactly what the backend counts when it computes the real
+        // revision number at send time (see send-to-client/route.js).
+        setPriorQuotationCount(rows.filter((q) => q.status === "sent").length);
+      })
+      .catch(() => setPriorQuotationCount(0));
   }, [inquiry.unique_code]);
 
   // All useMemo hooks must be declared before any early return (Rules of Hooks).
@@ -1318,6 +1336,7 @@ function QuotesTab({ inquiry }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send quote");
       setSentOk(true);
+      setSentInfo({ quotation_number: data.quotation_number, amendment_code: data.amendment_code });
     } catch (e) {
       setSendError(e.message);
     } finally {
@@ -1547,12 +1566,30 @@ function QuotesTab({ inquiry }) {
           </div>
         )}
 
+        {/* Revision warning — a quotation already exists for this FIAPL code,
+            so sending now will be recorded as an automatic revision. */}
+        {!sentOk && priorQuotationCount > 0 && (
+          <div className="flex items-center gap-2 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2">
+            <RefreshCw size={13} className="shrink-0 text-[#B45309]" />
+            <p className="text-[11px] font-medium text-[#92400E]">
+              A quotation already exists for this inquiry. Sending now will create revised quotation{" "}
+              <span className="font-bold">R{priorQuotationCount}</span>.
+            </p>
+          </div>
+        )}
+
         {/* Row 2: Status text + send button */}
         <div className="flex items-center justify-between gap-3">
           <div>
             {sentOk ? (
               <p className="flex items-center gap-1.5 text-[12px] font-semibold text-[#059669]">
-                <CheckCircle2 size={13} />Quotation sent to client
+                <CheckCircle2 size={13} />
+                Quotation {sentInfo?.quotation_number || ""} sent to client
+                {sentInfo?.amendment_code && (
+                  <span className="ml-1 rounded-full border border-[#C4B5FD] bg-[#F5F3FF] px-1.5 py-0.5 text-[9px] font-bold text-violet-700">
+                    Revision {sentInfo.amendment_code}
+                  </span>
+                )}
               </p>
             ) : (
               <p className="text-[12px] text-slate-400">
@@ -1578,7 +1615,9 @@ function QuotesTab({ inquiry }) {
               className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
             >
-              {sending ? <><RefreshCw size={13} className="animate-spin" />Sending…</> : <><Send size={13} />Send Quote to Client</>}
+              {sending
+                ? <><RefreshCw size={13} className="animate-spin" />Sending…</>
+                : <><Send size={13} />{priorQuotationCount > 0 ? `Send Revision R${priorQuotationCount}` : "Send Quote to Client"}</>}
             </button>
           )}
         </div>

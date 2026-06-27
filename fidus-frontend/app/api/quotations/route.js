@@ -1,0 +1,131 @@
+import { pool, query } from "@/lib/db";
+
+let _schemaReady = false;
+async function ensureSchema() {
+  if (_schemaReady) return;
+  // quotations is created/migrated by app/api/quotes/send-to-client/route.js
+  // (the actual write path) — this is a defensive no-op if that route hasn't
+  // run yet on a fresh database, so the summary panel doesn't 500 on an
+  // empty install.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS quotations (
+      id                  SERIAL PRIMARY KEY,
+      quotation_number    TEXT UNIQUE,
+      inquiry_unique_code TEXT NOT NULL,
+      salesperson         TEXT,
+      quoted_at           TIMESTAMPTZ DEFAULT NOW(),
+      expiration_date     DATE,
+      lines               JSONB,
+      revision_number     INT NOT NULL DEFAULT 0,
+      amendment_code      TEXT,
+      amendment_date      DATE,
+      is_revision         BOOLEAN NOT NULL DEFAULT FALSE,
+      parent_quotation_id INT REFERENCES quotations(id),
+      status              TEXT NOT NULL DEFAULT 'sent',
+      client_name         TEXT,
+      client_email        TEXT,
+      currency            TEXT,
+      taxable_amount      NUMERIC,
+      tax_amount          NUMERIC,
+      grand_total         NUMERIC,
+      gst_type            TEXT,
+      gst_rate            NUMERIC,
+      custom_tax_name     TEXT,
+      custom_tax_rate     NUMERIC,
+      sent_at             TIMESTAMPTZ,
+      created_at          TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  _schemaReady = true;
+}
+
+// Real status taxonomy is derived, not stored: "draft"/"accepted"/"lost"
+// don't exist as quotation-level events in the current flow (a quotation is
+// created and emailed in one atomic step, and acceptance/loss is tracked on
+// the inquiry, not the quotation). Deriving from inquiries.status + is_revision
+// gives every status the user asked to filter on without fabricating data.
+const DISPLAY_STATUS_CASE = `
+  CASE
+    WHEN i.status = 'converted' THEN 'accepted'
+    WHEN i.status IN ('lost', 'dropped') THEN 'lost'
+    WHEN q.is_revision THEN 'revised'
+    ELSE q.status
+  END
+`;
+
+export async function GET(request) {
+  try {
+    await ensureSchema();
+    const { searchParams } = new URL(request.url);
+
+    const id = searchParams.get("id");
+    if (id) {
+      const single = await query(
+        `SELECT q.*, (${DISPLAY_STATUS_CASE}) AS display_status
+         FROM quotations q
+         LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code
+         WHERE q.id = $1`,
+        [id]
+      );
+      if (!single.rows[0]) return Response.json({ error: "Quotation not found" }, { status: 404 });
+      return Response.json({ quotation: single.rows[0] });
+    }
+
+    const uniqueCode  = searchParams.get("unique_code");
+    const search      = searchParams.get("search");
+    const status      = searchParams.get("status");       // draft|sent|revised|accepted|lost|cancelled
+    const salesperson = searchParams.get("salesperson");
+    const dateFrom    = searchParams.get("date_from");
+    const dateTo      = searchParams.get("date_to");
+    const revision    = searchParams.get("revision");      // all|original|revised
+    const limit       = Math.min(Math.max(parseInt(searchParams.get("limit"), 10) || 200, 1), 1000);
+
+    const where = [];
+    const params = [];
+    // Appends `clause` with each `?` replaced by a new positional
+    // placeholder, in order, for however many `values` are passed.
+    const add = (clause, ...values) => {
+      let sql = clause;
+      for (const v of values) {
+        params.push(v);
+        sql = sql.replace("?", `$${params.length}`);
+      }
+      where.push(sql);
+    };
+
+    if (uniqueCode)  add("q.inquiry_unique_code = ?", uniqueCode);
+    if (search)      add(
+      "(q.quotation_number ILIKE ? OR q.client_name ILIKE ? OR q.inquiry_unique_code ILIKE ?)",
+      `%${search}%`, `%${search}%`, `%${search}%`
+    );
+    if (salesperson) add("q.salesperson = ?", salesperson);
+    if (dateFrom)    add("q.quoted_at >= ?", dateFrom);
+    if (dateTo)      add("q.quoted_at < (?::date + interval '1 day')", dateTo);
+    if (revision === "original") where.push("q.is_revision = FALSE");
+    if (revision === "revised")  where.push("q.is_revision = TRUE");
+    if (status)      add(`(${DISPLAY_STATUS_CASE}) = ?`, status);
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const result = await query(
+      `SELECT
+         q.id, q.quotation_number, q.inquiry_unique_code, q.salesperson,
+         q.quoted_at, q.expiration_date, q.revision_number, q.amendment_code,
+         q.amendment_date, q.is_revision, q.parent_quotation_id, q.status,
+         q.client_name, q.client_email, q.currency, q.taxable_amount,
+         q.tax_amount, q.grand_total, q.gst_type, q.gst_rate,
+         q.custom_tax_name, q.custom_tax_rate, q.sent_at,
+         (${DISPLAY_STATUS_CASE}) AS display_status
+       FROM quotations q
+       LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code
+       ${whereSql}
+       ORDER BY q.id DESC
+       LIMIT ${limit}`,
+      params
+    );
+
+    return Response.json({ quotations: result.rows });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+}

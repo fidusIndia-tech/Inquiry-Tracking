@@ -119,6 +119,8 @@ function formatMoney(value, currency) {
 export default function QuotationDocument({
   quotationNumber,
   quotedAt,
+  amendmentCode,
+  amendmentDate,
   salesperson,
   clientName,
   clientAddress,
@@ -165,11 +167,11 @@ export default function QuotationDocument({
 
         <View style={styles.divider} />
 
-        {/* Amendment (left, intentionally blank) / Client address (right) */}
+        {/* Amendment (left) / Client address (right) */}
         <View style={styles.amendClientRow}>
           <View style={styles.amendBlock}>
-            <Text style={styles.amendLine}>Amendment Date:</Text>
-            <Text style={styles.amendLine}>Amendment No.:</Text>
+            <Text style={styles.amendLine}>Amendment Date: {amendmentDate ? formatDate(amendmentDate) : "—"}</Text>
+            <Text style={styles.amendLine}>Amendment No.: {amendmentCode || "—"}</Text>
           </View>
           <View style={styles.clientBlock}>
             <Text style={styles.clientName}>{clientName || ""}</Text>

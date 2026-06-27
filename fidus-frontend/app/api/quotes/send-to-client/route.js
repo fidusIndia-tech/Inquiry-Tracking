@@ -46,6 +46,29 @@ async function ensureQuotationsSchema() {
       created_at          TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // Revision/amendment tracking (Odoo-style) — added alongside the original
+  // columns above rather than a new table, since this table already is the
+  // one-row-per-sent-quotation record the revision chain needs to count.
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS revision_number INT NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS amendment_code TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS amendment_date DATE`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS is_revision BOOLEAN NOT NULL DEFAULT FALSE`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS parent_quotation_id INT REFERENCES quotations(id)`);
+  // Denormalized at send-time so the Quotation Summary panel can report on
+  // real quotations without re-deriving tax math or re-joining client info
+  // from inquiries every time.
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'sent'`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS client_name TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS client_email TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS currency TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS taxable_amount NUMERIC`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS tax_amount NUMERIC`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS grand_total NUMERIC`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS gst_type TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS gst_rate NUMERIC`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS custom_tax_name TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS custom_tax_rate NUMERIC`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`);
   _schemaReady = true;
 }
 
@@ -164,22 +187,29 @@ export async function POST(request) {
     const expirationDate = new Date(quotedAt);
     expirationDate.setDate(expirationDate.getDate() + 21);
 
-    // Insert first to get a guaranteed-unique id, then derive the human
-    // facing quotation number from it (QT-2026-0040 style).
-    const inserted = await query(
-      `INSERT INTO quotations (inquiry_unique_code, salesperson, expiration_date, lines)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id`,
-      [unique_code, salesperson || null, expirationDate.toISOString().slice(0, 10), JSON.stringify(lines)]
+    // Revision/amendment numbering, Odoo-style: the first quotation sent for
+    // a FIAPL code is the base quote; every additional one sent afterward is
+    // an automatic revision (R1, R2, ...). Only rows that actually finished
+    // sending count toward this — a failed attempt must never burn a
+    // revision slot or shift later, successful revision numbers.
+    const priorRes = await query(
+      `SELECT id FROM quotations WHERE inquiry_unique_code = $1 AND status = 'sent' ORDER BY id ASC`,
+      [unique_code]
     );
-    const quotationId = inserted.rows[0].id;
-    const quotationNumber = `QT-${quotedAt.getFullYear()}-${String(quotationId).padStart(4, "0")}`;
-    await query(`UPDATE quotations SET quotation_number = $1 WHERE id = $2`, [quotationNumber, quotationId]);
+    const revisionNumber = priorRes.rows.length;
+    const isRevision = revisionNumber > 0;
+    const baseQuotationNumber = `${unique_code}-QTN-001`;
+    const quotationNumber = isRevision ? `${baseQuotationNumber}-R${revisionNumber}` : baseQuotationNumber;
+    const amendmentCode = isRevision ? `R${revisionNumber}` : null;
+    const amendmentDate = isRevision ? quotedAt.toISOString().slice(0, 10) : null;
+    const parentQuotationId = isRevision ? priorRes.rows[0].id : null;
 
     const pdfBuffer = await renderToBuffer(
       React.createElement(QuotationDocument, {
         quotationNumber,
         quotedAt,
+        amendmentCode,
+        amendmentDate,
         salesperson,
         clientName: inquiry.client_name,
         clientAddress: inquiry.location,
@@ -210,12 +240,38 @@ export async function POST(request) {
       return Response.json({ error: sendData.detail || sendData.error || "Send failed" }, { status: 502 });
     }
 
+    // Only persisted once the email has actually gone out — see the
+    // comment above on why this can't happen any earlier.
+    const currency = lines.find((l) => l.currency)?.currency || null;
+    await query(
+      `INSERT INTO quotations
+         (quotation_number, inquiry_unique_code, salesperson, quoted_at, expiration_date, lines,
+          revision_number, amendment_code, amendment_date, is_revision, parent_quotation_id,
+          status, client_name, client_email, currency,
+          taxable_amount, tax_amount, grand_total, gst_type, gst_rate, custom_tax_name, custom_tax_rate,
+          sent_at)
+       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10,$11, $12,$13,$14,$15, $16,$17,$18,$19,$20,$21,$22, NOW())`,
+      [
+        quotationNumber, unique_code, salesperson || null, quotedAt,
+        expirationDate.toISOString().slice(0, 10), JSON.stringify(lines),
+        revisionNumber, amendmentCode, amendmentDate, isRevision, parentQuotationId,
+        "sent", inquiry.client_name || null, inquiry.sender_email || null, currency,
+        gstData.taxable, gstData.totalGst, gstData.grandTotal, gstData.type, gstData.rate,
+        gstData.customName || null, gstData.customRate || null,
+      ]
+    );
+
     await query(
       `UPDATE inquiries SET status = 'quoted', quoted_at = NOW() WHERE unique_code = $1`,
       [unique_code]
     );
 
-    return Response.json({ status: "sent", quotation_number: quotationNumber });
+    return Response.json({
+      status: "sent",
+      quotation_number: quotationNumber,
+      revision_number: revisionNumber,
+      amendment_code: amendmentCode,
+    });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

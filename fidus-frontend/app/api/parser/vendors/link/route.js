@@ -14,7 +14,7 @@ async function ensureSchema() {
       city                TEXT,
       country             TEXT,
       is_authorized_dealer BOOLEAN DEFAULT FALSE,
-      source              TEXT DEFAULT 'serpapi',
+      source              TEXT DEFAULT 'searchapi',
       created_at          TIMESTAMPTZ DEFAULT NOW(),
       updated_at          TIMESTAMPTZ DEFAULT NOW()
     )
@@ -45,7 +45,7 @@ async function ensureSchema() {
 
 /**
  * Cooldown fast-path: when the Python discovery pipeline decides a brand was
- * searched recently enough to skip a fresh SerpAPI run, it calls this to link
+ * searched recently enough to skip a fresh SearchApi.io run, it calls this to link
  * every vendor already known for that brand to the new inquiry instead —
  * same outcome the employee sees, zero search cost.
  */

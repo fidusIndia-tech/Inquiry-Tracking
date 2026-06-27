@@ -3173,7 +3173,7 @@ function VendorsPanel() {
           </div>
           <div>
             <h2 className="text-[13px] font-bold text-slate-800">Vendor Knowledge Base</h2>
-            <p className="text-[10px] text-slate-400">Auto-discovered via SerpAPI · stored permanently · reused across all future RFQs</p>
+            <p className="text-[10px] text-slate-400">Auto-discovered via SearchApi.io · stored permanently · reused across all future RFQs</p>
           </div>
         </div>
         <div className="flex items-center gap-2 text-[11px]">

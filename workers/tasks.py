@@ -34,6 +34,7 @@ from next_api_client import (
     post_vendor_quote,
     get_blocked_emails,
     save_identified_brand,
+    post_discovery_progress,
 )
 from vendor_discovery import discover_and_store_vendors
 from vendor_discovery.brand_lookup import identify_brand
@@ -299,26 +300,13 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
                 result.get("itemCount"),
             )
 
-            # Trigger async vendor discovery. Runs 10s after RFQ export so the
-            # inquiry is fully committed to DB first. Routes to "vendors" queue.
-            unique_code = result.get("uniqueCode")
-            if unique_code and line_items:
-                try:
-                    task = discover_vendors_task.apply_async(
-                        args=[unique_code, line_items],
-                        countdown=10,
-                    )
-                    logger.info(
-                        "Vendor discovery queued | task_id=%s | unique_code=%s | items=%d",
-                        task.id, unique_code, len(line_items),
-                    )
-                except Exception as exc:
-                    logger.error("Failed to queue vendor discovery for %s: %s", unique_code, exc)
-            else:
-                logger.warning(
-                    "Vendor discovery skipped | unique_code=%s | line_items=%s",
-                    unique_code, line_items,
-                )
+            # Vendor discovery no longer runs automatically here — it's
+            # expensive (network-bound search + scraping) and most exported
+            # RFQs aren't worked on immediately, so firing it for every export
+            # regardless of demand was loading the "vendors" worker for no
+            # reason. An employee now triggers it on-demand from the Vendors
+            # tab (see api/routes.py: POST /discover-vendors) when they're
+            # actually about to work the inquiry.
 
         except HttpError as exc:
             status = exc.resp.status if exc.resp else "unknown"
@@ -468,70 +456,101 @@ def poll_all_users(self) -> dict:
 def discover_vendors_task(unique_code: str, line_items: list[dict]) -> dict:
     """
     Discover vendors for every unique brand in an exported RFQ.
-    Triggered automatically after a successful RFQ export (10s countdown).
+    Triggered on-demand by an employee from the Vendors tab (see
+    api/routes.py: POST /discover-vendors) rather than automatically on
+    export — most exported RFQs aren't worked immediately, so running this
+    for every one of them loaded the "vendors" worker for no reason.
     Runs on the dedicated "vendors" queue so it never blocks email processing.
-    Results are stored via Next.js API → PostgreSQL vendor tables.
+    Results are stored via Next.js API → PostgreSQL vendor tables. Progress
+    is reported back to Next.js after each item so the Vendors tab can show
+    a live progress bar instead of a blind spinner.
     """
     logger.info(
         "discover_vendors_task START | unique_code=%s | items=%d",
         unique_code, len(line_items),
     )
 
+    total_items = len(line_items)
+    post_discovery_progress(unique_code, status="running", total_items=total_items, items_done=0)
+
     # Deduplicate by brand — queries are brand-focused so running the same
     # brand multiple times (e.g. 5 Siemens parts in one RFQ) wastes SearchApi.io
     # credits and produces identical results. One run per unique brand.
     seen_brands: set[str] = set()
     total_stored = 0
+    items_done = 0
 
-    for item in line_items:
-        if not isinstance(item, dict):
-            continue
-        brand       = (item.get("brand") or "").strip()
-        part_number = (item.get("part_number") or "").strip()
-        notes       = (item.get("notes") or "").strip()
+    try:
+        for item in line_items:
+            if not isinstance(item, dict):
+                items_done += 1
+                continue
+            brand       = (item.get("brand") or "").strip()
+            part_number = (item.get("part_number") or "").strip()
+            notes       = (item.get("notes") or "").strip()
 
-        # Client's email never named a brand — try to identify one the same
-        # way an employee would: Google the part number, fall back to the
-        # description, and only proceed once a brand is confidently found.
-        if not brand and part_number:
-            identified = identify_brand(part_number, notes)
-            if identified:
-                brand = identified
-                try:
-                    save_identified_brand(unique_code, part_number, brand)
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to save auto-identified brand | %s | part=%s: %s",
-                        unique_code, part_number, exc,
-                    )
+            # Client's email never named a brand — try to identify one the same
+            # way an employee would: Google the part number, fall back to the
+            # description, and only proceed once a brand is confidently found.
+            if not brand and part_number:
+                identified = identify_brand(part_number, notes)
+                if identified:
+                    brand = identified
+                    try:
+                        save_identified_brand(unique_code, part_number, brand)
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to save auto-identified brand | %s | part=%s: %s",
+                            unique_code, part_number, exc,
+                        )
 
-        if not brand or not part_number:
-            continue
+            if not brand or not part_number:
+                items_done += 1
+                post_discovery_progress(unique_code, items_done=items_done, total_items=total_items)
+                continue
 
-        brand_key = brand.lower()
-        if brand_key in seen_brands:
-            logger.info(
-                "Vendor discovery skipping duplicate brand | %s | %s", unique_code, brand
+            brand_key = brand.lower()
+            if brand_key in seen_brands:
+                logger.info(
+                    "Vendor discovery skipping duplicate brand | %s | %s", unique_code, brand
+                )
+                items_done += 1
+                post_discovery_progress(unique_code, items_done=items_done, total_items=total_items)
+                continue
+            seen_brands.add(brand_key)
+
+            post_discovery_progress(
+                unique_code, current_brand=brand, items_done=items_done, total_items=total_items,
             )
-            continue
-        seen_brands.add(brand_key)
+            try:
+                vendors = discover_and_store_vendors(brand, part_number, unique_code)
+                total_stored += len(vendors)
+                logger.info(
+                    "Vendor discovery brand done | %s | brand=%s | found=%d",
+                    unique_code, brand, len(vendors),
+                )
+            except Exception as exc:
+                logger.error(
+                    "Vendor discovery failed | %s | brand=%s: %s",
+                    unique_code, brand, exc,
+                )
 
-        try:
-            vendors = discover_and_store_vendors(brand, part_number, unique_code)
-            total_stored += len(vendors)
-            logger.info(
-                "Vendor discovery brand done | %s | brand=%s | found=%d",
-                unique_code, brand, len(vendors),
+            items_done += 1
+            post_discovery_progress(
+                unique_code, items_done=items_done, total_items=total_items, vendors_found=total_stored,
             )
-        except Exception as exc:
-            logger.error(
-                "Vendor discovery failed | %s | brand=%s: %s",
-                unique_code, brand, exc,
-            )
+    except Exception as exc:
+        logger.error("discover_vendors_task crashed | %s: %s", unique_code, exc)
+        post_discovery_progress(unique_code, status="failed", error=str(exc)[:500])
+        raise
 
     logger.info(
         "Vendor discovery task done | %s | brands=%d | vendors_stored=%d",
         unique_code, len(seen_brands), total_stored,
+    )
+    post_discovery_progress(
+        unique_code, status="done", items_done=total_items, total_items=total_items,
+        vendors_found=total_stored, current_brand=None,
     )
     return {
         "unique_code":    unique_code,

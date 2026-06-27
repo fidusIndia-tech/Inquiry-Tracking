@@ -14,7 +14,7 @@ async function ensureSchema() {
       city                TEXT,
       country             TEXT,
       is_authorized_dealer BOOLEAN DEFAULT FALSE,
-      source              TEXT DEFAULT 'serpapi',
+      source              TEXT DEFAULT 'searchapi',
       created_at          TIMESTAMPTZ DEFAULT NOW(),
       updated_at          TIMESTAMPTZ DEFAULT NOW()
     )
@@ -34,8 +34,8 @@ async function ensureSchema() {
 
 /**
  * Tells the Python discovery pipeline whether a brand was searched recently,
- * so it can skip a redundant paid SerpAPI run and just reuse vendors already
- * known for that brand (see discover_and_store_vendors' cooldown check).
+ * so it can skip a redundant paid SearchApi.io run and just reuse vendors
+ * already known for that brand (see discover_and_store_vendors' cooldown check).
  */
 export async function GET(request) {
   try {

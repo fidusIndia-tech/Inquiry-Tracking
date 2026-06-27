@@ -3,7 +3,7 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Award, Ban, Bot, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCopy, FileText, Globe,
-  History, Mail, MapPin, Phone, RefreshCw, Send, Store, Tag, Trash2, UserPlus, X,
+  History, Loader2, Mail, MapPin, Phone, RefreshCw, Search, Send, Store, Tag, Trash2, UserPlus, X,
 } from "lucide-react";
 
 /* ─────────────────────────────────────────────
@@ -205,6 +205,56 @@ function DetailsTab({ inquiry }) {
 /* ─────────────────────────────────────────────
    Vendors Tab
 ───────────────────────────────────────────── */
+
+// Vendor discovery is employee-triggered, not automatic — this renders
+// either the "Search Vendors" button (idle/done/failed) or a live progress
+// bar (queued/running), driven by polling /api/parser/vendors/discovery-status.
+function DiscoveryControl({ run, starting, error, onStart }) {
+  const isActive = run && (run.status === "queued" || run.status === "running");
+
+  if (isActive) {
+    const pct = run.total_items ? Math.round((run.items_done / run.total_items) * 100) : 4;
+    return (
+      <div className="rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2.5">
+        <div className="flex items-center justify-between text-[11px] font-semibold text-[#1D6FD8]">
+          <span className="flex items-center gap-1.5">
+            <Loader2 size={12} className="animate-spin" />
+            {run.current_brand ? `Searching ${run.current_brand}...` : "Searching vendors..."}
+          </span>
+          <span>{run.items_done}/{run.total_items || "?"}</span>
+        </div>
+        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#DBEAFE]">
+          <div
+            className="h-full rounded-full bg-[#3B82F6] transition-all"
+            style={{ width: `${Math.max(pct, 4)}%` }}
+          />
+        </div>
+        <p className="mt-1 text-[10px] text-[#5B8FD9]">Runs in the background — feel free to switch tabs or close this.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        onClick={onStart}
+        disabled={starting}
+        className="flex items-center gap-1.5 rounded-lg border border-[#C7D2FE] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#4451E8] transition hover:bg-[#EEF0FF] disabled:opacity-50"
+      >
+        <Search size={12} />
+        {starting ? "Starting..." : run?.status === "failed" ? "Retry Search" : "Search Vendors"}
+      </button>
+      {run?.status === "done" && !error && (
+        <span className="text-[11px] text-slate-400">
+          Last search found {run.vendors_found} vendor{run.vendors_found !== 1 ? "s" : ""}
+        </span>
+      )}
+      {(error || (run?.status === "failed" && run.error)) && (
+        <span className="text-[11px] text-rose-500">{error || run.error}</span>
+      )}
+    </div>
+  );
+}
 function VendorsTab({ inquiry, onDraftsGenerated }) {
   const [discovered,    setDiscovered]    = useState([]);
   const [legacy,        setLegacy]        = useState([]);
@@ -220,10 +270,19 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
   const [newVendor,     setNewVendor]     = useState({ name: "", email: "", phone: "", brand: "", notes: "" });
   const [addingVendor,  setAddingVendor]  = useState(false);
   const [addError,      setAddError]      = useState("");
+
+  // On-demand vendor discovery — see DiscoveryControl. `prevRunStatus` lets
+  // the poller tell "just finished while I was watching" apart from
+  // "was already done before I opened this tab", so it only refetches the
+  // vendor list on a real running→done transition, not on every mount.
+  const [discoveryRun,      setDiscoveryRun]      = useState(null);
+  const [discoveryStarting, setDiscoveryStarting] = useState(false);
+  const [discoveryError,    setDiscoveryError]    = useState("");
+  const prevRunStatus = useRef(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Brand strings get captured at different times by different pipelines
-  // (client email extraction, SerpAPI discovery, the legacy parts_table) and
+  // (client email extraction, SearchApi.io discovery, the legacy parts_table) and
   // routinely disagree on casing/whitespace ("Panasonic" vs "PANASONIC").
   // The backend matches brands case-insensitively (SQL ILIKE); this filter
   // must too, or it silently hides rows the API correctly returned.
@@ -249,6 +308,55 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
       .catch(() => setError("Failed to load vendors"))
       .finally(() => setLoading(false));
   }, [inquiry.unique_code, refreshTrigger]);
+
+  const pollDiscoveryStatus = useCallback(() => {
+    fetch(`/api/parser/vendors/discovery-status?unique_code=${encodeURIComponent(inquiry.unique_code)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const run = data.run || null;
+        const prevStatus = prevRunStatus.current;
+        prevRunStatus.current = run?.status || null;
+        setDiscoveryRun(run);
+        // Only refetch the vendor list on a genuine running→done transition
+        // observed live — not just because the run was already done before
+        // this tab happened to mount.
+        if (run && (run.status === "done" || run.status === "failed") &&
+            (prevStatus === "queued" || prevStatus === "running")) {
+          setRefreshTrigger((n) => n + 1);
+        }
+      })
+      .catch(() => {});
+  }, [inquiry.unique_code]);
+
+  // Check once on mount/inquiry change — picks up a run already in progress
+  // if the employee closed and reopened this modal while it was working.
+  useEffect(() => { pollDiscoveryStatus(); }, [pollDiscoveryStatus]);
+
+  // Keep polling every 3s for as long as a run is actively in progress.
+  useEffect(() => {
+    if (!discoveryRun || (discoveryRun.status !== "queued" && discoveryRun.status !== "running")) return;
+    const timer = setTimeout(pollDiscoveryStatus, 3000);
+    return () => clearTimeout(timer);
+  }, [discoveryRun, pollDiscoveryStatus]);
+
+  const startDiscovery = () => {
+    setDiscoveryError("");
+    setDiscoveryStarting(true);
+    fetch("/api/parser/vendors/discover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unique_code: inquiry.unique_code }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) { setDiscoveryError(data.error); return; }
+        if (data.status === "skipped") { setDiscoveryError(data.message || "Nothing new to search"); return; }
+        prevRunStatus.current = "queued";
+        setDiscoveryRun({ status: "queued", total_items: 0, items_done: 0 });
+      })
+      .catch(() => setDiscoveryError("Failed to start vendor search"))
+      .finally(() => setDiscoveryStarting(false));
+  };
 
   // Compound keys so selecting one (vendor, brand) row never silently selects
   // a different brand row for the same vendor — needed once brand filtering
@@ -439,11 +547,17 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
         {/* ── Discovered vendors ── */}
         <div className="space-y-2">
           <SectionHeader icon={Store} label="Discovered Vendors" count={filteredDiscovered.length} accent="blue" />
+          <DiscoveryControl
+            run={discoveryRun}
+            starting={discoveryStarting}
+            error={discoveryError}
+            onStart={startDiscovery}
+          />
           {filteredDiscovered.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[#D0DCF4] bg-[#FAFBFF] px-4 py-8 text-center">
               <Store size={18} className="mx-auto mb-2 text-slate-300" />
               <p className="text-[12px] font-medium text-slate-500">No vendors discovered yet</p>
-              <p className="text-[11px] text-slate-400 mt-1">Vendor discovery runs automatically after inquiry creation. Check back in a few minutes.</p>
+              <p className="text-[11px] text-slate-400 mt-1">Tap "Search Vendors" above to look for suppliers for this inquiry.</p>
             </div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-[#E4E8EE]">

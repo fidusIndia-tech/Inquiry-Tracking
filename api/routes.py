@@ -343,6 +343,31 @@ def trigger_vendors(unique_code: str, brand: str, part_number: str):
     return report
 
 
+class DiscoverVendorsRequest(BaseModel):
+    unique_code: str
+    line_items: list[dict]
+
+
+@router.post("/discover-vendors")
+def discover_vendors(payload: DiscoverVendorsRequest):
+    """
+    Enqueue the real async vendor discovery task for an inquiry. Called by
+    the Next.js "Search Vendors" button in the Vendors tab — discovery now
+    only ever runs on-demand, not automatically on every RFQ export.
+    """
+    from workers.tasks import discover_vendors_task
+
+    if not payload.line_items:
+        raise HTTPException(status_code=400, detail="line_items is required")
+
+    task = discover_vendors_task.apply_async(args=[payload.unique_code, payload.line_items])
+    logger.info(
+        "Vendor discovery queued on-demand | task_id=%s | unique_code=%s | items=%d",
+        task.id, payload.unique_code, len(payload.line_items),
+    )
+    return {"status": "queued", "task_id": task.id}
+
+
 class SendVendorRfqRequest(BaseModel):
     draft_id: int
     unique_code: str

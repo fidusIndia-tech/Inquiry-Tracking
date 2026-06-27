@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     NEXT_VENDORS_API_URL: str = "http://localhost:3000/api/parser/vendors"
     NEXT_VENDORS_BRAND_STATUS_API_URL: str = "http://localhost:3000/api/parser/vendors/brand-status"
     NEXT_VENDORS_LINK_API_URL: str = "http://localhost:3000/api/parser/vendors/link"
+    NEXT_VENDORS_DISCOVERY_PROGRESS_API_URL: str = "http://localhost:3000/api/parser/vendors/discovery-progress"
 
     # Days to wait before re-running a paid SearchApi.io search for a brand we've
     # already discovered vendors for. Within the window, new inquiries for

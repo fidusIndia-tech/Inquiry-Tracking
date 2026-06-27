@@ -10,8 +10,10 @@ import urllib.parse
 import urllib.request
 
 from config import get_settings
+from logging_setup import get_logger
 
 settings = get_settings()
+logger = get_logger(__name__)
 
 
 def post_rfq_item(payload: dict) -> dict:
@@ -112,6 +114,23 @@ def get_stale_drafts(hours: int) -> list[dict]:
 
 def post_vendor_quote(payload: dict) -> dict:
     return _request(settings.NEXT_QUOTES_API_URL, payload, "POST")
+
+
+def post_discovery_progress(unique_code: str, **fields) -> None:
+    """
+    Best-effort progress update for the on-demand vendor discovery run, so
+    the Vendors tab can show a live progress bar instead of a blind spinner.
+    Never raises — a failed status update is a UX nuisance, not a reason to
+    fail the actual discovery work.
+    """
+    try:
+        _request(
+            settings.NEXT_VENDORS_DISCOVERY_PROGRESS_API_URL,
+            {"unique_code": unique_code, **fields},
+            "POST",
+        )
+    except Exception as exc:
+        logger.warning("Failed to post discovery progress | %s: %s", unique_code, exc)
 
 
 def save_identified_brand(unique_code: str, part_number: str, brand: str) -> dict:

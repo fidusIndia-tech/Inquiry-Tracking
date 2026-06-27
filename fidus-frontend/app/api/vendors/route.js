@@ -15,7 +15,7 @@ async function ensureVendorSchema() {
       city                TEXT,
       country             TEXT,
       is_authorized_dealer BOOLEAN DEFAULT FALSE,
-      source              TEXT DEFAULT 'serpapi',
+      source              TEXT DEFAULT 'searchapi',
       created_at          TIMESTAMPTZ DEFAULT NOW(),
       updated_at          TIMESTAMPTZ DEFAULT NOW()
     )

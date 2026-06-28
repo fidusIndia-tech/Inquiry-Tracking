@@ -66,6 +66,9 @@ export async function GET() {
       LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code
     `);
 
+    // Aliased as display_status, not "status" - GROUP BY status would be
+    // ambiguous here since both quotations.status and inquiries.status are
+    // real columns already in scope from the join.
     const byStatus = await query(`
       SELECT
         CASE
@@ -73,11 +76,11 @@ export async function GET() {
           WHEN i.status IN ('lost', 'dropped') THEN 'lost'
           WHEN q.is_revision THEN 'revised'
           ELSE q.status
-        END AS status,
+        END AS display_status,
         COUNT(*) AS count
       FROM quotations q
       LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code
-      GROUP BY status
+      GROUP BY display_status
       ORDER BY count DESC
     `);
 
@@ -130,7 +133,7 @@ export async function GET() {
       total_value: Number(t.total_value),
       monthly_value: Number(t.monthly_value),
       revision_count: Number(t.revised),
-      by_status: byStatus.rows.map((r) => ({ status: r.status, count: Number(r.count) })),
+      by_status: byStatus.rows.map((r) => ({ status: r.display_status, count: Number(r.count) })),
       by_salesperson: bySalesperson.rows.map((r) => ({ salesperson: r.salesperson, count: Number(r.count), value: Number(r.value) })),
       by_month: byMonth.rows.map((r) => ({ month: r.month, count: Number(r.count), value: Number(r.value) })),
       by_client: byClient.rows.map((r) => ({ client_name: r.client_name, count: Number(r.count), value: Number(r.value) })),

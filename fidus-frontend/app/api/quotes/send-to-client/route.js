@@ -113,7 +113,7 @@ function buildGstRows(gstData) {
   return rows.join("\n");
 }
 
-function buildQuoteEmail(clientName, quotationNumber, lines, gstData) {
+function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperson, employeePhone) {
   const rows = lines
     .map((l, idx) => `
       <tr>
@@ -147,10 +147,10 @@ function buildQuoteEmail(clientName, quotationNumber, lines, gstData) {
   </table>
 
   ${gstData.type === "EXPORT" ? '<p style="font-size:12px;color:#6b7280;"><i>Note: Export / LUT / Zero Rated supply. GST not applicable as per LUT/bond, if applicable.</i></p>' : ""}
-  <p>Prices are subject to our standard terms and conditions. Please let us know if you'd like to proceed or need any clarification.</p>
+  <p>Prices are subject to our standard terms and conditions. Please let us know if you'd like to proceed or need any clarification.${employeePhone ? ` You can also reach us at <b>${escapeHtml(employeePhone)}</b>.` : ""}</p>
 
   <p>Warm regards,<br/>
-  FIAPL Sales Team<br/>
+  ${salesperson ? `${escapeHtml(salesperson)}<br/>` : ""}FIAPL Sales Team<br/>
   Fidus India Pvt. Ltd.</p>
 </div>`.trim();
 }
@@ -165,10 +165,20 @@ function buildQuoteEmail(clientName, quotationNumber, lines, gstData) {
 export async function POST(request) {
   try {
     await ensureQuotationsSchema();
-    const { unique_code, lines, salesperson, gstOption, customTax } = await request.json();
+    const { unique_code, lines, salesperson, gstOption, customTax, employee_id } = await request.json();
     const gstData = computeGstData(lines, gstOption, customTax);
     if (!unique_code || !lines?.length) {
       return Response.json({ error: "unique_code and lines are required" }, { status: 400 });
+    }
+
+    // Salesperson here is the free-typed name already shown on the PDF —
+    // this only adds the phone number, looked up from the logged-in
+    // employee's own record, so the client has a real contact number
+    // instead of none at all.
+    let employeePhone = null;
+    if (employee_id) {
+      const empRes = await query(`SELECT phone FROM users WHERE id = $1`, [employee_id]);
+      employeePhone = empRes.rows[0]?.phone || null;
     }
 
     const inquiryRes = await query(
@@ -219,7 +229,7 @@ export async function POST(request) {
     );
     const pdfBase64 = pdfBuffer.toString("base64");
 
-    const body = buildQuoteEmail(inquiry.client_name, quotationNumber, lines, gstData);
+    const body = buildQuoteEmail(inquiry.client_name, quotationNumber, lines, gstData, salesperson, employeePhone);
 
     const sendRes = await fetch(`${PYTHON_BACKEND_URL}/send-client-quote`, {
       method: "POST",

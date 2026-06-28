@@ -56,7 +56,7 @@ function escapeHtml(str) {
  */
 const SUPPORT_PHONE = "+91 8766360058";
 
-function buildDraft(vendor, inquiryItems, uniqueCode) {
+function buildDraft(vendor, inquiryItems, uniqueCode, employee) {
   // vendor.brands is the list of brands this vendor is being contacted for —
   // a vendor covering multiple selected brands gets ONE combined draft instead
   // of one per brand, so the items table can mix rows from different brands.
@@ -137,10 +137,10 @@ function buildDraft(vendor, inquiryItems, uniqueCode) {
   </table>
 
   ${p("Kindly fill in the highlighted columns and reply with this same table.")}
-  ${p(`For any queries, please feel free to call us at <b>${SUPPORT_PHONE}</b>.`)}
+  ${p(`For any queries, please feel free to call us at <b>${escapeHtml(employee?.phone || SUPPORT_PHONE)}</b>.`)}
 
   <p style="margin:0;">Warm regards,<br/>
-  FIAPL Procurement Team<br/>
+  ${employee?.name ? `${escapeHtml(employee.name)}<br/>` : ""}FIAPL Procurement Team<br/>
   Fidus India Pvt. Ltd.</p>
 </div>`.trim();
 
@@ -167,7 +167,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureDraftsSchema();
-    const { unique_code, vendors, inquiry_items } = await request.json();
+    const { unique_code, vendors, inquiry_items, employee_id } = await request.json();
 
     if (!unique_code || !vendors?.length) {
       return Response.json(
@@ -176,9 +176,20 @@ export async function POST(request) {
       );
     }
 
+    // Whoever's logged in generating these drafts — their own name/phone
+    // replace the old hardcoded company number so vendors can reach the
+    // actual person handling the inquiry. Falls back to the generic
+    // company number/team sign-off if no employee_id was sent or the
+    // employee hasn't set a phone yet.
+    let employee = null;
+    if (employee_id) {
+      const empRes = await query(`SELECT name, phone FROM users WHERE id = $1`, [employee_id]);
+      employee = empRes.rows[0] || null;
+    }
+
     const created = [];
     for (const vendor of vendors) {
-      const { subject, body, partNumbers, brands } = buildDraft(vendor, inquiry_items || [], unique_code);
+      const { subject, body, partNumbers, brands } = buildDraft(vendor, inquiry_items || [], unique_code, employee);
       const res = await query(
         `INSERT INTO vendor_drafts
            (inquiry_unique_code, vendor_name, vendor_email, brand, part_number, subject, body, source)

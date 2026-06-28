@@ -1,10 +1,21 @@
-import { query } from "@/lib/db";
+import { pool, query } from "@/lib/db";
 import { hashPassword } from "@/lib/password";
+
+let _schemaReady = false;
+async function ensureUsersSchema() {
+  if (_schemaReady) return;
+  // users pre-existed this column — vendor drafts and client quotation
+  // emails need each employee's own phone number (previously a single
+  // hardcoded company number on every draft, no matter who sent it).
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT`);
+  _schemaReady = true;
+}
 
 export async function GET() {
   try {
+    await ensureUsersSchema();
     const result = await query(`
-      SELECT id, name, email, role, is_active, created_at
+      SELECT id, name, email, phone, role, is_active, created_at
       FROM users
       ORDER BY role, name
     `);
@@ -18,9 +29,11 @@ export async function GET() {
 
 export async function POST(request) {
   try {
+    await ensureUsersSchema();
     const payload = await request.json();
     const name = String(payload.name || "").trim();
     const email = String(payload.email || "").trim().toLowerCase();
+    const phone = String(payload.phone || "").trim();
     const password = String(payload.password || "").trim();
     const role = payload.role === "admin" ? "admin" : "employee";
 
@@ -30,11 +43,11 @@ export async function POST(request) {
 
     const result = await query(
       `
-        INSERT INTO users (name, email, password_hash, role, is_active)
-        VALUES ($1, $2, $3, $4, TRUE)
-        RETURNING id, name, email, role, is_active, created_at
+        INSERT INTO users (name, email, phone, password_hash, role, is_active)
+        VALUES ($1, $2, $3, $4, $5, TRUE)
+        RETURNING id, name, email, phone, role, is_active, created_at
       `,
-      [name, email, hashPassword(password), role]
+      [name, email, phone || null, hashPassword(password), role]
     );
 
     return Response.json({ user: result.rows[0] }, { status: 201 });
@@ -49,6 +62,7 @@ export async function POST(request) {
 
 export async function PATCH(request) {
   try {
+    await ensureUsersSchema();
     const payload = await request.json();
     const id = Number(payload.id);
 
@@ -58,6 +72,7 @@ export async function PATCH(request) {
 
     const name = payload.name === undefined ? null : String(payload.name || "").trim();
     const email = payload.email === undefined ? null : String(payload.email || "").trim().toLowerCase();
+    const phone = payload.phone === undefined ? null : String(payload.phone || "").trim();
     const password = payload.password === undefined ? null : String(payload.password || "").trim();
     const isActive = payload.is_active;
     const role = payload.role === "admin" ? "admin" : payload.role === "employee" ? "employee" : null;
@@ -68,13 +83,14 @@ export async function PATCH(request) {
         SET
           name = COALESCE(NULLIF($2, ''), name),
           email = COALESCE(NULLIF($3, ''), email),
-          password_hash = CASE WHEN $4 = '' THEN password_hash ELSE $4 END,
-          role = COALESCE($5, role),
-          is_active = COALESCE($6, is_active)
+          phone = COALESCE(NULLIF($4, ''), phone),
+          password_hash = CASE WHEN $5 = '' THEN password_hash ELSE $5 END,
+          role = COALESCE($6, role),
+          is_active = COALESCE($7, is_active)
         WHERE id = $1
-        RETURNING id, name, email, role, is_active, created_at
+        RETURNING id, name, email, phone, role, is_active, created_at
       `,
-      [id, name, email, password ? hashPassword(password) : "", role, typeof isActive === "boolean" ? isActive : null]
+      [id, name, email, phone, password ? hashPassword(password) : "", role, typeof isActive === "boolean" ? isActive : null]
     );
 
     if (!result.rows[0]) {

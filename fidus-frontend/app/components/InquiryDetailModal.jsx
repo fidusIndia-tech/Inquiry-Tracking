@@ -482,6 +482,7 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
           unique_code:   inquiry.unique_code,
           vendors,
           inquiry_items: inquiryItems,
+          employee_id:   localStorage.getItem("userId") || null,
         }),
       });
       const data = await res.json();
@@ -1331,6 +1332,7 @@ function QuotesTab({ inquiry }) {
           salesperson,
           gstOption,
           customTax: gstOption.type === "CUSTOM" ? customTax : null,
+          employee_id: localStorage.getItem("userId") || null,
         }),
       });
       const data = await res.json();

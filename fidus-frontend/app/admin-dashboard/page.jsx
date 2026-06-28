@@ -2360,7 +2360,7 @@ function BlockedClientsPanel({ blocked, onAdd, onRemove, busy }) {
 }
 
 function AccessControlPanel({ users, usersError, onUsersChanged, blockedClients, onBlockClient, onUnblockClient, blockBusy }) {
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "" });
   const [editing, setEditing] = useState({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -2391,6 +2391,7 @@ function AccessControlPanel({ users, usersError, onUsersChanged, blockedClients,
       [id]: {
         name: current[id]?.name ?? users.find((user) => user.id === id)?.name ?? "",
         email: current[id]?.email ?? users.find((user) => user.id === id)?.email ?? "",
+        phone: current[id]?.phone ?? users.find((user) => user.id === id)?.phone ?? "",
         password: current[id]?.password ?? "",
         ...current[id],
         [field]: value,
@@ -2410,7 +2411,7 @@ function AccessControlPanel({ users, usersError, onUsersChanged, blockedClients,
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to add employee");
-      setForm({ name: "", email: "", password: "" });
+      setForm({ name: "", email: "", phone: "", password: "" });
       setMessage("Employee added.");
       await onUsersChanged();
     } catch (err) {
@@ -2433,13 +2434,14 @@ function AccessControlPanel({ users, usersError, onUsersChanged, blockedClients,
           id: user.id,
           name: next.name ?? user.name,
           email: next.email ?? user.email,
+          phone: next.phone ?? user.phone,
           password: next.password || undefined,
           role: user.role,
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to update user");
-      setEditing((current) => ({ ...current, [user.id]: { name: data.user.name, email: data.user.email, password: "" } }));
+      setEditing((current) => ({ ...current, [user.id]: { name: data.user.name, email: data.user.email, phone: data.user.phone, password: "" } }));
       setMessage("Login updated.");
       await onUsersChanged();
     } catch (err) {
@@ -2495,7 +2497,7 @@ function AccessControlPanel({ users, usersError, onUsersChanged, blockedClients,
           </div>
         )}
 
-        <div className="mt-5 grid gap-3 rounded-xl border border-[#E4E8EE] bg-[#F8FAFC] p-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+        <div className="mt-5 grid gap-3 rounded-xl border border-[#E4E8EE] bg-[#F8FAFC] p-3 md:grid-cols-[1fr_1fr_1fr_1fr_auto]">
           <input
             value={form.name}
             onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
@@ -2506,6 +2508,12 @@ function AccessControlPanel({ users, usersError, onUsersChanged, blockedClients,
             value={form.email}
             onChange={(e) => setForm((current) => ({ ...current, email: e.target.value }))}
             placeholder="Login email"
+            className="h-9 rounded-lg border border-[#E4E8EE] bg-white px-3 text-[12px] outline-none focus:border-[#5BA7FF]"
+          />
+          <input
+            value={form.phone}
+            onChange={(e) => setForm((current) => ({ ...current, phone: e.target.value }))}
+            placeholder="Phone (for vendor/client emails)"
             className="h-9 rounded-lg border border-[#E4E8EE] bg-white px-3 text-[12px] outline-none focus:border-[#5BA7FF]"
           />
           <input
@@ -2712,11 +2720,12 @@ function UserAccessTable({ title, users, editing, busy, onEdit, onSave, onRemove
         <h3 className="text-[14px] font-semibold text-slate-900">{title}</h3>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-left text-[11px]">
+        <table className="w-full min-w-[880px] border-collapse text-left text-[11px]">
           <thead>
             <tr className="bg-[#F8FAFC] text-[9px] font-semibold uppercase tracking-widest text-slate-400">
               <th className="border-b border-r border-[#E6EBF2] px-3 py-2">Name</th>
               <th className="border-b border-r border-[#E6EBF2] px-3 py-2">Login ID</th>
+              <th className="border-b border-r border-[#E6EBF2] px-3 py-2">Phone</th>
               <th className="border-b border-r border-[#E6EBF2] px-3 py-2">New Password</th>
               <th className="border-b border-[#E6EBF2] px-3 py-2">Action</th>
             </tr>
@@ -2737,6 +2746,14 @@ function UserAccessTable({ title, users, editing, busy, onEdit, onSave, onRemove
                     <input
                       value={current.email ?? user.email}
                       onChange={(e) => onEdit(user.id, "email", e.target.value)}
+                      className="h-8 w-full rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] outline-none focus:border-[#5BA7FF]"
+                    />
+                  </td>
+                  <td className="border-r border-[#EEF2F6] px-3 py-2">
+                    <input
+                      value={current.phone ?? user.phone ?? ""}
+                      onChange={(e) => onEdit(user.id, "phone", e.target.value)}
+                      placeholder="Used in vendor/client emails"
                       className="h-8 w-full rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] outline-none focus:border-[#5BA7FF]"
                     />
                   </td>
@@ -2774,7 +2791,7 @@ function UserAccessTable({ title, users, editing, busy, onEdit, onSave, onRemove
             })}
             {!users.length && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-[12px] text-slate-400">
+                <td colSpan={5} className="px-4 py-8 text-center text-[12px] text-slate-400">
                   No users found.
                 </td>
               </tr>

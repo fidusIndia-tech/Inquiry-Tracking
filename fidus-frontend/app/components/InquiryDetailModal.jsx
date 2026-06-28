@@ -1210,7 +1210,12 @@ function QuotesTab({ inquiry }) {
   const [selected,      setSelected]      = useState({}); // part_number -> quote id
   const [sellingPrices, setSellingPrices] = useState({}); // part_number -> string
   const [leadTimes,     setLeadTimes]     = useState({}); // part_number -> string
-  const [salesperson,   setSalesperson]   = useState("");
+  // Pre-filled from the logged-in employee's own account (same localStorage
+  // value set at login/SSO) so they aren't asked every time — still a plain
+  // editable field in case they need to override it for a specific quote.
+  const [salesperson,   setSalesperson]   = useState(
+    () => (typeof window !== "undefined" ? localStorage.getItem("userName") : "") || ""
+  );
   const [gstOption,     setGstOption]     = useState(GST_OPTIONS[1]); // default: CGST+SGST@18%
   const [customTaxName, setCustomTaxName] = useState("");
   const [customTaxRate, setCustomTaxRate] = useState("");

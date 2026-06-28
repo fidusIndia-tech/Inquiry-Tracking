@@ -3,10 +3,12 @@ import { pool, query } from "@/lib/db";
 let _schemaReady = false;
 async function ensureSchema() {
   if (_schemaReady) return;
-  // quotations is created/migrated by app/api/quotes/send-to-client/route.js
-  // (the actual write path) — this is a defensive no-op if that route hasn't
-  // run yet on a fresh database, so the summary panel doesn't 500 on an
-  // empty install.
+  // quotations pre-existed this feature with only the original columns
+  // (id, quotation_number, inquiry_unique_code, salesperson, quoted_at,
+  // expiration_date, lines, created_at) — CREATE TABLE IF NOT EXISTS is a
+  // no-op against that, so the revision/amendment/tax columns below need
+  // their own ALTER ADD COLUMN IF NOT EXISTS, same as in
+  // app/api/quotes/send-to-client/route.js (the actual write path).
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quotations (
       id                  SERIAL PRIMARY KEY,
@@ -16,26 +18,26 @@ async function ensureSchema() {
       quoted_at           TIMESTAMPTZ DEFAULT NOW(),
       expiration_date     DATE,
       lines               JSONB,
-      revision_number     INT NOT NULL DEFAULT 0,
-      amendment_code      TEXT,
-      amendment_date      DATE,
-      is_revision         BOOLEAN NOT NULL DEFAULT FALSE,
-      parent_quotation_id INT REFERENCES quotations(id),
-      status              TEXT NOT NULL DEFAULT 'sent',
-      client_name         TEXT,
-      client_email        TEXT,
-      currency            TEXT,
-      taxable_amount      NUMERIC,
-      tax_amount          NUMERIC,
-      grand_total         NUMERIC,
-      gst_type            TEXT,
-      gst_rate            NUMERIC,
-      custom_tax_name     TEXT,
-      custom_tax_rate     NUMERIC,
-      sent_at             TIMESTAMPTZ,
       created_at          TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS revision_number INT NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS amendment_code TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS amendment_date DATE`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS is_revision BOOLEAN NOT NULL DEFAULT FALSE`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS parent_quotation_id INT REFERENCES quotations(id)`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'sent'`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS client_name TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS client_email TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS currency TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS taxable_amount NUMERIC`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS tax_amount NUMERIC`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS grand_total NUMERIC`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS gst_type TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS gst_rate NUMERIC`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS custom_tax_name TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS custom_tax_rate NUMERIC`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`);
   _schemaReady = true;
 }
 

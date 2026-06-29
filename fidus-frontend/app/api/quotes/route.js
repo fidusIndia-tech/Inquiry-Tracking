@@ -108,12 +108,31 @@ export async function POST(request) {
       if (res.rows[0]) created.push(res.rows[0]);
     }
 
-    // Mark the originating draft as replied so reminders stop firing for it.
+    // Mark the originating draft as replied so reminders stop for that vendor.
     if (draft_id) {
       await query(
         `UPDATE vendor_drafts SET replied_at = NOW(), status = 'replied' WHERE id = $1`,
         [draft_id]
       );
+    } else if (vendor_email) {
+      // draft_id was null (vendor replied from a different thread / email address
+      // so the extract task couldn't match by thread_id or vendor_email exactly).
+      // Fall back to matching by unique_code + vendor_email (case-insensitive) so
+      // the reminder worker stops firing for this vendor even without a direct id.
+      const fallback = await query(
+        `UPDATE vendor_drafts
+         SET replied_at = NOW(), status = 'replied'
+         WHERE inquiry_unique_code = $1
+           AND LOWER(TRIM(vendor_email)) = LOWER(TRIM($2))
+           AND status = 'sent'
+         RETURNING id`,
+        [unique_code, vendor_email]
+      );
+      if (fallback.rowCount > 0) {
+        console.log(
+          `[quotes] Marked draft replied via email fallback | ${unique_code} | ${vendor_email} | rows=${fallback.rowCount}`
+        );
+      }
     }
 
     return Response.json({ quotes: created });

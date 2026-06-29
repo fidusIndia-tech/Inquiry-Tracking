@@ -10,17 +10,22 @@ import { query } from "@/lib/db";
 export async function GET(request) {
   try {
     const result = await query(
-      `SELECT * FROM vendor_drafts
-       WHERE status = 'sent'
-         AND sent_at IS NOT NULL
-         AND replied_at IS NULL
-         AND reminder_count < 3
+      `SELECT vd.* FROM vendor_drafts vd
+       WHERE vd.status = 'sent'
+         AND vd.sent_at IS NOT NULL
+         AND vd.replied_at IS NULL
+         AND vd.reminder_count < 3
          AND (
-           (reminder_count = 0 AND sent_at < NOW() - INTERVAL '24 hours')
-           OR (reminder_count = 1 AND sent_at < NOW() - INTERVAL '72 hours')
-           OR (reminder_count = 2 AND sent_at < NOW() - INTERVAL '168 hours')
+           (vd.reminder_count = 0 AND vd.sent_at < NOW() - INTERVAL '24 hours')
+           OR (vd.reminder_count = 1 AND vd.sent_at < NOW() - INTERVAL '72 hours')
+           OR (vd.reminder_count = 2 AND vd.sent_at < NOW() - INTERVAL '168 hours')
          )
-       ORDER BY sent_at ASC`
+         AND NOT EXISTS (
+           SELECT 1 FROM vendor_quotes vq
+           WHERE vq.inquiry_unique_code = vd.inquiry_unique_code
+             AND LOWER(TRIM(vq.vendor_email)) = LOWER(TRIM(vd.vendor_email))
+         )
+       ORDER BY vd.sent_at ASC`
     );
     return Response.json({ drafts: result.rows });
   } catch (error) {

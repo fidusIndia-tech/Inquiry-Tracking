@@ -714,8 +714,10 @@ def extract_vendor_quote(self, message_id: str) -> dict:
 )
 def send_vendor_reminders(self) -> dict:
     """
-    Reminder Agent (beat-scheduled). Follows up on sent RFQs that have had
-    no vendor reply within VENDOR_REMINDER_AFTER_HOURS, once each.
+    Reminder Agent (beat-scheduled). Sends up to 3 follow-ups per vendor RFQ
+    (at 24 h, 72 h, and 168 h from the original sent_at). The stale-drafts
+    query already filters to only drafts whose next reminder slot is due, so
+    this task just needs to fire the correct numbered reminder and record it.
     """
     if not settings.VENDOR_MAILBOX_USER_ID:
         return {"status": "not_configured"}
@@ -725,17 +727,28 @@ def send_vendor_reminders(self) -> dict:
     for draft in stale:
         if not draft.get("thread_id") or not draft.get("vendor_email"):
             continue
+        reminder_number = (draft.get("reminder_count") or 0) + 1
         try:
             send_vendor_reminder(
                 vendor_email=draft["vendor_email"],
                 subject=draft["subject"],
                 thread_id=draft["thread_id"],
                 rfc_message_id=draft.get("rfc_message_id"),
+                reminder_number=reminder_number,
             )
-            patch_draft(draft["id"], reminded_at=datetime.now(timezone.utc).isoformat())
+            now_iso = datetime.now(timezone.utc).isoformat()
+            patch_draft(
+                draft["id"],
+                reminded_at=now_iso,
+                reminder_count=reminder_number,
+                **{f"reminder_{reminder_number}_sent_at": now_iso},
+            )
             sent += 1
         except Exception as exc:
-            logger.error("Vendor reminder failed | draft_id=%s: %s", draft.get("id"), exc)
+            logger.error(
+                "Vendor reminder %d failed | draft_id=%s: %s",
+                reminder_number, draft.get("id"), exc,
+            )
 
     logger.info("send_vendor_reminders | candidates=%d sent=%d", len(stale), sent)
     return {"status": "ok", "candidates": len(stale), "sent": sent}

@@ -54,20 +54,32 @@ def send_vendor_reminder(
     subject: str,
     thread_id: str,
     rfc_message_id: str | None,
+    reminder_number: int = 1,
 ) -> dict:
     """
-    Send a polite follow-up in the same Gmail thread as the original RFQ.
+    Send reminder N (1/2/3) in the same Gmail thread as the original RFQ.
+    Subject is always Re: <original> for correct threading; the body and
+    a brief label in the intro vary by reminder number.
     """
     service = _vendor_service()
     reminder_subject = subject if subject.lower().startswith("re:") else f"Re: {subject}"
-    reminder_body = """
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.5;">
+
+    if reminder_number == 1:
+        intro = "This is a gentle follow-up on the RFQ below — we have not yet received your offer."
+        final_note = ""
+    elif reminder_number == 2:
+        intro = "We are following up again on the RFQ below and are still awaiting your quotation."
+        final_note = ""
+    else:
+        intro = "This is our final reminder for the RFQ below. We are still awaiting your best offer."
+        final_note = "<p>Please note that this is our final reminder for this requirement.</p>\n  "
+
+    reminder_body = f"""<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.5;">
   <p>Dear Team,</p>
-  <p>This is a gentle follow-up on the RFQ below — we have not yet received your offer.</p>
-  <p>Kindly share your best price and lead time at the earliest convenience.</p>
-  <p>Warm regards,<br/>FIAPL Procurement Team<br/>Fidus India Pvt. Ltd.</p>
-</div>
-""".strip()
+  <p>{intro}</p>
+  <p>Kindly share your best price, availability, and lead time at the earliest convenience.</p>
+  {final_note}<p>Warm regards,<br/>FIAPL Procurement Team<br/>Fidus India Pvt. Ltd.</p>
+</div>""".strip()
 
     sent = send_message(
         service,
@@ -78,7 +90,7 @@ def send_vendor_reminder(
         in_reply_to_rfc_message_id=rfc_message_id,
     )
     logger.info(
-        "Vendor reminder sent | to=%s | thread_id=%s | message_id=%s",
-        vendor_email, thread_id, sent["id"],
+        "Vendor reminder %d sent | to=%s | thread_id=%s | message_id=%s",
+        reminder_number, vendor_email, thread_id, sent["id"],
     )
     return {"message_id": sent["id"], "thread_id": sent["thread_id"]}

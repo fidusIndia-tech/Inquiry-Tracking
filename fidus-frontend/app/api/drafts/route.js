@@ -36,6 +36,22 @@ async function ensureDraftsSchema() {
       ADD COLUMN IF NOT EXISTS reminded_at     TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS replied_at      TIMESTAMPTZ
   `);
+  // Three-reminder tracking columns (24 h / 3 d / 7 d).
+  await pool.query(`
+    ALTER TABLE vendor_drafts
+      ADD COLUMN IF NOT EXISTS reminder_count     INT NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS reminder_1_sent_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS reminder_2_sent_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS reminder_3_sent_at TIMESTAMPTZ
+  `);
+  // One-time migration: old records that already received the single reminder
+  // via reminded_at should count as reminder_count = 1 so they are not
+  // re-reminded and can still receive reminders 2 and 3 if still unanswered.
+  await pool.query(`
+    UPDATE vendor_drafts
+    SET reminder_count = 1, reminder_1_sent_at = reminded_at
+    WHERE reminded_at IS NOT NULL AND reminder_count = 0
+  `);
   _draftsSchemaReady = true;
 }
 
@@ -231,10 +247,16 @@ export async function DELETE(request) {
 export async function PATCH(request) {
   try {
     await ensureDraftsSchema();
-    const { id, subject, body, status, thread_id, message_id, rfc_message_id, sent_at, reminded_at, replied_at } = await request.json();
+    const {
+      id, subject, body, status, thread_id, message_id, rfc_message_id, sent_at, reminded_at, replied_at,
+      reminder_count, reminder_1_sent_at, reminder_2_sent_at, reminder_3_sent_at,
+    } = await request.json();
     if (!id) return Response.json({ error: "id required" }, { status: 400 });
 
-    const fields = { subject, body, status, thread_id, message_id, rfc_message_id, sent_at, reminded_at, replied_at };
+    const fields = {
+      subject, body, status, thread_id, message_id, rfc_message_id, sent_at, reminded_at, replied_at,
+      reminder_count, reminder_1_sent_at, reminder_2_sent_at, reminder_3_sent_at,
+    };
     const setClauses = [];
     const values = [];
     let idx = 1;

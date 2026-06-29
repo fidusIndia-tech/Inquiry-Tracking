@@ -23,7 +23,7 @@ from gmail_service import (
 from history_tracker import get_latest_history_id, save_latest_history_id, get_all_user_ids
 from email_parser import parse_email
 from rfq_filter import is_rfq_candidate, is_client_reminder
-from attachment_handler import extract_attachment_text
+from attachment_handler import extract_attachment_text, download_and_parse_excel_rfq
 from llm_extractor import is_rfq_email, extract_rfq_data, get_buyer_identity
 from next_api_client import (
     post_rfq_item,
@@ -155,6 +155,59 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
                 except Exception as exc:
                     logger.warning("Failed to move blocked-sender message %s to Spam: %s", msg_id, exc)
                 continue
+
+            # 1c. Excel RFQ fast path — runs before Layer 1 so emails whose
+            # body is just "please find attached" are not dropped before the
+            # spreadsheet is inspected. If the attachment has recognisable RFQ
+            # headers (Part No, Qty, etc.) we extract items deterministically
+            # and post the inquiry directly, bypassing Layer 1 + 2 + GPT
+            # entirely. If parsing returns nothing, fall through to normal flow.
+            if parsed.get("has_attachment"):
+                try:
+                    excel_items = download_and_parse_excel_rfq(
+                        service, msg_id, raw.get("payload", {})
+                    )
+                except Exception as exc:
+                    logger.warning("Excel RFQ fast-path failed for %s: %s", msg_id, exc)
+                    excel_items = []
+
+                if excel_items:
+                    logger.info(
+                        "Excel RFQ fast-path | %s | %s | items=%d — bypassing Layer 1/2",
+                        parsed.get("sender", ""), parsed.get("subject", ""), len(excel_items),
+                    )
+                    buyer_name, buyer_email = get_buyer_identity(parsed)
+                    for item in excel_items:
+                        if buyer_name:
+                            item["username"] = buyer_name
+                        if buyer_email:
+                            item["sender_email"] = buyer_email
+
+                    result = post_rfq_item({
+                        "message_id":  msg_id,
+                        "thread_id":   parsed.get("thread_id"),
+                        "user_id":     user_id,
+                        "client_name": buyer_name,
+                        "username":    buyer_name,
+                        "sender_email": buyer_email,
+                        "location":    None,
+                        "brands":      ", ".join(str(i.get("brand") or "") for i in excel_items),
+                        "part_numbers": ", ".join(str(i.get("part_number") or "") for i in excel_items),
+                        "quantities":  ", ".join(str(i.get("quantity") or "") for i in excel_items),
+                        "notes":       ", ".join(str(i.get("notes") or "") for i in excel_items),
+                        "line_items":  excel_items,
+                        "sender":      parsed.get("sender"),
+                        "subject":     parsed.get("subject"),
+                        "email_date":  parsed.get("date_str"),
+                    })
+                    stats["rfq_exported"] += 1
+                    logger.info(
+                        "Exported Excel RFQ | %s | %s | items=%s",
+                        result.get("uniqueCode"),
+                        buyer_name or parsed.get("sender", ""),
+                        result.get("itemCount"),
+                    )
+                    continue  # skip Layer 1 / 2 / GPT for this message
 
             # 2. Layer 1: fast rule-based filter.
             if not is_rfq_candidate(parsed):

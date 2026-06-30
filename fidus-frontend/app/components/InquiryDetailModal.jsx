@@ -1216,6 +1216,25 @@ function QuotesTab({ inquiry }) {
   const [salesperson,   setSalesperson]   = useState(
     () => (typeof window !== "undefined" ? localStorage.getItem("userName") : "") || ""
   );
+  // localStorage.userName is only written at login/SSO — if an admin renames
+  // this employee afterward, the cached value goes stale for the rest of the
+  // session and a quote could go out under the old name. Refresh it from the
+  // DB once per mount, but never clobber a name the employee already edited.
+  const salespersonEditedRef = useRef(false);
+  useEffect(() => {
+    const userId = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
+    if (!userId) return;
+    fetch("/api/users")
+      .then((r) => r.json())
+      .then((d) => {
+        const me = (d.users || []).find((u) => String(u.id) === String(userId));
+        if (me?.name && !salespersonEditedRef.current) {
+          setSalesperson(me.name);
+          localStorage.setItem("userName", me.name);
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [gstOption,     setGstOption]     = useState(GST_OPTIONS[1]); // default: CGST+SGST@18%
   const [customTaxName, setCustomTaxName] = useState("");
   const [customTaxRate, setCustomTaxRate] = useState("");
@@ -1491,7 +1510,7 @@ function QuotesTab({ inquiry }) {
               <input
                 type="text"
                 value={salesperson}
-                onChange={(e) => setSalesperson(e.target.value)}
+                onChange={(e) => { salespersonEditedRef.current = true; setSalesperson(e.target.value); }}
                 placeholder="Your name"
                 className="w-32 rounded-lg border border-[#E4E8EE] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
               />

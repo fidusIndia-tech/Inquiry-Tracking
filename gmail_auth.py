@@ -80,14 +80,7 @@ def get_authorization_url(flow: Flow) -> tuple[str, str]:
     return authorization_url, state
 
 
-def credentials_from_user(user_id: str) -> Credentials:
-    stored = get_user_credentials(user_id)
-    if stored is None:
-        raise ValueError(
-            f"No credentials found for user '{user_id}'. "
-            "They must complete the OAuth flow first."
-        )
-
+def _credentials_from_stored(stored: dict) -> Credentials:
     creds = Credentials(
         token=stored.get("access_token"),
         refresh_token=stored["refresh_token"],
@@ -97,23 +90,60 @@ def credentials_from_user(user_id: str) -> Credentials:
         scopes=stored.get("scopes") or settings.GOOGLE_SCOPES,
     )
     creds.expiry = stored.get("access_token_expiry")
+    return creds
+
+
+def _refresh_and_save(user_id: str, creds: Credentials) -> Credentials:
+    """
+    Refresh the access token and persist it. A transient failure here
+    (Google rate limit / network blip, or a concurrent request having just
+    rotated the stored token underneath us) used to surface as a hard send
+    failure that only succeeded on the employee's next manual retry. Re-read
+    the latest stored token and retry once before giving up, so the same
+    transient condition self-heals within the same request instead of
+    requiring the employee to click Send again.
+    """
+    try:
+        logger.info("Access token expired for %s, refreshing", user_id)
+        creds.refresh(Request())
+    except Exception as exc:
+        logger.warning(
+            "Token refresh failed for %s (%s) — re-checking latest stored token and retrying once",
+            user_id, exc,
+        )
+        latest = get_user_credentials(user_id)
+        if latest:
+            creds = _credentials_from_stored(latest)
+        if not creds.valid:
+            creds.refresh(Request())
+
+    save_user_credentials(
+        email=user_id,
+        refresh_token=creds.refresh_token,
+        access_token=creds.token,
+        access_token_expiry=creds.expiry,
+        scopes=list(creds.scopes or settings.GOOGLE_SCOPES),
+    )
+    return creds
+
+
+def credentials_from_user(user_id: str) -> Credentials:
+    stored = get_user_credentials(user_id)
+    if stored is None:
+        raise ValueError(
+            f"No credentials found for user '{user_id}'. "
+            "They must complete the OAuth flow first."
+        )
+
+    creds = _credentials_from_stored(stored)
 
     if not creds.valid:
-        if creds.refresh_token:
-            logger.info("Access token expired for %s, refreshing", user_id)
-            creds.refresh(Request())
-            save_user_credentials(
-                email=user_id,
-                refresh_token=creds.refresh_token,
-                access_token=creds.token,
-                access_token_expiry=creds.expiry,
-                scopes=list(creds.scopes or settings.GOOGLE_SCOPES),
-            )
-        else:
+        if not creds.refresh_token:
             raise ValueError(
                 f"Credentials for '{user_id}' are invalid and cannot be refreshed. "
                 "User must re-authenticate via /login."
             )
+        creds = _refresh_and_save(user_id, creds)
 
     return creds
 

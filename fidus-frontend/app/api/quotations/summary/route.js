@@ -53,28 +53,33 @@ export async function GET() {
 
     const totals = await query(`
       SELECT
-        COUNT(*)                                                        AS total,
-        COUNT(*) FILTER (WHERE q.status = 'sent')                       AS sent,
-        COUNT(*) FILTER (WHERE q.is_revision)                           AS revised,
-        COUNT(DISTINCT q.inquiry_unique_code) FILTER (WHERE i.status = 'converted')        AS converted,
-        COUNT(DISTINCT q.inquiry_unique_code) FILTER (WHERE i.status IN ('lost', 'dropped')) AS lost,
-        COALESCE(SUM(q.grand_total), 0)                                 AS total_value,
+        COUNT(*)                                                           AS total,
+        COUNT(*) FILTER (WHERE q.status = 'draft')                        AS draft,
+        COUNT(*) FILTER (WHERE q.status = 'sent' AND NOT q.is_revision)   AS sent,
+        COUNT(*) FILTER (WHERE q.is_revision)                             AS revised,
+        COUNT(DISTINCT q.inquiry_unique_code)
+          FILTER (WHERE i.status = 'converted')                           AS converted,
+        COUNT(DISTINCT q.inquiry_unique_code)
+          FILTER (WHERE i.status IN ('lost', 'dropped'))                  AS lost,
+        COALESCE(SUM(q.grand_total) FILTER (WHERE q.status != 'draft'), 0)    AS total_value,
         COALESCE(SUM(q.grand_total) FILTER (
-          WHERE q.quoted_at >= date_trunc('month', NOW())
-        ), 0)                                                           AS monthly_value
+          WHERE q.status != 'draft'
+            AND q.quoted_at >= date_trunc('month', NOW())
+        ), 0)                                                              AS monthly_value
       FROM quotations q
       LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code
     `);
 
-    // Aliased as display_status, not "status" - GROUP BY status would be
-    // ambiguous here since both quotations.status and inquiries.status are
-    // real columns already in scope from the join.
+    // Aliased as display_status, not "status" — GROUP BY status would be
+    // ambiguous since both quotations.status and inquiries.status are in scope.
     const byStatus = await query(`
       SELECT
         CASE
-          WHEN i.status = 'converted' THEN 'accepted'
-          WHEN i.status IN ('lost', 'dropped') THEN 'lost'
-          WHEN q.is_revision THEN 'revised'
+          WHEN q.status = 'draft'              THEN 'draft'
+          WHEN q.status = 'cancelled'          THEN 'cancelled'
+          WHEN i.status = 'converted'          THEN 'accepted'
+          WHEN i.status IN ('lost','dropped')  THEN 'lost'
+          WHEN q.is_revision                   THEN 'revised'
           ELSE q.status
         END AS display_status,
         COUNT(*) AS count
@@ -125,7 +130,7 @@ export async function GET() {
     const t = totals.rows[0];
     return Response.json({
       total: Number(t.total),
-      draft: 0,
+      draft: Number(t.draft),
       sent: Number(t.sent),
       revised: Number(t.revised),
       converted: Number(t.converted),

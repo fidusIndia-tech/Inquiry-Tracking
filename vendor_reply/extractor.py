@@ -24,6 +24,14 @@ client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
+_SEP_RE = re.compile(r"[\s\-_./]+")
+
+# Patterns that mark the start of a quoted chain in a vendor reply.
+_THREAD_SPLIT_PATTERNS = [
+    r"(?im)^[-\s]*(forwarded\s+message|begin\s+forwarded\s+message|original\s+message)[-\s]*$",
+    r"(?im)^from:\s*.+$",
+    r"(?im)^on\s+.+wrote:\s*$",
+]
 
 
 def _plain_text(body_plain: str | None, body_html: str | None) -> str:
@@ -33,6 +41,19 @@ def _plain_text(body_plain: str | None, body_html: str | None) -> str:
         text = _TAG_RE.sub(" ", body_html)
         return _WS_RE.sub(" ", text).strip()
     return ""
+
+
+def _latest_reply_text(text: str) -> str:
+    """
+    Return only the newest part of a reply thread (above the quoted chain).
+    If no split marker is found the full text is returned unchanged.
+    """
+    cut_at = len(text)
+    for pattern in _THREAD_SPLIT_PATTERNS:
+        m = re.search(pattern, text)
+        if m:
+            cut_at = min(cut_at, m.start())
+    return text[:cut_at].strip()
 
 
 EXTRACTOR_SYSTEM = """You are a data-extraction assistant reading a vendor's reply to a Request For Quotation.
@@ -60,7 +81,8 @@ Return ONLY valid JSON in this exact format:
 Rules:
 - unit_price must be a plain number (no currency symbols, no thousands separators). Use null if no price was given.
 - If the vendor did not quote anything (e.g. asked a clarifying question, said out of stock with no price), return {"quotes": []}
-- Never invent a part number that isn't in the "parts we asked about" list."""
+- Never invent a part number that isn't in the "parts we asked about" list.
+- When matching the vendor's quoted part number to our list, treat hyphens, spaces, dots, slashes, and underscores as insignificant. For example 'FRN-075E2S-2J' should match 'FRN075E2S2J'. Always return the part number exactly as it appears in our "parts we asked about" list, not as the vendor wrote it."""
 
 EXTRACTOR_USER = """Parts we asked about: {part_numbers}
 
@@ -68,15 +90,45 @@ Vendor's reply:
 {body}"""
 
 
+def _normalize_pn(pn: str) -> str:
+    """Strip separators and lowercase for fuzzy part-number comparison."""
+    return _SEP_RE.sub("", pn or "").lower()
+
+
+def _fuzzy_match_parts(quotes: list[dict], known_parts: list[str]) -> list[dict]:
+    """
+    Replace GPT-returned part numbers with their canonical form from
+    known_parts when the only difference is separators / case.
+    """
+    if not known_parts:
+        return quotes
+    norm_map = {_normalize_pn(p): p for p in known_parts}
+    result = []
+    for q in quotes:
+        pn = q.get("part_number") or ""
+        canonical = norm_map.get(_normalize_pn(pn))
+        if canonical and canonical != pn:
+            logger.debug("fuzzy_match: '%s' → '%s'", pn, canonical)
+            q = {**q, "part_number": canonical}
+        result.append(q)
+    return result
+
+
 def extract_quote(body_plain: str | None, body_html: str | None, part_numbers: list[str]) -> list[dict]:
     """
     Returns a list of quote line-item dicts (possibly empty if the vendor
     didn't actually quote a price in this reply).
     """
-    # 15 000 chars to accommodate email body + full PDF/DOCX attachment text.
-    body = _plain_text(body_plain, body_html)[:15000]
-    if not body:
+    full_body = _plain_text(body_plain, body_html)
+    if not full_body:
         return []
+
+    # Prefer the latest reply text (vendor's new content, above the quoted chain)
+    # so GPT isn't confused by price tables from the original RFQ or prior threads.
+    # Fall back to the full body when the latest text is very short — vendor wrote
+    # something like "please see attached" and the real content is elsewhere.
+    latest = _latest_reply_text(full_body)
+    body = (latest if len(latest) >= 100 else full_body)[:15000]
 
     prompt = EXTRACTOR_USER.format(
         part_numbers=", ".join(part_numbers) or "(not specified)",
@@ -96,7 +148,9 @@ def extract_quote(body_plain: str | None, body_html: str | None, part_numbers: l
         )
         parsed = json.loads(response.choices[0].message.content)
         quotes = parsed.get("quotes", [])
-        return quotes if isinstance(quotes, list) else []
+        if not isinstance(quotes, list):
+            return []
+        return _fuzzy_match_parts(quotes, part_numbers)
     except Exception as exc:
         logger.error("Quote extraction error: %s", exc)
         return []

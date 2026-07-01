@@ -33,7 +33,8 @@ export async function GET(request) {
     if (!id) return Response.json({ error: "id is required" }, { status: 400 });
 
     const result = await query(
-      `SELECT q.*, i.location AS client_address
+      `SELECT q.*,
+              COALESCE(i.location, q.billing_address) AS client_address
        FROM quotations q
        LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code
        WHERE q.id = $1`,

@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import InquiryDetailModal from "@/app/components/InquiryDetailModal";
+import ManualQuotationForm from "@/app/components/ManualQuotationForm";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -21,11 +22,13 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquare,
   Pencil,
   Plus,
   Receipt,
   RefreshCw,
   Search,
+  Send,
   Store,
   TrendingUp,
   Trash2,
@@ -3478,23 +3481,35 @@ function QuotationSummaryPanel({ onOpenInquiry }) {
   const [viewData,    setViewData]    = useState(null);
   const [viewLoading, setViewLoading] = useState(false);
 
+  // Manual quotation form
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [editId,         setEditId]         = useState(null);
+
+  // Incremented after any save to force summary + list re-fetch
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Log notes for the view modal
+  const [notes,      setNotes]      = useState([]);
+  const [noteText,   setNoteText]   = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+
   useEffect(() => {
     fetch("/api/quotations/summary")
       .then((r) => r.json())
       .then((d) => setSummary(d.error ? null : d))
       .catch(() => setSummary(null));
-  }, []);
+  }, [refreshKey]);
 
   // Debounced so typing in the search box doesn't fire a request per keystroke.
   useEffect(() => {
     const timer = setTimeout(() => {
       setLoading(true); setError("");
       const params = new URLSearchParams();
-      if (search.trim())           params.set("search", search.trim());
-      if (statusFilter)            params.set("status", statusFilter);
-      if (salespersonFilter)       params.set("salesperson", salespersonFilter);
-      if (dateFrom)                params.set("date_from", dateFrom);
-      if (dateTo)                  params.set("date_to", dateTo);
+      if (search.trim())            params.set("search", search.trim());
+      if (statusFilter)             params.set("status", statusFilter);
+      if (salespersonFilter)        params.set("salesperson", salespersonFilter);
+      if (dateFrom)                 params.set("date_from", dateFrom);
+      if (dateTo)                   params.set("date_to", dateTo);
       if (revisionFilter !== "all") params.set("revision", revisionFilter);
       fetch(`/api/quotations?${params.toString()}`)
         .then((r) => r.json())
@@ -3506,16 +3521,43 @@ function QuotationSummaryPanel({ onOpenInquiry }) {
         .finally(() => setLoading(false));
     }, 300);
     return () => clearTimeout(timer);
-  }, [search, statusFilter, salespersonFilter, dateFrom, dateTo, revisionFilter]);
+  }, [search, statusFilter, salespersonFilter, dateFrom, dateTo, revisionFilter, refreshKey]);
 
   const openView = (id) => {
-    setViewId(id); setViewLoading(true); setViewData(null);
-    fetch(`/api/quotations?id=${id}`)
-      .then((r) => r.json())
-      .then((d) => setViewData(d.quotation || null))
-      .catch(() => setViewData(null))
+    setViewId(id); setViewLoading(true); setViewData(null); setNotes([]);
+    Promise.all([
+      fetch(`/api/quotations?id=${id}`).then((r) => r.json()),
+      fetch(`/api/quotations/${id}/notes`).then((r) => r.json()),
+    ])
+      .then(([qData, nData]) => {
+        setViewData(qData.quotation || null);
+        setNotes(nData.notes || []);
+      })
+      .catch(() => { setViewData(null); setNotes([]); })
       .finally(() => setViewLoading(false));
   };
+
+  const handleAddNote = async () => {
+    if (!noteText.trim() || !viewId) return;
+    setNoteSaving(true);
+    try {
+      await fetch(`/api/quotations/${viewId}/notes`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          note_text:       noteText.trim(),
+          created_by:      typeof window !== "undefined" ? (localStorage.getItem("userName") || "Admin") : "Admin",
+          created_by_role: "admin",
+        }),
+      });
+      const updated = await fetch(`/api/quotations/${viewId}/notes`).then((r) => r.json());
+      setNotes(updated.notes || []);
+      setNoteText("");
+    } catch {}
+    setNoteSaving(false);
+  };
+
+  const handleManualSaved = () => setRefreshKey((k) => k + 1);
 
   const salespersonOptions = useMemo(
     () => [...new Set(quotations.map((q) => q.salesperson).filter(Boolean))],
@@ -3566,7 +3608,16 @@ function QuotationSummaryPanel({ onOpenInquiry }) {
               <p className="text-[10px] text-slate-400">All quotations sent by the system, including revisions</p>
             </div>
           </div>
-          <span className="rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-0.5 text-[11px] font-semibold text-[#1D6FD8]">{quotations.length} shown</span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-0.5 text-[11px] font-semibold text-[#1D6FD8]">{quotations.length} shown</span>
+            <button
+              onClick={() => { setEditId(null); setShowManualForm(true); }}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold text-white transition hover:opacity-90"
+              style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
+            >
+              <Plus size={12} />New Quotation
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 border-b border-[#E4EDFF] px-4 py-2.5">
@@ -3655,15 +3706,25 @@ function QuotationSummaryPanel({ onOpenInquiry }) {
                   <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2 text-right font-semibold">{fmtQuoteINR(q.grand_total)}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-1.5">
-                      <button onClick={() => openView(q.id)} title="View" className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#EEF2FF] hover:text-[#4451E8]">
+                      <button onClick={() => openView(q.id)} title="View / Notes" className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#EEF2FF] hover:text-[#4451E8]">
                         <Eye size={13} />
                       </button>
                       <a href={`/api/quotations/pdf?id=${q.id}`} title="Download PDF" className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#EEF2FF] hover:text-[#4451E8]">
                         <Download size={13} />
                       </a>
-                      <button onClick={() => onOpenInquiry?.(q.inquiry_unique_code)} title="Open Inquiry" className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#EEF2FF] hover:text-[#4451E8]">
-                        <ExternalLink size={13} />
-                      </button>
+                      {q.display_status === "draft" ? (
+                        <button
+                          onClick={() => { setEditId(q.id); setShowManualForm(true); }}
+                          title="Edit Draft"
+                          className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#EEF2FF] hover:text-[#4451E8]"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      ) : (
+                        <button onClick={() => onOpenInquiry?.(q.inquiry_unique_code)} title="Open Inquiry" className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#EEF2FF] hover:text-[#4451E8]">
+                          <ExternalLink size={13} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -3673,55 +3734,157 @@ function QuotationSummaryPanel({ onOpenInquiry }) {
         </div>
       </section>
 
-      {/* View modal */}
+      {/* View modal — expanded to 2xl to accommodate notes */}
       {viewId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-sm" onClick={() => { setViewId(null); setViewData(null); }} />
-          <div className="relative z-10 max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 card-shadow-lg animate-modal">
-            <button
-              onClick={() => { setViewId(null); setViewData(null); }}
-              className="absolute top-4 right-4 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-[#F3F5F7] hover:text-slate-700"
-            >
-              <X size={15} />
-            </button>
-            {viewLoading && <p className="text-[12px] text-slate-400">Loading…</p>}
-            {!viewLoading && !viewData && <p className="text-[12px] text-rose-500">Quotation not found</p>}
+          <div
+            className="absolute inset-0 bg-slate-950/30 backdrop-blur-sm"
+            onClick={() => { setViewId(null); setViewData(null); setNotes([]); setNoteText(""); }}
+          />
+          <div className="relative z-10 flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white card-shadow-lg animate-modal">
+            {/* Modal header */}
+            <div className="flex shrink-0 items-center justify-between border-b border-[#EEF2F6] px-6 py-4">
+              <div>
+                {viewLoading
+                  ? <p className="text-[12px] text-slate-400">Loading…</p>
+                  : viewData
+                    ? <>
+                        <h3 className="text-[14px] font-bold text-slate-900">{viewData.quotation_number}</h3>
+                        <p className="text-[11px] text-slate-400">
+                          {viewData.inquiry_unique_code} · {fmtQuoteDate(viewData.quoted_at)}
+                          {viewData.source === "manual" && (
+                            <span className="ml-2 rounded-full bg-[#F5F3FF] px-1.5 py-0.5 text-[9px] font-bold text-[#6D28D9]">Manual</span>
+                          )}
+                        </p>
+                      </>
+                    : <p className="text-[12px] text-rose-500">Quotation not found</p>
+                }
+              </div>
+              <button
+                onClick={() => { setViewId(null); setViewData(null); setNotes([]); setNoteText(""); }}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-[#F3F5F7] hover:text-slate-700"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Scrollable body */}
             {!viewLoading && viewData && (
-              <div className="space-y-3">
-                <div>
-                  <h3 className="text-[15px] font-bold text-slate-900">{viewData.quotation_number}</h3>
-                  <p className="text-[11px] text-slate-400">{viewData.inquiry_unique_code} · {fmtQuoteDate(viewData.quoted_at)}</p>
-                </div>
+              <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
+                {/* Fields */}
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <div><span className="text-slate-400">Client:</span> {viewData.client_name || "—"}</div>
                   <div><span className="text-slate-400">Salesperson:</span> {viewData.salesperson || "—"}</div>
+                  {viewData.client_phone && (
+                    <div><span className="text-slate-400">Phone:</span> {viewData.client_phone}</div>
+                  )}
+                  {viewData.billing_address && (
+                    <div className="col-span-2"><span className="text-slate-400">Address:</span> {viewData.billing_address}</div>
+                  )}
                   <div><span className="text-slate-400">Amendment Code:</span> {viewData.amendment_code || "—"}</div>
                   <div><span className="text-slate-400">Amendment Date:</span> {viewData.amendment_date ? fmtQuoteDate(viewData.amendment_date) : "—"}</div>
                   <div><span className="text-slate-400">Taxable Amount:</span> {fmtQuoteINR(viewData.taxable_amount)}</div>
                   <div><span className="text-slate-400">Tax Amount:</span> {fmtQuoteINR(viewData.tax_amount)}</div>
-                  <div className="col-span-2"><span className="text-slate-400">Grand Total:</span> <span className="font-bold">{fmtQuoteINR(viewData.grand_total)}</span></div>
+                  <div className="col-span-2">
+                    <span className="text-slate-400">Grand Total:</span>{" "}
+                    <span className="font-bold text-slate-900">{fmtQuoteINR(viewData.grand_total)}</span>
+                  </div>
                 </div>
-                <div className="border-t border-[#EEF2F6] pt-2">
-                  <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Line Items</p>
-                  <div className="space-y-1">
+
+                {/* Line items */}
+                <div className="rounded-xl border border-[#EEF2F6] p-3">
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Line Items</p>
+                  <div className="space-y-1.5">
                     {(viewData.lines || []).map((l, i) => (
-                      <div key={i} className="flex items-center justify-between text-[11px]">
-                        <span>{l.part_number} {l.brand ? `(${l.brand})` : ""}</span>
-                        <span className="text-slate-500">{l.quantity} × {l.selling_price}</span>
+                      <div key={i} className="flex items-start justify-between gap-4 text-[11px]">
+                        <span className="text-slate-700">
+                          {l.part_number || "—"}{l.brand ? ` (${l.brand})` : ""}
+                          {l.description ? <span className="ml-1 text-slate-400">— {l.description}</span> : null}
+                        </span>
+                        <span className="shrink-0 text-slate-500">
+                          {l.quantity} {l.uom || ""} × {viewData.currency || "INR"} {Number(l.selling_price || 0).toLocaleString("en-IN")}
+                        </span>
                       </div>
                     ))}
                   </div>
                 </div>
+
+                {/* PDF download */}
                 <a
                   href={`/api/quotations/pdf?id=${viewData.id}`}
+                  target="_blank" rel="noreferrer"
                   className="flex items-center justify-center gap-1.5 rounded-lg border border-[#C7D2FE] bg-white px-3 py-2 text-[11px] font-semibold text-[#4451E8] transition hover:bg-[#EEF0FF]"
                 >
                   <Download size={12} />Download PDF
                 </a>
+
+                {/* ── Log Notes ─────────────────────────────────────── */}
+                <div className="border-t border-[#EEF2F6] pt-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <MessageSquare size={13} className="text-slate-400" />
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                      Internal Notes
+                    </p>
+                    {notes.length > 0 && (
+                      <span className="rounded-full bg-[#EEF4FF] px-1.5 py-0.5 text-[9px] font-bold text-[#4451E8]">
+                        {notes.length}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Timeline */}
+                  {notes.length > 0 && (
+                    <div className="mb-3 space-y-2">
+                      {notes.map((n) => (
+                        <div key={n.id} className="rounded-xl border border-[#E4EDFF] bg-[#FAFBFF] p-3">
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold text-slate-700">{n.created_by || "Admin"}</span>
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(n.created_at).toLocaleString("en-IN", {
+                                day: "2-digit", month: "short", year: "numeric",
+                                hour: "2-digit", minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                          <p className="whitespace-pre-wrap text-[11px] text-slate-700">{n.note_text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add note */}
+                  <div className="space-y-2">
+                    <textarea
+                      value={noteText}
+                      onChange={(e) => setNoteText(e.target.value)}
+                      placeholder="Log an internal note…"
+                      rows={3}
+                      className="w-full resize-none rounded-xl border border-[#E4E8EE] bg-white px-3 py-2 text-[12px] text-slate-800 outline-none transition focus:border-[#5BA7FF] placeholder:text-slate-400"
+                    />
+                    <button
+                      onClick={handleAddNote}
+                      disabled={!noteText.trim() || noteSaving}
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold text-white transition disabled:opacity-40"
+                      style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)" }}
+                    >
+                      <Send size={11} />
+                      {noteSaving ? "Saving…" : "Log Note"}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
         </div>
+      )}
+
+      {/* Manual quotation form */}
+      {showManualForm && (
+        <ManualQuotationForm
+          editId={editId}
+          onClose={() => { setShowManualForm(false); setEditId(null); }}
+          onSaved={handleManualSaved}
+        />
       )}
     </div>
   );

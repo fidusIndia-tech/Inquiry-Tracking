@@ -26,6 +26,11 @@ async function ensureQuotesSchema() {
     )
   `);
   await pool.query("ALTER TABLE vendor_quotes ADD COLUMN IF NOT EXISTS raw_reply_is_html BOOLEAN DEFAULT FALSE");
+  // Dedup: same vendor quoting the same part for the same inquiry is an upsert, not a duplicate row.
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS vendor_quotes_dedup_idx
+    ON vendor_quotes(inquiry_unique_code, LOWER(COALESCE(vendor_email,'')), LOWER(COALESCE(part_number,'')))
+  `);
   _quotesSchemaReady = true;
 }
 
@@ -88,6 +93,17 @@ export async function POST(request) {
            (inquiry_unique_code, draft_id, vendor_name, vendor_email, brand, part_number,
             unit_price, currency, moq, lead_time, availability, remarks, raw_reply, raw_reply_is_html)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         ON CONFLICT (inquiry_unique_code, LOWER(COALESCE(vendor_email,'')), LOWER(COALESCE(part_number,'')))
+         DO UPDATE SET
+           unit_price        = EXCLUDED.unit_price,
+           currency          = EXCLUDED.currency,
+           moq               = EXCLUDED.moq,
+           lead_time         = EXCLUDED.lead_time,
+           availability      = EXCLUDED.availability,
+           remarks           = EXCLUDED.remarks,
+           raw_reply         = EXCLUDED.raw_reply,
+           raw_reply_is_html = EXCLUDED.raw_reply_is_html,
+           received_at       = NOW()
          RETURNING *`,
         [
           unique_code,

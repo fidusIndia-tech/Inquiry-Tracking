@@ -33,18 +33,44 @@ def _download_attachment(service, message_id: str, attachment_id: str) -> bytes:
     return base64.urlsafe_b64decode(data + "==")
 
 
+def _ocr_pdf(data: bytes) -> str:
+    """OCR fallback for scanned/image-only PDFs. Requires: pip install pdf2image pytesseract
+    and system packages: poppler-utils + tesseract-ocr."""
+    try:
+        from pdf2image import convert_from_bytes
+        import pytesseract
+        images = convert_from_bytes(data, dpi=200)
+        pages = [pytesseract.image_to_string(img) for img in images]
+        return "\n".join(pages)
+    except ImportError:
+        logger.debug("pdf2image/pytesseract not installed — OCR unavailable. pip install pdf2image pytesseract (+ system: poppler-utils tesseract-ocr)")
+        return ""
+    except Exception as exc:
+        logger.warning("PDF OCR failed: %s", exc)
+        return ""
+
+
 def _extract_from_pdf(data: bytes) -> str:
+    text = ""
     try:
         import pdfplumber
         with pdfplumber.open(io.BytesIO(data)) as pdf:
             pages = [p.extract_text() or "" for p in pdf.pages]
-        return "\n".join(pages)
+        text = "\n".join(pages)
     except ImportError:
         logger.warning("pdfplumber not installed — skipping PDF. Run: pip install pdfplumber")
         return ""
     except Exception as exc:
         logger.warning("PDF extraction failed: %s", exc)
         return ""
+
+    # Scanned/image-based PDF: pdfplumber returns near-empty text. Try OCR.
+    if len(text.strip()) < 50:
+        logger.info("PDF text minimal (%d chars) — attempting OCR", len(text.strip()))
+        ocr_text = _ocr_pdf(data)
+        if ocr_text.strip():
+            return ocr_text
+    return text
 
 
 def _extract_from_xlsx(data: bytes) -> str:
@@ -76,6 +102,66 @@ def _extract_from_docx(data: bytes) -> str:
         return ""
     except Exception as exc:
         logger.warning("DOCX extraction failed: %s", exc)
+        return ""
+
+
+def _extract_from_ods(data: bytes) -> str:
+    """Extract text from OpenDocument Spreadsheet (.ods). Requires: pip install odfpy"""
+    try:
+        from odf.opendocument import load as odf_load
+        from odf.table import Table, TableRow, TableCell
+        from odf import teletype
+        doc = odf_load(io.BytesIO(data))
+        rows = []
+        for sheet in doc.spreadsheet.getElementsByType(Table):
+            for row in sheet.getElementsByType(TableRow):
+                cells = [
+                    teletype.extractText(cell).strip()
+                    for cell in row.getElementsByType(TableCell)
+                ]
+                if any(cells):
+                    rows.append("\t".join(cells))
+        return "\n".join(rows)
+    except ImportError:
+        logger.warning("odfpy not installed — skipping ODS. Run: pip install odfpy")
+        return ""
+    except Exception as exc:
+        logger.warning("ODS extraction failed: %s", exc)
+        return ""
+
+
+def _extract_from_zip(data: bytes) -> str:
+    """Unzip and extract text from all recognised file types inside the archive."""
+    import zipfile
+    try:
+        texts = []
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            for name in zf.namelist():
+                if name.endswith("/"):
+                    continue
+                ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+                try:
+                    raw = zf.read(name)
+                except Exception as exc:
+                    logger.warning("ZIP: failed to read %s: %s", name, exc)
+                    continue
+                if ext == "pdf":
+                    text = _extract_from_pdf(raw)
+                elif ext in ("xlsx", "xls"):
+                    text = _extract_from_xlsx(raw)
+                elif ext in ("docx", "doc"):
+                    text = _extract_from_docx(raw)
+                elif ext == "ods":
+                    text = _extract_from_ods(raw)
+                elif ext in ("txt", "csv"):
+                    text = raw.decode("utf-8", errors="replace")
+                else:
+                    text = ""
+                if text.strip():
+                    texts.append(f"[ZIP/{name}]\n{text.strip()}")
+        return "\n\n".join(texts)
+    except Exception as exc:
+        logger.warning("ZIP extraction failed: %s", exc)
         return ""
 
 
@@ -314,6 +400,10 @@ def extract_attachment_text(service, message_id: str, payload: dict) -> str:
                 text = _extract_from_xlsx(raw)
             elif ext in ("docx", "doc"):
                 text = _extract_from_docx(raw)
+            elif ext == "ods":
+                text = _extract_from_ods(raw)
+            elif ext == "zip":
+                text = _extract_from_zip(raw)
             elif ext in ("txt", "csv"):
                 text = raw.decode("utf-8", errors="replace")
             else:

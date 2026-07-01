@@ -38,19 +38,42 @@ async function ensureSchema() {
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS custom_tax_name TEXT`);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS custom_tax_rate NUMERIC`);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`);
+  // Manual quotation columns (idempotent — safe to run on every cold start)
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE quotations ALTER COLUMN inquiry_unique_code DROP NOT NULL;
+    EXCEPTION WHEN others THEN NULL;
+    END $$
+  `);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS source          TEXT         DEFAULT 'system'`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS client_phone    TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS billing_address TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS updated_at      TIMESTAMPTZ`);
+  await pool.query(`CREATE SEQUENCE IF NOT EXISTS manual_quotation_seq START 1`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS quotation_notes (
+      id              SERIAL      PRIMARY KEY,
+      quotation_id    INT         NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+      note_text       TEXT        NOT NULL,
+      created_by      TEXT,
+      created_by_role TEXT,
+      created_at      TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
   _schemaReady = true;
 }
 
-// Real status taxonomy is derived, not stored: "draft"/"accepted"/"lost"
-// don't exist as quotation-level events in the current flow (a quotation is
-// created and emailed in one atomic step, and acceptance/loss is tracked on
-// the inquiry, not the quotation). Deriving from inquiries.status + is_revision
-// gives every status the user asked to filter on without fabricating data.
+// Status derivation rules:
+//   Manual quotations drive status from q.status (draft / sent / cancelled).
+//   System quotations (from inquiry flow) derive accepted/lost from the
+//   linked inquiry, since that's where outcome is tracked.
 const DISPLAY_STATUS_CASE = `
   CASE
-    WHEN i.status = 'converted' THEN 'accepted'
-    WHEN i.status IN ('lost', 'dropped') THEN 'lost'
-    WHEN q.is_revision THEN 'revised'
+    WHEN q.status = 'draft'                  THEN 'draft'
+    WHEN q.status = 'cancelled'              THEN 'cancelled'
+    WHEN i.status = 'converted'              THEN 'accepted'
+    WHEN i.status IN ('lost', 'dropped')     THEN 'lost'
+    WHEN q.is_revision                       THEN 'revised'
     ELSE q.status
   END
 `;

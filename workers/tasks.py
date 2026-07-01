@@ -753,6 +753,7 @@ def extract_vendor_quote(self, message_id: str) -> dict:
         "brand": draft.get("brand") if draft else None,
         "raw_reply": parsed.get("body_html") or parsed.get("body_plain"),
         "raw_reply_is_html": raw_reply_html,
+        "source_email": user_id,
         "quotes": quotes,
     })
 

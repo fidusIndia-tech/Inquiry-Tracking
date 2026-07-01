@@ -72,7 +72,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureQuotesSchema();
-    const { unique_code, draft_id, vendor_name, vendor_email, brand, raw_reply, raw_reply_is_html, quotes } = await request.json();
+    const { unique_code, draft_id, vendor_name, vendor_email, source_email, brand, raw_reply, raw_reply_is_html, quotes } = await request.json();
 
     if (!unique_code || !quotes?.length) {
       return Response.json({ error: "unique_code and quotes are required" }, { status: 400 });
@@ -116,8 +116,8 @@ export async function POST(request) {
       try {
         for (const q of created) {
           await legacyQuery(
-            `INSERT INTO parts_table (supplier, email_from, brand, part_no, price, currency, delivery_time)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            `INSERT INTO parts_table (supplier, email_from, brand, part_no, price, currency, delivery_time, source_email)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
             [
               vendor_name || null,
               vendor_email,
@@ -126,6 +126,7 @@ export async function POST(request) {
               q.unit_price != null ? String(q.unit_price) : null,
               q.currency || null,
               q.lead_time || null,
+              source_email || null,
             ]
           );
         }

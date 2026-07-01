@@ -1,5 +1,6 @@
 import sanitizeHtml from "sanitize-html";
 import { pool, query } from "@/lib/db";
+import { legacyQuery } from "@/lib/legacyDb";
 
 let _quotesSchemaReady = false;
 async function ensureQuotesSchema() {
@@ -106,6 +107,32 @@ export async function POST(request) {
         ]
       );
       if (res.rows[0]) created.push(res.rows[0]);
+    }
+
+    // Mirror each quoted line into the legacy parts_table so this vendor
+    // automatically appears in "Company History" for future inquiries with
+    // the same brand. Non-fatal — a legacy DB hiccup must not block saving.
+    if (vendor_email && created.length > 0) {
+      try {
+        for (const q of created) {
+          await legacyQuery(
+            `INSERT INTO parts_table (supplier, email_from, brand, part_no, price, currency, delivery_time)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              vendor_name || null,
+              vendor_email,
+              q.brand || null,
+              q.part_number || null,
+              q.unit_price != null ? String(q.unit_price) : null,
+              q.currency || null,
+              q.lead_time || null,
+            ]
+          );
+        }
+        console.log(`[quotes] Mirrored ${created.length} line(s) to legacy parts_table | ${vendor_email}`);
+      } catch (legacyErr) {
+        console.error("[quotes] Legacy parts_table mirror failed (non-fatal):", legacyErr.message);
+      }
     }
 
     // Mark the originating draft as replied so reminders stop for that vendor.

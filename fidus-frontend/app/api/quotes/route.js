@@ -26,11 +26,29 @@ async function ensureQuotesSchema() {
     )
   `);
   await pool.query("ALTER TABLE vendor_quotes ADD COLUMN IF NOT EXISTS raw_reply_is_html BOOLEAN DEFAULT FALSE");
-  // Dedup: same vendor quoting the same part for the same inquiry is an upsert, not a duplicate row.
-  await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS vendor_quotes_dedup_idx
-    ON vendor_quotes(inquiry_unique_code, LOWER(COALESCE(vendor_email,'')), LOWER(COALESCE(part_number,'')))
-  `);
+  // Dedup index — must delete existing duplicates first or CREATE UNIQUE INDEX
+  // fails on tables that already have rows. Wrapped non-fatal so a failure here
+  // never blocks the GET (prices would just not deduplicate on re-insert).
+  try {
+    await pool.query(`
+      DELETE FROM vendor_quotes
+      WHERE id NOT IN (
+        SELECT DISTINCT ON (inquiry_unique_code, LOWER(COALESCE(vendor_email,'')), LOWER(COALESCE(part_number,'')))
+          id
+        FROM vendor_quotes
+        ORDER BY inquiry_unique_code,
+                 LOWER(COALESCE(vendor_email,'')),
+                 LOWER(COALESCE(part_number,'')),
+                 received_at DESC NULLS LAST
+      )
+    `);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS vendor_quotes_dedup_idx
+      ON vendor_quotes(inquiry_unique_code, LOWER(COALESCE(vendor_email,'')), LOWER(COALESCE(part_number,'')))
+    `);
+  } catch (e) {
+    console.warn("[quotes] Dedup index setup failed (non-fatal):", e.message);
+  }
   _quotesSchemaReady = true;
 }
 

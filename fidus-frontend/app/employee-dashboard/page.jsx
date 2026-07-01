@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import InquiryDetailModal from "@/app/components/InquiryDetailModal";
+import QuotationSummaryPanel from "@/app/components/QuotationSummaryPanel";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -171,6 +172,7 @@ export default function EmployeeDashboard() {
   // already-open modal showing live data instead of whatever existed at
   // the moment it was opened.
   const [detailModalCode,       setDetailModalCode]       = useState(null);
+  const [activeTab,             setActiveTab]             = useState("inquiries");
   const [expandedCodes,         setExpandedCodes]         = useState(new Set());
   const knownAssignmentsRef  = useRef(new Map());
   const knownPriceCountsRef  = useRef(new Map());
@@ -446,11 +448,26 @@ export default function EmployeeDashboard() {
           <Image src="/logo-dark.png" alt="FIAPL" width={120} height={40} className="h-8 w-auto object-contain shrink-0" priority />
           <div className="h-5 w-px bg-[#D8E3F8]" />
           <button
-            className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold text-white whitespace-nowrap"
-            style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
+            onClick={() => setActiveTab("inquiries")}
+            className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold whitespace-nowrap transition"
+            style={activeTab === "inquiries"
+              ? { background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", color: "white", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }
+              : { background: "transparent", color: "#64748b", border: "1px solid #E4E8EE" }
+            }
           >
             <LayoutDashboard size={12} />
-            Dashboard
+            Inquiries
+          </button>
+          <button
+            onClick={() => setActiveTab("quotes")}
+            className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold whitespace-nowrap transition"
+            style={activeTab === "quotes"
+              ? { background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", color: "white", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }
+              : { background: "transparent", color: "#64748b", border: "1px solid #E4E8EE" }
+            }
+          >
+            <FileText size={12} />
+            My Quotes
           </button>
         </div>
 
@@ -494,6 +511,15 @@ export default function EmployeeDashboard() {
 
       {/* ── Content ── */}
       <main className="flex-1 overflow-auto p-4 lg:p-5">
+
+        {activeTab === "quotes" && (
+          <QuotationSummaryPanel
+            salespersonLock={employeeName}
+            onOpenInquiry={(code) => { setActiveTab("inquiries"); setDetailModalCode(code); }}
+          />
+        )}
+
+        {activeTab === "inquiries" && <>
             {/* Metric cards */}
             <section className="mb-4 flex gap-3">
               <MetricCard icon={<FileText size={15} />}     label="Assigned"     value={loading ? "—" : groupedInquiries.length} accent="blue"   />
@@ -550,6 +576,7 @@ export default function EmployeeDashboard() {
                 onToggleExpand={toggleExpand}
               />
             </section>
+        </>}
       </main>
 
       {detailModal && (

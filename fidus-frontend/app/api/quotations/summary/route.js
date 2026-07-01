@@ -47,9 +47,14 @@ async function ensureSchema() {
  * quotation-level field, since that's where this system actually tracks
  * outcome today.
  */
-export async function GET() {
+export async function GET(request) {
   try {
     await ensureSchema();
+
+    const { searchParams } = new URL(request.url);
+    const salesperson = searchParams.get("salesperson") || null;
+    const spWhere = salesperson ? "WHERE q.salesperson = $1" : "";
+    const spParam = salesperson ? [salesperson] : [];
 
     const totals = await query(`
       SELECT
@@ -68,10 +73,13 @@ export async function GET() {
         ), 0)                                                              AS monthly_value
       FROM quotations q
       LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code
-    `);
+      ${spWhere}
+    `, spParam);
 
     // Aliased as display_status, not "status" — GROUP BY status would be
     // ambiguous since both quotations.status and inquiries.status are in scope.
+    const spWhere2 = salesperson ? "AND q.salesperson = $1" : "";
+
     const byStatus = await query(`
       SELECT
         CASE
@@ -85,47 +93,48 @@ export async function GET() {
         COUNT(*) AS count
       FROM quotations q
       LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code
+      WHERE 1=1 ${spWhere2}
       GROUP BY display_status
       ORDER BY count DESC
-    `);
+    `, spParam);
 
-    const bySalesperson = await query(`
+    const bySalesperson = salesperson ? [] : (await query(`
       SELECT COALESCE(salesperson, 'Unassigned') AS salesperson,
              COUNT(*) AS count, COALESCE(SUM(grand_total), 0) AS value
       FROM quotations
       GROUP BY salesperson
       ORDER BY count DESC
       LIMIT 10
-    `);
+    `)).rows;
 
     const byMonth = await query(`
       SELECT to_char(quoted_at, 'YYYY-MM') AS month,
              COUNT(*) AS count, COALESCE(SUM(grand_total), 0) AS value
       FROM quotations
+      WHERE 1=1 ${salesperson ? "AND salesperson = $1" : ""}
       GROUP BY month
       ORDER BY month
-    `);
+    `, spParam);
 
     const byClient = await query(`
       SELECT client_name, COUNT(*) AS count, COALESCE(SUM(grand_total), 0) AS value
       FROM quotations
       WHERE client_name IS NOT NULL AND client_name != ''
+        ${salesperson ? "AND salesperson = $1" : ""}
       GROUP BY client_name
       ORDER BY count DESC
       LIMIT 10
-    `);
+    `, spParam);
 
-    // "lines" is the JSONB array of quoted line items — each carries a
-    // "brand" field (see lib/quotationPdf.jsx), so this reuses the actual
-    // quoted data instead of needing a separate per-line table.
     const byBrand = await query(`
       SELECT line ->> 'brand' AS brand, COUNT(*) AS count
       FROM quotations, jsonb_array_elements(lines) AS line
       WHERE line ->> 'brand' IS NOT NULL AND line ->> 'brand' != ''
+        ${salesperson ? "AND salesperson = $1" : ""}
       GROUP BY brand
       ORDER BY count DESC
       LIMIT 10
-    `);
+    `, spParam);
 
     const t = totals.rows[0];
     return Response.json({
@@ -139,7 +148,7 @@ export async function GET() {
       monthly_value: Number(t.monthly_value),
       revision_count: Number(t.revised),
       by_status: byStatus.rows.map((r) => ({ status: r.display_status, count: Number(r.count) })),
-      by_salesperson: bySalesperson.rows.map((r) => ({ salesperson: r.salesperson, count: Number(r.count), value: Number(r.value) })),
+      by_salesperson: (Array.isArray(bySalesperson) ? bySalesperson : bySalesperson.rows || []).map((r) => ({ salesperson: r.salesperson, count: Number(r.count), value: Number(r.value) })),
       by_month: byMonth.rows.map((r) => ({ month: r.month, count: Number(r.count), value: Number(r.value) })),
       by_client: byClient.rows.map((r) => ({ client_name: r.client_name, count: Number(r.count), value: Number(r.value) })),
       by_brand: byBrand.rows.map((r) => ({ brand: r.brand, count: Number(r.count) })),

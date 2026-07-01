@@ -26,6 +26,7 @@ async function ensureQuotesSchema() {
     )
   `);
   await pool.query("ALTER TABLE vendor_quotes ADD COLUMN IF NOT EXISTS raw_reply_is_html BOOLEAN DEFAULT FALSE");
+  await pool.query("ALTER TABLE vendor_quotes ADD COLUMN IF NOT EXISTS source_type TEXT DEFAULT 'extracted'");
   // Dedup index — must delete existing duplicates first or CREATE UNIQUE INDEX
   // fails on tables that already have rows. Wrapped non-fatal so a failure here
   // never blocks the GET (prices would just not deduplicate on re-insert).
@@ -95,7 +96,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureQuotesSchema();
-    const { unique_code, draft_id, vendor_name, vendor_email, source_email, brand, raw_reply, raw_reply_is_html, quotes } = await request.json();
+    const { unique_code, draft_id, vendor_name, vendor_email, source_email, brand, raw_reply, raw_reply_is_html, quotes, source_type } = await request.json();
 
     if (!unique_code || !quotes?.length) {
       return Response.json({ error: "unique_code and quotes are required" }, { status: 400 });
@@ -109,8 +110,8 @@ export async function POST(request) {
       const res = await query(
         `INSERT INTO vendor_quotes
            (inquiry_unique_code, draft_id, vendor_name, vendor_email, brand, part_number,
-            unit_price, currency, moq, lead_time, availability, remarks, raw_reply, raw_reply_is_html)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            unit_price, currency, moq, lead_time, availability, remarks, raw_reply, raw_reply_is_html, source_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          ON CONFLICT (inquiry_unique_code, LOWER(COALESCE(vendor_email,'')), LOWER(COALESCE(part_number,'')))
          DO UPDATE SET
            unit_price        = EXCLUDED.unit_price,
@@ -138,6 +139,7 @@ export async function POST(request) {
           q.remarks || null,
           cleanReply,
           isHtml,
+          source_type || "extracted",
         ]
       );
       if (res.rows[0]) created.push(res.rows[0]);
@@ -198,6 +200,20 @@ export async function POST(request) {
     }
 
     return Response.json({ quotes: created });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request) {
+  try {
+    await ensureQuotesSchema();
+    const { id, part_number } = await request.json();
+    if (!id || part_number === undefined) {
+      return Response.json({ error: "id and part_number are required" }, { status: 400 });
+    }
+    await query(`UPDATE vendor_quotes SET part_number = $1 WHERE id = $2`, [part_number, id]);
+    return Response.json({ ok: true });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

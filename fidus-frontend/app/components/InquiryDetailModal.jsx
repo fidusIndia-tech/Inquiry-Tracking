@@ -1205,21 +1205,15 @@ function isCustomTaxValid(customTax) {
 }
 
 function QuotesTab({ inquiry }) {
+  /* ── State ── */
   const [quotes,        setQuotes]        = useState([]);
   const [loading,       setLoading]       = useState(true);
-  const [selected,      setSelected]      = useState({}); // part_number -> quote id
-  const [sellingPrices, setSellingPrices] = useState({}); // part_number -> string
-  const [leadTimes,     setLeadTimes]     = useState({}); // part_number -> string
-  // Pre-filled from the logged-in employee's own account (same localStorage
-  // value set at login/SSO) so they aren't asked every time — still a plain
-  // editable field in case they need to override it for a specific quote.
+  const [selected,      setSelected]      = useState({});
+  const [sellingPrices, setSellingPrices] = useState({});
+  const [leadTimes,     setLeadTimes]     = useState({});
   const [salesperson,   setSalesperson]   = useState(
     () => (typeof window !== "undefined" ? localStorage.getItem("userName") : "") || ""
   );
-  // localStorage.userName is only written at login/SSO — if an admin renames
-  // this employee afterward, the cached value goes stale for the rest of the
-  // session and a quote could go out under the old name. Refresh it from the
-  // DB once per mount, but never clobber a name the employee already edited.
   const salespersonEditedRef = useRef(false);
   useEffect(() => {
     const userId = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
@@ -1235,22 +1229,24 @@ function QuotesTab({ inquiry }) {
       })
       .catch(() => {});
   }, []);
-  const [quoteCurrency, setQuoteCurrency] = useState("INR");
-  const [gstOption,     setGstOption]     = useState(GST_OPTIONS[1]); // default: CGST+SGST@18%
-  const [customTaxName, setCustomTaxName] = useState("");
-  const [customTaxRate, setCustomTaxRate] = useState("");
-  const [expanded,      setExpanded]      = useState({}); // quote id -> bool
-  const [sending,       setSending]       = useState(false);
-  const [sendError,     setSendError]     = useState("");
-  const [sentOk,        setSentOk]        = useState(false);
-  const [sentInfo,      setSentInfo]      = useState(null); // { quotation_number, amendment_code }
-
-  // How many quotations already exist for this FIAPL code — drives the
-  // "this will be a revision" warning and the next revision's amendment
-  // code, before the employee even sends. Distinct from /api/quotes above,
-  // which is vendor reply data, not client quotations.
+  const [quoteCurrency,       setQuoteCurrency]       = useState("INR");
+  const [gstOption,           setGstOption]           = useState(GST_OPTIONS[1]);
+  const [customTaxName,       setCustomTaxName]       = useState("");
+  const [customTaxRate,       setCustomTaxRate]       = useState("");
+  const [expanded,            setExpanded]            = useState({});
+  const [sending,             setSending]             = useState(false);
+  const [sendError,           setSendError]           = useState("");
+  const [sentOk,              setSentOk]              = useState(false);
+  const [sentInfo,            setSentInfo]            = useState(null);
   const [priorQuotationCount, setPriorQuotationCount] = useState(0);
+  const [showAddManual,       setShowAddManual]       = useState(null);
+  const [manualForm,          setManualForm]          = useState({ vendor_name: "", unit_price: "", lead_time: "", availability: "", remarks: "" });
+  const [addingManual,        setAddingManual]        = useState(false);
+  const [expandedItems,       setExpandedItems]       = useState({});
+  const [unmatchedAssign,     setUnmatchedAssign]     = useState({});
+  const [savingAssign,        setSavingAssign]        = useState(null);
 
+  /* ── Data fetch ── */
   useEffect(() => {
     setLoading(true);
     fetch(`/api/quotes?unique_code=${encodeURIComponent(inquiry.unique_code)}`)
@@ -1258,63 +1254,112 @@ function QuotesTab({ inquiry }) {
       .then((d) => setQuotes(Array.isArray(d.quotes) ? d.quotes : []))
       .catch(() => setQuotes([]))
       .finally(() => setLoading(false));
-
     fetch(`/api/quotations?unique_code=${encodeURIComponent(inquiry.unique_code)}`)
       .then((r) => r.json())
       .then((d) => {
         const rows = Array.isArray(d.quotations) ? d.quotations : [];
-        // Raw `status` column, not `display_status` — counting must match
-        // exactly what the backend counts when it computes the real
-        // revision number at send time (see send-to-client/route.js).
         setPriorQuotationCount(rows.filter((q) => q.status === "sent").length);
       })
       .catch(() => setPriorQuotationCount(0));
   }, [inquiry.unique_code]);
 
-  // All useMemo hooks must be declared before any early return (Rules of Hooks).
-  const { byPart, partNumbers } = useMemo(() => {
-    const map = {};
+  /* ── Normalise part number for matching ── */
+  const norm = useCallback(
+    (s) => String(s || "").trim().toUpperCase().replace(/[\s\-_./]+/g, ""),
+    []
+  );
+
+  /* ── Group quotes: matched to inquiry items vs unmatched ── */
+  const { matchedByItem, unmatchedQuotes, byPart, partNumbers } = useMemo(() => {
+    const items     = inquiry.items || [];
+    const normItems = items.map((it) => norm(it.partNumber || ""));
+    const matched   = {};
+    const unmatched = [];
+    const legacy    = {};
+
     for (const q of quotes) {
-      const key = q.part_number || "—";
-      (map[key] = map[key] || []).push(q);
+      const qNorm = norm(q.part_number);
+      if (items.length > 0) {
+        const idx = normItems.findIndex((n) => n && n === qNorm);
+        if (idx !== -1) {
+          const key = items[idx].partNumber;
+          (matched[key] = matched[key] || []).push(q);
+        } else {
+          unmatched.push(q);
+        }
+      } else {
+        const key = q.part_number || "—";
+        (legacy[key] = legacy[key] || []).push(q);
+      }
     }
-    for (const key of Object.keys(map)) {
-      map[key].sort((a, b) => {
-        const pa = Number(a.unit_price); const pb = Number(b.unit_price);
-        const va = isNaN(pa) || pa <= 0; const vb = isNaN(pb) || pb <= 0;
-        if (va && vb) return 0; if (va) return 1; if (vb) return -1;
+
+    const sortByPrice = (arr) =>
+      arr.sort((a, b) => {
+        const pa = Number(a.unit_price), pb = Number(b.unit_price);
+        const va = isNaN(pa) || pa <= 0, vb = isNaN(pb) || pb <= 0;
+        if (va && vb) return 0;
+        if (va) return 1;
+        if (vb) return -1;
         return pa - pb;
       });
-    }
-    return { byPart: map, partNumbers: Object.keys(map) };
-  }, [quotes]);
 
+    for (const key of Object.keys(matched)) sortByPrice(matched[key]);
+    for (const key of Object.keys(legacy))  sortByPrice(legacy[key]);
+
+    return {
+      matchedByItem:   matched,
+      unmatchedQuotes: unmatched,
+      byPart:          legacy,
+      partNumbers:     Object.keys(legacy),
+    };
+  }, [quotes, inquiry.items, norm]);
+
+  /* ── Item metadata map (used by legacy view) ── */
   const itemByPart = useMemo(() => {
     const m = {};
-    for (const i of (inquiry.items || [])) m[i.partNumber || ""] = i;
+    for (const i of inquiry.items || []) m[i.partNumber || ""] = i;
     return m;
   }, [inquiry.items]);
-  const itemQty         = (pn) => itemByPart[pn]?.quantity ?? null;
-  const itemUom         = (pn) => itemByPart[pn]?.uom || null;
-  const itemDescription = (pn) => itemByPart[pn]?.itemNotes || null;
-  const itemBrand       = (pn) => itemByPart[pn]?.brand || null;
 
-  const readyLines = useMemo(() => partNumbers
-    .filter((pn) => selected[pn] && sellingPrices[pn])
-    .map((pn) => {
-      const q = byPart[pn].find((x) => String(x.id) === String(selected[pn]));
-      return {
-        part_number: pn,
-        description: itemDescription(pn),
-        brand: itemBrand(pn),
-        quantity: itemQty(pn),
-        uom: itemUom(pn),
-        currency: quoteCurrency,
-        selling_price: sellingPrices[pn],
-        lead_time: leadTimes[pn] || q?.lead_time || "",
-      };
-    }), [partNumbers, selected, sellingPrices, leadTimes, byPart, itemByPart, quoteCurrency]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* ── Lines ready to send (inquiry items as anchor; legacy fallback) ── */
+  const readyLines = useMemo(() => {
+    const items = inquiry.items || [];
+    if (items.length > 0) {
+      return items
+        .filter((item) => selected[item.partNumber] && sellingPrices[item.partNumber])
+        .map((item) => {
+          const pn = item.partNumber;
+          const q  = (matchedByItem[pn] || []).find((x) => String(x.id) === String(selected[pn]));
+          return {
+            part_number:   pn,
+            description:   item.itemNotes || null,
+            brand:         item.brand     || null,
+            quantity:      item.quantity  || null,
+            uom:           item.uom       || null,
+            currency:      quoteCurrency,
+            selling_price: sellingPrices[pn],
+            lead_time:     leadTimes[pn] || q?.lead_time || "",
+          };
+        });
+    }
+    return partNumbers
+      .filter((pn) => selected[pn] && sellingPrices[pn])
+      .map((pn) => {
+        const q = byPart[pn]?.find((x) => String(x.id) === String(selected[pn]));
+        return {
+          part_number:   pn,
+          description:   itemByPart[pn]?.itemNotes || null,
+          brand:         itemByPart[pn]?.brand     || null,
+          quantity:      itemByPart[pn]?.quantity  || null,
+          uom:           itemByPart[pn]?.uom       || null,
+          currency:      quoteCurrency,
+          selling_price: sellingPrices[pn],
+          lead_time:     leadTimes[pn] || q?.lead_time || "",
+        };
+      });
+  }, [inquiry.items, selected, sellingPrices, leadTimes, matchedByItem, quoteCurrency, partNumbers, byPart, itemByPart]);
 
+  /* ── Loading state ── */
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16">
@@ -1324,7 +1369,11 @@ function QuotesTab({ inquiry }) {
     );
   }
 
-  if (quotes.length === 0) {
+  const inquiryItems = inquiry.items || [];
+  const hasItems     = inquiryItems.length > 0;
+  const totalParts   = hasItems ? inquiryItems.length : partNumbers.length;
+
+  if (!hasItems && quotes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 px-6">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl"
@@ -1340,7 +1389,57 @@ function QuotesTab({ inquiry }) {
   }
 
   const customTax = { name: customTaxName, rate: customTaxRate };
+  const MAX_V     = 5;
 
+  /* ── Manual price add ── */
+  const handleManualAdd = async (partNumber) => {
+    if (!manualForm.vendor_name.trim() || !manualForm.unit_price) return;
+    setAddingManual(true);
+    try {
+      const res = await fetch("/api/quotes", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          unique_code: inquiry.unique_code,
+          vendor_name: manualForm.vendor_name.trim(),
+          source_type: "manual",
+          quotes: [{
+            part_number:  partNumber,
+            unit_price:   parseFloat(manualForm.unit_price),
+            lead_time:    manualForm.lead_time    || null,
+            availability: manualForm.availability || null,
+            remarks:      manualForm.remarks      || null,
+          }],
+        }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed to add"); }
+      const d = await fetch(`/api/quotes?unique_code=${encodeURIComponent(inquiry.unique_code)}`).then((r) => r.json());
+      setQuotes(Array.isArray(d.quotes) ? d.quotes : []);
+      setShowAddManual(null);
+      setManualForm({ vendor_name: "", unit_price: "", lead_time: "", availability: "", remarks: "" });
+    } catch (e) { alert(e.message); }
+    finally     { setAddingManual(false); }
+  };
+
+  /* ── Assign unmatched quote to an inquiry item ── */
+  const handleAssignUnmatched = async (quoteId) => {
+    const partNumber = unmatchedAssign[quoteId];
+    if (!partNumber) return;
+    setSavingAssign(quoteId);
+    try {
+      const res = await fetch("/api/quotes", {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: quoteId, part_number: partNumber }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed"); }
+      const d = await fetch(`/api/quotes?unique_code=${encodeURIComponent(inquiry.unique_code)}`).then((r) => r.json());
+      setQuotes(Array.isArray(d.quotes) ? d.quotes : []);
+    } catch (e) { alert(e.message); }
+    finally     { setSavingAssign(null); }
+  };
+
+  /* ── Send quote to client ── */
   const sendQuote = async () => {
     if (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax)) {
       setSendError("Enter a valid custom tax name and a non-negative percentage first.");
@@ -1351,13 +1450,13 @@ function QuotesTab({ inquiry }) {
       const res = await fetch("/api/quotes/send-to-client", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          unique_code: inquiry.unique_code,
-          lines: readyLines,
+        body: JSON.stringify({
+          unique_code:    inquiry.unique_code,
+          lines:          readyLines,
           salesperson,
           gstOption,
-          customTax: gstOption.type === "CUSTOM" ? customTax : null,
-          employee_id: localStorage.getItem("userId") || null,
+          customTax:      gstOption.type === "CUSTOM" ? customTax : null,
+          employee_id:    localStorage.getItem("userId") || null,
           quote_currency: quoteCurrency,
         }),
       });
@@ -1372,14 +1471,254 @@ function QuotesTab({ inquiry }) {
     }
   };
 
+  /* ── Render ── */
   return (
     <div className="flex flex-col" style={{ minHeight: 0 }}>
       <div className="flex-1 overflow-y-auto p-5 space-y-5">
-        {partNumbers.map((pn) => {
-          // Already sorted cheapest-first by the byPart useMemo above.
-          const rows = byPart[pn];
-          const bestId = rows.find((q) => Number.isFinite(Number(q.unit_price)))?.id;
-          const qty = itemQty(pn);
+
+        {/* Manual Add Price modal */}
+        {showAddManual && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30"
+               onClick={() => setShowAddManual(null)}>
+            <div className="w-full max-w-sm rounded-2xl border border-[#E4E8EE] bg-white shadow-xl p-5"
+                 onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-[13px] font-bold text-slate-800">Add Manual Price</p>
+                <button onClick={() => setShowAddManual(null)} className="text-slate-400 hover:text-slate-700">
+                  <X size={15} />
+                </button>
+              </div>
+              <p className="text-[11px] font-medium text-slate-500 mb-3">
+                Part: <span className="font-semibold text-slate-800">{showAddManual}</span>
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Vendor Name *</label>
+                  <input type="text" value={manualForm.vendor_name}
+                    onChange={(e) => setManualForm((f) => ({ ...f, vendor_name: e.target.value }))}
+                    placeholder="e.g. ABC Traders"
+                    className="w-full rounded-lg border border-[#E4E8EE] px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Unit Price *</label>
+                  <input type="number" min="0" step="0.01" value={manualForm.unit_price}
+                    onChange={(e) => setManualForm((f) => ({ ...f, unit_price: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-full rounded-lg border border-[#E4E8EE] px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Lead Time</label>
+                    <input type="text" value={manualForm.lead_time}
+                      onChange={(e) => setManualForm((f) => ({ ...f, lead_time: e.target.value }))}
+                      placeholder="e.g. 2 weeks"
+                      className="w-full rounded-lg border border-[#E4E8EE] px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Availability</label>
+                    <input type="text" value={manualForm.availability}
+                      onChange={(e) => setManualForm((f) => ({ ...f, availability: e.target.value }))}
+                      placeholder="In stock"
+                      className="w-full rounded-lg border border-[#E4E8EE] px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Remarks</label>
+                  <textarea rows={2} value={manualForm.remarks}
+                    onChange={(e) => setManualForm((f) => ({ ...f, remarks: e.target.value }))}
+                    placeholder="Optional notes"
+                    className="w-full resize-none rounded-lg border border-[#E4E8EE] px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button onClick={() => setShowAddManual(null)}
+                  className="h-8 rounded-lg border border-[#E4E8EE] bg-white px-4 text-[12px] text-slate-600 hover:bg-slate-50">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleManualAdd(showAddManual)}
+                  disabled={!manualForm.vendor_name.trim() || !manualForm.unit_price || addingManual}
+                  className="flex h-8 items-center gap-1.5 rounded-lg px-4 text-[12px] font-semibold text-white disabled:opacity-40"
+                  style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)" }}
+                >
+                  {addingManual
+                    ? <><RefreshCw size={11} className="animate-spin" />Saving…</>
+                    : "Save Price"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Horizontal comparison table (when inquiry items are available) ── */}
+        {hasItems && (
+          <div className="overflow-x-auto rounded-xl border border-[#E4E8EE]">
+            <table className="border-collapse text-[11px]" style={{ minWidth: "960px", width: "100%" }}>
+              <thead>
+                <tr style={{ background: "linear-gradient(90deg,#EEF4FF,#E6EDFC)" }}>
+                  {["Brand", "Part No", "Qty", "UOM", "Notes"].map((h) => (
+                    <th key={h} className="border-b border-[#D0DCF4] px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-widest text-[#4461A8] whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                  <th className="border-b border-[#D0DCF4] px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-widest text-[#4461A8]"
+                      style={{ minWidth: "380px" }}>
+                    Vendor Prices
+                  </th>
+                  <th className="border-b border-[#D0DCF4] px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-widest text-[#B45309] whitespace-nowrap">
+                    Your Price ({quoteCurrency})
+                  </th>
+                  <th className="border-b border-[#D0DCF4] px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-widest text-[#B45309] whitespace-nowrap">
+                    Lead Time
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {inquiryItems.map((item, rowIdx) => {
+                  const pn          = item.partNumber;
+                  const rowQuotes   = matchedByItem[pn] || [];
+                  const bestId      = rowQuotes.find((q) => Number.isFinite(Number(q.unit_price)) && Number(q.unit_price) > 0)?.id;
+                  const isExp       = expandedItems[pn];
+                  const visible     = isExp ? rowQuotes : rowQuotes.slice(0, MAX_V);
+                  const hiddenCount = rowQuotes.length - MAX_V;
+                  const isSel       = !!selected[pn];
+                  const bg          = isSel ? "#FFFBEB" : (rowIdx % 2 === 0 ? "white" : "#FAFBFF");
+
+                  return (
+                    <tr key={pn} style={{ background: bg }}
+                        className="border-b border-[#EEF2F6] last:border-b-0 align-top">
+                      <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{item.brand || "—"}</td>
+                      <td className="px-3 py-2.5">
+                        <span className="font-bold text-[#1D6FD8]">{pn || "—"}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-center text-slate-600">{item.quantity ?? "—"}</td>
+                      <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{item.uom || "—"}</td>
+                      <td className="px-3 py-2.5 text-slate-500" style={{ maxWidth: "140px" }}>
+                        <span className="block truncate" title={item.itemNotes || ""}>{item.itemNotes || "—"}</span>
+                      </td>
+
+                      {/* Vendor price cards */}
+                      <td className="px-3 py-2" style={{ minWidth: "380px" }}>
+                        <div className="flex flex-wrap gap-2">
+                          {visible.map((q) => {
+                            const isCurrent = String(selected[pn]) === String(q.id);
+                            return (
+                              <label key={q.id}
+                                className={`flex flex-col gap-0.5 rounded-lg border cursor-pointer px-2.5 py-2 transition select-none ${
+                                  isCurrent
+                                    ? "border-[#5BA7FF] bg-[#EFF6FF]"
+                                    : "border-[#E4E8EE] bg-white hover:border-[#C7D9F8] hover:bg-[#F5F8FF]"
+                                }`}
+                                style={{ minWidth: "110px" }}
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="radio"
+                                    name={`quote-${pn}`}
+                                    checked={isCurrent}
+                                    onChange={() => {
+                                      setSelected((prev) => ({ ...prev, [pn]: q.id }));
+                                      setLeadTimes((prev) => prev[pn] ? prev : { ...prev, [pn]: q.lead_time || "" });
+                                    }}
+                                    className="h-3 w-3 accent-[#4451E8] shrink-0 cursor-pointer"
+                                  />
+                                  <span className="text-[10px] font-semibold text-slate-800 truncate"
+                                        style={{ maxWidth: "80px" }} title={q.vendor_name || ""}>
+                                    {q.vendor_name || "Unknown"}
+                                  </span>
+                                  {q.source_type === "manual" && (
+                                    <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[8px] font-bold text-violet-600">M</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5 pl-4">
+                                  <span className="text-[11px] font-bold text-slate-900">
+                                    {formatQuotePrice(q.unit_price, q.currency)}
+                                  </span>
+                                  {q.id === bestId && (
+                                    <span className="inline-flex items-center gap-0.5 rounded-full border border-[#6EE7B7] bg-[#ECFDF5] px-1.5 py-0.5 text-[8px] font-bold text-[#059669]">
+                                      <Award size={8} />Best
+                                    </span>
+                                  )}
+                                </div>
+                                {q.lead_time && (
+                                  <span className="text-[9px] text-slate-400 pl-4 truncate">{q.lead_time}</span>
+                                )}
+                              </label>
+                            );
+                          })}
+
+                          {!isExp && hiddenCount > 0 && (
+                            <button
+                              onClick={() => setExpandedItems((prev) => ({ ...prev, [pn]: true }))}
+                              className="self-start mt-1 text-[10px] font-semibold text-[#4451E8] hover:underline"
+                            >
+                              +{hiddenCount} more
+                            </button>
+                          )}
+                          {isExp && rowQuotes.length > MAX_V && (
+                            <button
+                              onClick={() => setExpandedItems((prev) => ({ ...prev, [pn]: false }))}
+                              className="self-start mt-1 text-[10px] font-semibold text-slate-400 hover:underline"
+                            >
+                              Show less
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => {
+                              setManualForm({ vendor_name: "", unit_price: "", lead_time: "", availability: "", remarks: "" });
+                              setShowAddManual(pn);
+                            }}
+                            className="self-start flex items-center gap-1 rounded-lg border border-dashed border-[#C7D9F8] bg-[#F5F8FF] px-2.5 py-2 text-[10px] font-semibold text-[#4451E8] hover:bg-[#EEF4FF] transition whitespace-nowrap"
+                          >
+                            + Add Price
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* Selling Price */}
+                      <td className="px-3 py-2.5">
+                        <input
+                          type="number"
+                          value={sellingPrices[pn] || ""}
+                          onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
+                          placeholder="0.00"
+                          disabled={!isSel}
+                          className="w-24 rounded-lg border px-2 py-1.5 text-[12px] font-medium text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
+                          style={{ borderColor: isSel ? "#FDE68A" : "#E4E8EE" }}
+                        />
+                      </td>
+
+                      {/* Lead Time */}
+                      <td className="px-3 py-2.5">
+                        <input
+                          type="text"
+                          value={leadTimes[pn] || ""}
+                          onChange={(e) => setLeadTimes((prev) => ({ ...prev, [pn]: e.target.value }))}
+                          placeholder="e.g. 2 weeks"
+                          disabled={!isSel}
+                          className="w-28 rounded-lg border px-2 py-1.5 text-[12px] font-medium text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
+                          style={{ borderColor: isSel ? "#FDE68A" : "#E4E8EE" }}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* ── Legacy vertical view when no inquiry items exist ── */}
+        {!hasItems && partNumbers.map((pn) => {
+          const rows   = byPart[pn];
+          const bestId = rows.find((q) => Number.isFinite(Number(q.unit_price)) && Number(q.unit_price) > 0)?.id;
+          const qty    = itemByPart[pn]?.quantity ?? null;
           return (
             <div key={pn} className="space-y-2">
               <div className="flex items-center gap-2 rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2">
@@ -1403,9 +1742,7 @@ function QuotesTab({ inquiry }) {
                         <tr style={{ background: String(selected[pn]) === String(q.id) ? "#EEF6FF" : "white" }}
                             className="border-b border-[#EEF2F6] last:border-b-0">
                           <td className="px-3 py-2.5">
-                            <input
-                              type="radio"
-                              name={`quote-${pn}`}
+                            <input type="radio" name={`quote-${pn}`}
                               checked={String(selected[pn]) === String(q.id)}
                               onChange={() => {
                                 setSelected((prev) => ({ ...prev, [pn]: q.id }));
@@ -1415,13 +1752,8 @@ function QuotesTab({ inquiry }) {
                             />
                           </td>
                           <td className="px-3 py-2.5">
-                            <div
-                              className={q.raw_reply ? "cursor-pointer select-none" : ""}
-                              onClick={() => q.raw_reply && setExpanded((prev) => ({ ...prev, [q.id]: !prev[q.id] }))}
-                            >
-                              <p className="font-semibold text-slate-900">{q.vendor_name || "—"}</p>
-                              <p className="text-[10px] text-slate-400">{q.vendor_email || ""}</p>
-                            </div>
+                            <p className="font-semibold text-slate-900">{q.vendor_name || "—"}</p>
+                            <p className="text-[10px] text-slate-400">{q.vendor_email || ""}</p>
                           </td>
                           <td className="px-3 py-2.5">
                             <span className="font-semibold text-slate-800">{formatQuotePrice(q.unit_price, q.currency)}</span>
@@ -1435,10 +1767,8 @@ function QuotesTab({ inquiry }) {
                           <td className="px-3 py-2.5 text-slate-500">{q.availability || "—"}</td>
                           <td className="px-3 py-2.5">
                             {q.raw_reply && (
-                              <button
-                                onClick={() => setExpanded((prev) => ({ ...prev, [q.id]: !prev[q.id] }))}
-                                className="flex items-center gap-1 text-[10px] font-medium text-slate-400 hover:text-[#4451E8] transition"
-                              >
+                              <button onClick={() => setExpanded((prev) => ({ ...prev, [q.id]: !prev[q.id] }))}
+                                className="flex items-center gap-1 text-[10px] font-medium text-slate-400 hover:text-[#4451E8] transition">
                                 {expanded[q.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                                 Reply
                               </button>
@@ -1449,14 +1779,11 @@ function QuotesTab({ inquiry }) {
                           <tr className="border-b border-[#EEF2F6]">
                             <td colSpan={6} className="bg-[#FAFBFF] px-4 py-3">
                               <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-slate-400">Vendor's Original Reply</p>
-                              {q.raw_reply_is_html ? (
-                                <div
-                                  className="text-[11px] leading-relaxed text-slate-600 [&_table]:w-full [&_table]:border-collapse [&_table]:my-2 [&_td]:border [&_td]:border-[#E4E8EE] [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-[#E4E8EE] [&_th]:px-2 [&_th]:py-1 [&_th]:bg-[#F3F6FC] [&_th]:font-semibold [&_p]:my-1"
-                                  dangerouslySetInnerHTML={{ __html: q.raw_reply }}
-                                />
-                              ) : (
-                                <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-600">{q.raw_reply}</p>
-                              )}
+                              {q.raw_reply_is_html
+                                ? <div className="text-[11px] leading-relaxed text-slate-600 [&_table]:w-full [&_table]:border-collapse [&_table]:my-2 [&_td]:border [&_td]:border-[#E4E8EE] [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-[#E4E8EE] [&_th]:px-2 [&_th]:py-1 [&_th]:bg-[#F3F6FC] [&_th]:font-semibold [&_p]:my-1"
+                                    dangerouslySetInnerHTML={{ __html: q.raw_reply }} />
+                                : <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-600">{q.raw_reply}</p>
+                              }
                               {q.remarks && (
                                 <Fragment>
                                   <p className="mb-1 mt-2 text-[9px] font-bold uppercase tracking-widest text-slate-400">Remarks</p>
@@ -1476,9 +1803,7 @@ function QuotesTab({ inquiry }) {
                   <div className="flex items-center gap-2">
                     <Tag size={12} className="text-[#B45309]" />
                     <label className="text-[11px] font-semibold text-[#B45309]">Your Selling Price ({quoteCurrency})</label>
-                    <input
-                      type="number"
-                      value={sellingPrices[pn] || ""}
+                    <input type="number" value={sellingPrices[pn] || ""}
                       onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
                       placeholder="0.00"
                       className="w-28 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
@@ -1486,9 +1811,7 @@ function QuotesTab({ inquiry }) {
                   </div>
                   <div className="flex items-center gap-2">
                     <label className="text-[11px] font-semibold text-[#B45309]">Lead Time</label>
-                    <input
-                      type="text"
-                      value={leadTimes[pn] || ""}
+                    <input type="text" value={leadTimes[pn] || ""}
                       onChange={(e) => setLeadTimes((prev) => ({ ...prev, [pn]: e.target.value }))}
                       placeholder="e.g. 15-20 days"
                       className="w-36 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
@@ -1499,79 +1822,113 @@ function QuotesTab({ inquiry }) {
             </div>
           );
         })}
+
+        {/* ── Unmatched vendor quotes (prices whose part# didn't match any item) ── */}
+        {hasItems && unmatchedQuotes.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              <p className="text-[11px] font-bold uppercase tracking-widest text-amber-600">
+                Unmatched Prices ({unmatchedQuotes.length})
+              </p>
+              <p className="text-[11px] text-slate-400">
+                — vendor part numbers that didn&apos;t match any inquiry item. Assign below.
+              </p>
+            </div>
+            <div className="overflow-hidden rounded-xl border border-[#FDE68A]">
+              <table className="w-full border-collapse text-[11px]">
+                <thead>
+                  <tr style={{ background: "#FFFBEB" }}>
+                    {["Vendor", "Vendor Part No", "Price", "Lead Time", "Assign to Inquiry Item", ""].map((h) => (
+                      <th key={h} className="border-b border-[#FDE68A] px-3 py-2 text-left text-[9px] font-bold uppercase tracking-widest text-amber-700">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {unmatchedQuotes.map((q) => (
+                    <tr key={q.id} className="border-b border-[#FDE68A]/40 last:border-b-0 bg-white">
+                      <td className="px-3 py-2.5">
+                        <p className="font-semibold text-slate-800">{q.vendor_name || "—"}</p>
+                        <p className="text-[10px] text-slate-400">{q.vendor_email || ""}</p>
+                      </td>
+                      <td className="px-3 py-2.5 font-mono text-slate-600">{q.part_number || "—"}</td>
+                      <td className="px-3 py-2.5 font-semibold text-slate-800">{formatQuotePrice(q.unit_price, q.currency)}</td>
+                      <td className="px-3 py-2.5 text-slate-500">{q.lead_time || "—"}</td>
+                      <td className="px-3 py-2.5">
+                        <select
+                          value={unmatchedAssign[q.id] || ""}
+                          onChange={(e) => setUnmatchedAssign((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                          className="h-7 rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] text-slate-700 outline-none focus:border-[#5BA7FF]"
+                        >
+                          <option value="">— select item —</option>
+                          {inquiryItems.map((it) => (
+                            <option key={it.partNumber} value={it.partNumber}>{it.partNumber}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <button
+                          onClick={() => handleAssignUnmatched(q.id)}
+                          disabled={!unmatchedAssign[q.id] || savingAssign === q.id}
+                          className="flex h-7 items-center gap-1 rounded-lg border border-[#5BA7FF] bg-[#EFF6FF] px-3 text-[10px] font-semibold text-[#1D6FD8] hover:bg-[#DBEAFE] transition disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {savingAssign === q.id
+                            ? <RefreshCw size={10} className="animate-spin" />
+                            : <Check size={10} />}
+                          Assign
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Sticky bottom action bar */}
+      {/* ── Sticky bottom action bar (unchanged) ── */}
       <div className="shrink-0 border-t border-[#EEF2F6] bg-white px-5 py-3">
-        {/* Row 1: Salesperson + GST selector + live totals */}
         {!sentOk && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2.5">
-            {/* Salesperson */}
             <div className="flex items-center gap-2">
               <label className="text-[11px] font-semibold text-slate-500">Salesperson</label>
-              <input
-                type="text"
-                value={salesperson}
+              <input type="text" value={salesperson}
                 onChange={(e) => { salespersonEditedRef.current = true; setSalesperson(e.target.value); }}
                 placeholder="Your name"
                 className="w-32 rounded-lg border border-[#E4E8EE] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
               />
             </div>
-
-            {/* Quote Currency */}
             <div className="flex items-center gap-2">
               <label className="text-[11px] font-semibold text-slate-500">Quote Currency</label>
-              <select
-                value={quoteCurrency}
-                onChange={(e) => setQuoteCurrency(e.target.value)}
-                className="h-7 rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10 cursor-pointer"
-              >
-                {["INR", "USD", "EUR", "AED", "GBP"].map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
+              <select value={quoteCurrency} onChange={(e) => setQuoteCurrency(e.target.value)}
+                className="h-7 rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10 cursor-pointer">
+                {["INR", "USD", "EUR", "AED", "GBP"].map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-
-            {/* GST selector */}
             <div className="flex items-center gap-2">
               <label className="text-[11px] font-semibold text-slate-500">GST</label>
-              <select
-                value={GST_OPTIONS.indexOf(gstOption)}
-                onChange={(e) => setGstOption(GST_OPTIONS[Number(e.target.value)])}
-                className="h-7 rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10 cursor-pointer"
-              >
-                {GST_OPTIONS.map((o, i) => (
-                  <option key={i} value={i}>{o.label}</option>
-                ))}
+              <select value={GST_OPTIONS.indexOf(gstOption)} onChange={(e) => setGstOption(GST_OPTIONS[Number(e.target.value)])}
+                className="h-7 rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10 cursor-pointer">
+                {GST_OPTIONS.map((o, i) => <option key={i} value={i}>{o.label}</option>)}
               </select>
             </div>
-
-
-            {/* Custom tax inputs — only when "Custom Tax" is selected */}
             {gstOption.type === "CUSTOM" && (
               <div className="flex items-center gap-2">
                 <label className="text-[11px] font-semibold text-slate-500">Tax Name</label>
-                <input
-                  type="text"
-                  value={customTaxName}
-                  onChange={(e) => setCustomTaxName(e.target.value)}
+                <input type="text" value={customTaxName} onChange={(e) => setCustomTaxName(e.target.value)}
                   placeholder="e.g. TCS"
                   className="w-24 rounded-lg border border-[#E4E8EE] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
                 />
                 <label className="text-[11px] font-semibold text-slate-500">Tax %</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={customTaxRate}
-                  onChange={(e) => setCustomTaxRate(e.target.value)}
+                <input type="number" min="0" step="0.01" value={customTaxRate} onChange={(e) => setCustomTaxRate(e.target.value)}
                   placeholder="e.g. 1"
                   className="w-20 rounded-lg border border-[#E4E8EE] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
                 />
               </div>
             )}
-
-            {/* Live GST preview — only when at least one part is priced */}
             {readyLines.length > 0 && (() => {
               const g = calcGst(readyLines, gstOption, customTax);
               const fmtAmt = (v) => `${quoteCurrency} ${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1610,10 +1967,8 @@ function QuotesTab({ inquiry }) {
           </div>
         )}
 
-        {/* Revision warning — a quotation already exists for this FIAPL code,
-            so sending now will be recorded as an automatic revision. */}
         {!sentOk && priorQuotationCount > 0 && (
-          <div className="flex items-center gap-2 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2">
+          <div className="flex items-center gap-2 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 mb-2.5">
             <RefreshCw size={13} className="shrink-0 text-[#B45309]" />
             <p className="text-[11px] font-medium text-[#92400E]">
               A quotation already exists for this inquiry. Sending now will create revised quotation{" "}
@@ -1622,7 +1977,6 @@ function QuotesTab({ inquiry }) {
           </div>
         )}
 
-        {/* Row 2: Status text + send button */}
         <div className="flex items-center justify-between gap-3">
           <div>
             {sentOk ? (
@@ -1638,19 +1992,15 @@ function QuotesTab({ inquiry }) {
             ) : (
               <p className="text-[12px] text-slate-400">
                 {readyLines.length > 0
-                  ? `${readyLines.length} of ${partNumbers.length} part${partNumbers.length !== 1 ? "s" : ""} priced`
+                  ? `${readyLines.length} of ${totalParts} part${totalParts !== 1 ? "s" : ""} priced`
                   : "Select a vendor quote and enter your selling price for each part"}
               </p>
             )}
             {sendError && <p className="text-[11px] text-rose-500 mt-0.5">{sendError}</p>}
           </div>
           {!sentOk && (
-            <button
-              onClick={sendQuote}
-              disabled={
-                readyLines.length === 0 || sending || !salesperson.trim() ||
-                (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax))
-              }
+            <button onClick={sendQuote}
+              disabled={readyLines.length === 0 || sending || !salesperson.trim() || (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax))}
               title={
                 !salesperson.trim() ? "Enter the salesperson name first"
                 : (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax)) ? "Enter a valid custom tax name and percentage first"

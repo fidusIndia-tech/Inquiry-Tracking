@@ -86,7 +86,21 @@ export async function GET(request) {
     const id = searchParams.get("id");
     if (id) {
       const single = await query(
-        `SELECT q.*, (${DISPLAY_STATUS_CASE}) AS display_status
+        `SELECT q.*,
+                (${DISPLAY_STATUS_CASE}) AS display_status,
+                COALESCE((
+                  SELECT COUNT(*) FROM inquiry_items ii WHERE ii.inquiry_id = i.id
+                ), 0) AS inquiry_item_count,
+                COALESCE((
+                  SELECT json_agg(json_build_object(
+                    'part_number', ii.part_number,
+                    'brand',       ii.brand,
+                    'quantity',    ii.quantity,
+                    'uom',         ii.uom,
+                    'item_notes',  ii.item_notes
+                  ) ORDER BY ii.id)
+                  FROM inquiry_items ii WHERE ii.inquiry_id = i.id
+                ), '[]'::json) AS inquiry_items_json
          FROM quotations q
          LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code
          WHERE q.id = $1`,

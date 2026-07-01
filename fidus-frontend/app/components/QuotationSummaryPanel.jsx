@@ -498,30 +498,82 @@ export default function QuotationSummaryPanel({ onOpenInquiry, salespersonLock }
                   </div>
                 </div>
 
-                {/* Line items with partial info */}
-                <div className="rounded-xl border border-[#EEF2F6] p-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Line Items Quoted</p>
-                    {!String(viewData.inquiry_unique_code || "").startsWith("MANUAL-") && viewData.inquiry_item_count > 0 && (
-                      <span className={`text-[10px] font-semibold ${(viewData.lines || []).length < viewData.inquiry_item_count ? "text-amber-600" : "text-emerald-600"}`}>
-                        {(viewData.lines || []).length} of {viewData.inquiry_item_count} inquiry items quoted
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
-                    {(viewData.lines || []).map((l, idx) => (
-                      <div key={idx} className="flex items-start justify-between gap-4 text-[11px]">
-                        <span className="text-slate-700">
-                          {l.part_number || "—"}{l.brand ? ` (${l.brand})` : ""}
-                          {l.description ? <span className="ml-1 text-slate-400">— {l.description}</span> : null}
-                        </span>
-                        <span className="shrink-0 text-slate-500">
-                          {l.quantity} {l.uom || ""} × {viewData.currency || "INR"} {Number(l.selling_price || 0).toLocaleString("en-IN")}
+                {/* Item breakdown — quoted vs not quoted */}
+                {(() => {
+                  const isManual = String(viewData.inquiry_unique_code || "").startsWith("MANUAL-");
+                  const inquiryItems = Array.isArray(viewData.inquiry_items_json) ? viewData.inquiry_items_json : [];
+                  const quotedLines  = viewData.lines || [];
+
+                  // Normalize part number for matching (lowercase, strip separators)
+                  const norm = (s) => String(s || "").toLowerCase().replace(/[\s\-_./]+/g, "");
+                  const quotedMap = {};
+                  for (const l of quotedLines) {
+                    const key = norm(l.part_number);
+                    if (key) quotedMap[key] = l;
+                  }
+
+                  // If no inquiry items (manual quotation), just show lines as-is
+                  if (isManual || inquiryItems.length === 0) {
+                    return (
+                      <div className="rounded-xl border border-[#EEF2F6] p-3">
+                        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Line Items Quoted</p>
+                        <div className="space-y-1.5">
+                          {quotedLines.map((l, idx) => (
+                            <div key={idx} className="flex items-start justify-between gap-4 text-[11px]">
+                              <span className="text-slate-700">
+                                {l.part_number || "—"}{l.brand ? ` (${l.brand})` : ""}
+                                {l.description ? <span className="ml-1 text-slate-400">— {l.description}</span> : null}
+                              </span>
+                              <span className="shrink-0 text-slate-500">
+                                {l.quantity} {l.uom || ""} × {viewData.currency || "INR"} {Number(l.selling_price || 0).toLocaleString("en-IN")}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const quotedCount = inquiryItems.filter((it) => quotedMap[norm(it.part_number)]).length;
+                  return (
+                    <div className="rounded-xl border border-[#EEF2F6] p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Items Breakdown</p>
+                        <span className={`text-[10px] font-semibold ${quotedCount < inquiryItems.length ? "text-amber-600" : "text-emerald-600"}`}>
+                          {quotedCount}/{inquiryItems.length} items quoted
                         </span>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                      <div className="space-y-1.5">
+                        {inquiryItems.map((it, idx) => {
+                          const match = quotedMap[norm(it.part_number)];
+                          return (
+                            <div key={idx} className={`flex items-start justify-between gap-3 rounded-lg px-2 py-1.5 text-[11px] ${match ? "bg-[#F0FDF4]" : "bg-[#FFF7F7]"}`}>
+                              <div className="flex items-start gap-2 min-w-0">
+                                <span className={`mt-0.5 shrink-0 text-[12px] ${match ? "text-emerald-600" : "text-rose-400"}`}>
+                                  {match ? "✓" : "✗"}
+                                </span>
+                                <div className="min-w-0">
+                                  <p className={`font-semibold truncate ${match ? "text-slate-800" : "text-slate-400"}`}>
+                                    {it.part_number || "—"}{it.brand ? ` (${it.brand})` : ""}
+                                  </p>
+                                  {it.item_notes && <p className="text-[10px] text-slate-400 truncate">{it.item_notes}</p>}
+                                </div>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <p className="text-slate-500">{it.quantity} {it.uom || ""}</p>
+                                {match && (
+                                  <p className="text-[10px] font-semibold text-emerald-700">
+                                    {viewData.currency || "INR"} {Number(match.selling_price || 0).toLocaleString("en-IN")}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <a
                   href={`/api/quotations/pdf?id=${viewData.id}`}

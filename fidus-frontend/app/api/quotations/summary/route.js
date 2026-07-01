@@ -56,24 +56,32 @@ export async function GET(request) {
     const spWhere = salesperson ? "WHERE q.salesperson = $1" : "";
     const spParam = salesperson ? [salesperson] : [];
 
+    // Counts include all quotation rows (revisions + originals) — useful for history.
+    // Values use only the LATEST quotation per inquiry so a revised quote doesn't
+    // double-count the original in Total Quoted Value / This Month Value.
     const totals = await query(`
+      WITH latest_per_inquiry AS (
+        SELECT DISTINCT ON (inquiry_unique_code)
+          inquiry_unique_code, grand_total, status, quoted_at, salesperson
+        FROM quotations
+        WHERE status != 'draft'
+          ${salesperson ? "AND salesperson = $1" : ""}
+        ORDER BY inquiry_unique_code, id DESC
+      )
       SELECT
-        COUNT(*)                                                           AS total,
-        COUNT(*) FILTER (WHERE q.status = 'draft')                        AS draft,
-        COUNT(*) FILTER (WHERE q.status = 'sent' AND NOT q.is_revision)   AS sent,
-        COUNT(*) FILTER (WHERE q.is_revision)                             AS revised,
-        COUNT(DISTINCT q.inquiry_unique_code)
-          FILTER (WHERE i.status = 'converted')                           AS converted,
-        COUNT(DISTINCT q.inquiry_unique_code)
-          FILTER (WHERE i.status IN ('lost', 'dropped'))                  AS lost,
-        COALESCE(SUM(q.grand_total) FILTER (WHERE q.status != 'draft'), 0)    AS total_value,
-        COALESCE(SUM(q.grand_total) FILTER (
-          WHERE q.status != 'draft'
-            AND q.quoted_at >= date_trunc('month', NOW())
-        ), 0)                                                              AS monthly_value
-      FROM quotations q
-      LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code
-      ${spWhere}
+        (SELECT COUNT(*)                                                  FROM quotations q ${spWhere})  AS total,
+        (SELECT COUNT(*) FILTER (WHERE q.status = 'draft')               FROM quotations q ${spWhere})  AS draft,
+        (SELECT COUNT(*) FILTER (WHERE q.status = 'sent' AND NOT q.is_revision) FROM quotations q ${spWhere}) AS sent,
+        (SELECT COUNT(*) FILTER (WHERE q.is_revision)                    FROM quotations q ${spWhere})  AS revised,
+        (SELECT COUNT(DISTINCT q.inquiry_unique_code)
+           FILTER (WHERE i.status = 'converted')
+           FROM quotations q LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code ${spWhere}) AS converted,
+        (SELECT COUNT(DISTINCT q.inquiry_unique_code)
+           FILTER (WHERE i.status IN ('lost','dropped'))
+           FROM quotations q LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code ${spWhere}) AS lost,
+        COALESCE((SELECT SUM(grand_total) FROM latest_per_inquiry), 0)   AS total_value,
+        COALESCE((SELECT SUM(grand_total) FROM latest_per_inquiry
+                  WHERE quoted_at >= date_trunc('month', NOW())), 0)     AS monthly_value
     `, spParam);
 
     // Aliased as display_status, not "status" — GROUP BY status would be
@@ -98,29 +106,49 @@ export async function GET(request) {
       ORDER BY count DESC
     `, spParam);
 
+    // Values in breakdown tables also use latest-per-inquiry to avoid
+    // counting the original + revision of the same inquiry twice.
     const bySalesperson = salesperson ? [] : (await query(`
       SELECT COALESCE(salesperson, 'Unassigned') AS salesperson,
              COUNT(*) AS count, COALESCE(SUM(grand_total), 0) AS value
-      FROM quotations
+      FROM (
+        SELECT DISTINCT ON (inquiry_unique_code)
+          salesperson, grand_total
+        FROM quotations
+        WHERE status != 'draft'
+        ORDER BY inquiry_unique_code, id DESC
+      ) latest
       GROUP BY salesperson
-      ORDER BY count DESC
+      ORDER BY value DESC
       LIMIT 10
     `)).rows;
 
     const byMonth = await query(`
       SELECT to_char(quoted_at, 'YYYY-MM') AS month,
              COUNT(*) AS count, COALESCE(SUM(grand_total), 0) AS value
-      FROM quotations
-      WHERE 1=1 ${salesperson ? "AND salesperson = $1" : ""}
+      FROM (
+        SELECT DISTINCT ON (inquiry_unique_code)
+          inquiry_unique_code, quoted_at, grand_total, salesperson
+        FROM quotations
+        WHERE status != 'draft'
+          ${salesperson ? "AND salesperson = $1" : ""}
+        ORDER BY inquiry_unique_code, id DESC
+      ) latest
       GROUP BY month
       ORDER BY month
     `, spParam);
 
     const byClient = await query(`
       SELECT client_name, COUNT(*) AS count, COALESCE(SUM(grand_total), 0) AS value
-      FROM quotations
-      WHERE client_name IS NOT NULL AND client_name != ''
-        ${salesperson ? "AND salesperson = $1" : ""}
+      FROM (
+        SELECT DISTINCT ON (inquiry_unique_code)
+          inquiry_unique_code, client_name, grand_total, salesperson
+        FROM quotations
+        WHERE status != 'draft'
+          AND client_name IS NOT NULL AND client_name != ''
+          ${salesperson ? "AND salesperson = $1" : ""}
+        ORDER BY inquiry_unique_code, id DESC
+      ) latest
       GROUP BY client_name
       ORDER BY count DESC
       LIMIT 10

@@ -3,6 +3,7 @@ gmail_service.py  (flat-import edition)
 """
 
 import base64
+import re
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -152,6 +153,19 @@ def fetch_new_message_ids_from_history(
     return unique, latest_history_id
 
 
+def _normalize_to_addresses(raw: str) -> str:
+    """
+    Accept one or more email addresses separated by spaces, commas, or
+    semicolons and return a clean comma-separated address list suitable for
+    a MIME To header. Raises ValueError if no valid address is found.
+    """
+    parts = re.split(r"[\s,;]+", raw.strip())
+    valid = [addr for _, addr in (parseaddr(p) for p in parts if p) if addr]
+    if not valid:
+        raise ValueError(f"Invalid or empty 'to' address: {raw!r}")
+    return ", ".join(valid)
+
+
 def send_message(
     service,
     to: str,
@@ -173,9 +187,7 @@ def send_message(
 
     Returns {"id": <gmail message id>, "thread_id": <gmail thread id>}.
     """
-    _, clean_to = parseaddr(to.strip())
-    if not clean_to:
-        raise ValueError(f"Invalid or empty 'to' address: {to!r}")
+    clean_to = _normalize_to_addresses(to)
 
     has_attachment = attachment_filename and attachment_bytes
     msg = MIMEMultipart("mixed") if has_attachment else MIMEMultipart("alternative")

@@ -73,7 +73,8 @@ def extract_quote(body_plain: str | None, body_html: str | None, part_numbers: l
     Returns a list of quote line-item dicts (possibly empty if the vendor
     didn't actually quote a price in this reply).
     """
-    body = _plain_text(body_plain, body_html)[:8000]
+    # 15 000 chars to accommodate email body + full PDF/DOCX attachment text.
+    body = _plain_text(body_plain, body_html)[:15000]
     if not body:
         return []
 

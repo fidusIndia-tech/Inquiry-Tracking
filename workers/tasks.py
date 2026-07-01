@@ -40,6 +40,7 @@ from vendor_discovery import discover_and_store_vendors
 from vendor_discovery.brand_lookup import identify_brand
 from vendor_outreach import send_vendor_reminder
 from vendor_reply import match_inquiry_code, extract_quote
+from attachment_handler import extract_attachment_text
 from config import get_settings
 from logging_setup import get_logger
 
@@ -735,7 +736,27 @@ def extract_vendor_quote(self, message_id: str) -> dict:
         )
 
     part_numbers = [p.strip() for p in (draft.get("part_number") or "").split(",") if p.strip()] if draft else []
-    quotes = extract_quote(parsed.get("body_plain"), parsed.get("body_html"), part_numbers)
+
+    # If the vendor attached a PDF/DOCX quotation instead of writing prices in
+    # the email body, the body alone has no price data and extract_quote returns
+    # nothing. Extract text from any attachments and append it so GPT sees the
+    # full quotation content regardless of how the vendor chose to send it.
+    body_plain = parsed.get("body_plain") or ""
+    if parsed.get("has_attachment"):
+        try:
+            attachment_text = extract_attachment_text(service, message_id, raw.get("payload", {}))
+            if attachment_text.strip():
+                body_plain = body_plain + "\n\n" + attachment_text
+                logger.info(
+                    "extract_vendor_quote | appended attachment text | unique_code=%s | chars=%d",
+                    unique_code, len(attachment_text),
+                )
+        except Exception as exc:
+            logger.warning(
+                "extract_vendor_quote | attachment extraction failed for %s: %s", message_id, exc
+            )
+
+    quotes = extract_quote(body_plain, parsed.get("body_html"), part_numbers)
 
     if not quotes:
         logger.info("extract_vendor_quote | no price found in reply | unique_code=%s", unique_code)

@@ -4,7 +4,7 @@ import { pool, query } from "@/lib/db";
 import QuotationDocument from "@/lib/quotationPdf";
 
 const PYTHON_BACKEND_URL = (process.env.PYTHON_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
-const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£" };
+const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£", AED: "AED " };
 
 function computeGstData(lines, gstOpt, customTax) {
   const taxable = lines.reduce(
@@ -84,36 +84,38 @@ function formatPrice(value, currency) {
   return `${symbol}${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
-function fmtINR(v) {
-  return "₹" + Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function fmtAmt(v, currency) {
+  const sym = CURRENCY_SYMBOLS[(currency || "INR").toUpperCase()] ?? `${(currency || "INR").toUpperCase()} `;
+  return sym + Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function buildGstRows(gstData) {
+function buildGstRows(gstData, currency) {
+  const fmt = (v) => fmtAmt(v, currency);
   const td = (label, value, bold) =>
     `<tr>
        <td colspan="4" style="border:none;padding:4px 8px;text-align:right;font-size:13px;color:#475569;">${escapeHtml(label)}</td>
        <td style="border:none;padding:4px 8px;text-align:right;font-size:13px;${bold ? "font-weight:700;color:#1f2937;" : "color:#475569;"}">${escapeHtml(value)}</td>
      </tr>`;
   const rows = [];
-  rows.push(td("Taxable Amount", fmtINR(gstData.taxable)));
+  rows.push(td("Taxable Amount", fmt(gstData.taxable)));
   if (gstData.type === "CGST_SGST") {
-    rows.push(td(`CGST @ ${gstData.rate / 2}%`, fmtINR(gstData.cgst)));
-    rows.push(td(`SGST @ ${gstData.rate / 2}%`, fmtINR(gstData.sgst)));
+    rows.push(td(`CGST @ ${gstData.rate / 2}%`, fmt(gstData.cgst)));
+    rows.push(td(`SGST @ ${gstData.rate / 2}%`, fmt(gstData.sgst)));
   } else if (gstData.type === "IGST") {
-    rows.push(td(`IGST @ ${gstData.rate}%`, fmtINR(gstData.igst)));
+    rows.push(td(`IGST @ ${gstData.rate}%`, fmt(gstData.igst)));
   } else if (gstData.type === "CUSTOM") {
-    rows.push(td(`${gstData.customName} @ ${gstData.customRate}%`, fmtINR(gstData.customAmount)));
+    rows.push(td(`${gstData.customName} @ ${gstData.customRate}%`, fmt(gstData.customAmount)));
   } else if (gstData.type === "EXPORT") {
-    rows.push(td("GST (Export / LUT / Zero Rated)", "₹0.00"));
+    rows.push(td("GST (Export / LUT / Zero Rated)", fmt(0)));
   } else {
-    rows.push(td("GST", "₹0.00"));
+    rows.push(td("GST", fmt(0)));
   }
   rows.push(`<tr><td colspan="5" style="padding:0 8px;"><hr style="border:none;border-top:1px solid #D0DCF4;margin:4px 0;" /></td></tr>`);
-  rows.push(td("Grand Total", fmtINR(gstData.grandTotal), true));
+  rows.push(td("Grand Total", fmt(gstData.grandTotal), true));
   return rows.join("\n");
 }
 
-function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperson, employeePhone) {
+function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperson, employeePhone, currency) {
   const rows = lines
     .map((l, idx) => `
       <tr>
@@ -121,7 +123,7 @@ function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperso
         <td style="border:1px solid #D0DCF4;padding:8px;font-weight:600;">${escapeHtml(l.part_number || "—")}</td>
         <td style="border:1px solid #D0DCF4;padding:8px;color:#475569;">${escapeHtml(l.description || "")}</td>
         <td style="border:1px solid #D0DCF4;padding:8px;">${escapeHtml(l.quantity ?? "—")}</td>
-        <td style="border:1px solid #D0DCF4;padding:8px;text-align:right;">${escapeHtml(formatPrice(l.selling_price, l.currency))}</td>
+        <td style="border:1px solid #D0DCF4;padding:8px;text-align:right;">${escapeHtml(formatPrice(l.selling_price, currency || l.currency))}</td>
       </tr>`)
     .join("");
 
@@ -142,7 +144,7 @@ function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperso
     </thead>
     <tbody>
       ${rows}
-      ${buildGstRows(gstData)}
+      ${buildGstRows(gstData, currency)}
     </tbody>
   </table>
 
@@ -165,7 +167,8 @@ function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperso
 export async function POST(request) {
   try {
     await ensureQuotationsSchema();
-    const { unique_code, lines, salesperson, gstOption, customTax, employee_id } = await request.json();
+    const { unique_code, lines, salesperson, gstOption, customTax, employee_id, quote_currency } = await request.json();
+    const currency = (quote_currency || "INR").toUpperCase();
     const gstData = computeGstData(lines, gstOption, customTax);
     if (!unique_code || !lines?.length) {
       return Response.json({ error: "unique_code and lines are required" }, { status: 400 });
@@ -225,11 +228,12 @@ export async function POST(request) {
         clientAddress: inquiry.location,
         lines,
         gstData,
+        quoteCurrency: currency,
       })
     );
     const pdfBase64 = pdfBuffer.toString("base64");
 
-    const body = buildQuoteEmail(inquiry.client_name, quotationNumber, lines, gstData, salesperson, employeePhone);
+    const body = buildQuoteEmail(inquiry.client_name, quotationNumber, lines, gstData, salesperson, employeePhone, currency);
 
     const sendRes = await fetch(`${PYTHON_BACKEND_URL}/send-client-quote`, {
       method: "POST",
@@ -252,7 +256,6 @@ export async function POST(request) {
 
     // Only persisted once the email has actually gone out — see the
     // comment above on why this can't happen any earlier.
-    const currency = lines.find((l) => l.currency)?.currency || null;
     await query(
       `INSERT INTO quotations
          (quotation_number, inquiry_unique_code, salesperson, quoted_at, expiration_date, lines,

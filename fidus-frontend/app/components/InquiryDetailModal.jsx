@@ -1235,6 +1235,8 @@ function QuotesTab({ inquiry }) {
       })
       .catch(() => {});
   }, []);
+  const [quoteCurrency, setQuoteCurrency] = useState("INR");
+  const [exchangeRate,  setExchangeRate]  = useState("");
   const [gstOption,     setGstOption]     = useState(GST_OPTIONS[1]); // default: CGST+SGST@18%
   const [customTaxName, setCustomTaxName] = useState("");
   const [customTaxRate, setCustomTaxRate] = useState("");
@@ -1298,6 +1300,20 @@ function QuotesTab({ inquiry }) {
   const itemDescription = (pn) => itemByPart[pn]?.itemNotes || null;
   const itemBrand       = (pn) => itemByPart[pn]?.brand || null;
 
+  // Track vendor currencies of all currently selected quotes so we can show
+  // the exchange-rate helper only when a vendor quoted in a different currency.
+  const vendorCurrencies = useMemo(() => {
+    const set = new Set();
+    for (const pn of partNumbers) {
+      if (!selected[pn]) continue;
+      const q = byPart[pn]?.find((x) => String(x.id) === String(selected[pn]));
+      if (q?.currency) set.add(q.currency.toUpperCase());
+    }
+    return set;
+  }, [partNumbers, selected, byPart]);
+
+  const showConversionHelper = [...vendorCurrencies].some((c) => c !== quoteCurrency);
+
   const readyLines = useMemo(() => partNumbers
     .filter((pn) => selected[pn] && sellingPrices[pn])
     .map((pn) => {
@@ -1308,11 +1324,11 @@ function QuotesTab({ inquiry }) {
         brand: itemBrand(pn),
         quantity: itemQty(pn),
         uom: itemUom(pn),
-        currency: q?.currency || null,
+        currency: quoteCurrency,
         selling_price: sellingPrices[pn],
         lead_time: leadTimes[pn] || q?.lead_time || "",
       };
-    }), [partNumbers, selected, sellingPrices, leadTimes, byPart, itemByPart]); // eslint-disable-line react-hooks/exhaustive-deps
+    }), [partNumbers, selected, sellingPrices, leadTimes, byPart, itemByPart, quoteCurrency]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (
@@ -1357,6 +1373,7 @@ function QuotesTab({ inquiry }) {
           gstOption,
           customTax: gstOption.type === "CUSTOM" ? customTax : null,
           employee_id: localStorage.getItem("userId") || null,
+          quote_currency: quoteCurrency,
         }),
       });
       const data = await res.json();
@@ -1469,31 +1486,45 @@ function QuotesTab({ inquiry }) {
                   </tbody>
                 </table>
               </div>
-              {selected[pn] && (
-                <div className="flex items-center gap-4 rounded-xl border border-[#FDE68A] bg-[#FFFDF5] px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <Tag size={12} className="text-[#B45309]" />
-                    <label className="text-[11px] font-semibold text-[#B45309]">Your Selling Price</label>
-                    <input
-                      type="number"
-                      value={sellingPrices[pn] || ""}
-                      onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
-                      placeholder="0.00"
-                      className="w-28 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
-                    />
+              {selected[pn] && (() => {
+                const selQ = byPart[pn]?.find((x) => String(x.id) === String(selected[pn]));
+                const vCur = selQ?.currency?.toUpperCase();
+                const rate = parseFloat(exchangeRate);
+                const vPrice = Number(selQ?.unit_price);
+                const showHelper = vCur && vCur !== quoteCurrency && rate > 0 && vPrice > 0;
+                return (
+                  <div className="rounded-xl border border-[#FDE68A] bg-[#FFFDF5] px-3 py-2 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <Tag size={12} className="text-[#B45309]" />
+                        <label className="text-[11px] font-semibold text-[#B45309]">Your Selling Price ({quoteCurrency})</label>
+                        <input
+                          type="number"
+                          value={sellingPrices[pn] || ""}
+                          onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
+                          placeholder="0.00"
+                          className="w-28 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] font-semibold text-[#B45309]">Lead Time</label>
+                        <input
+                          type="text"
+                          value={leadTimes[pn] || ""}
+                          onChange={(e) => setLeadTimes((prev) => ({ ...prev, [pn]: e.target.value }))}
+                          placeholder="e.g. 15-20 days"
+                          className="w-36 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
+                        />
+                      </div>
+                    </div>
+                    {showHelper && (
+                      <p className="text-[10px] text-amber-700">
+                        Vendor: {vCur} {vPrice.toLocaleString("en-IN", { maximumFractionDigits: 2 })} × {rate} ≈ {quoteCurrency} {(vPrice * rate).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                      </p>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-[11px] font-semibold text-[#B45309]">Lead Time</label>
-                    <input
-                      type="text"
-                      value={leadTimes[pn] || ""}
-                      onChange={(e) => setLeadTimes((prev) => ({ ...prev, [pn]: e.target.value }))}
-                      placeholder="e.g. 15-20 days"
-                      className="w-36 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
-                    />
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           );
         })}
@@ -1516,6 +1547,20 @@ function QuotesTab({ inquiry }) {
               />
             </div>
 
+            {/* Quote Currency */}
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] font-semibold text-slate-500">Quote Currency</label>
+              <select
+                value={quoteCurrency}
+                onChange={(e) => setQuoteCurrency(e.target.value)}
+                className="h-7 rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10 cursor-pointer"
+              >
+                {["INR", "USD", "EUR", "AED", "GBP"].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
             {/* GST selector */}
             <div className="flex items-center gap-2">
               <label className="text-[11px] font-semibold text-slate-500">GST</label>
@@ -1529,6 +1574,23 @@ function QuotesTab({ inquiry }) {
                 ))}
               </select>
             </div>
+
+            {/* Exchange rate helper — only appears when at least one selected vendor
+                quoted in a different currency than the chosen quote currency */}
+            {showConversionHelper && (
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] font-semibold text-slate-500">
+                  Exchange Rate <span className="font-normal text-slate-400">(1 vendor unit → {quoteCurrency})</span>
+                </label>
+                <input
+                  type="number"
+                  value={exchangeRate}
+                  onChange={(e) => setExchangeRate(e.target.value)}
+                  placeholder="e.g. 83.50"
+                  className="w-24 rounded-lg border border-[#E4E8EE] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                />
+              </div>
+            )}
 
             {/* Custom tax inputs — only when "Custom Tax" is selected */}
             {gstOption.type === "CUSTOM" && (
@@ -1557,35 +1619,36 @@ function QuotesTab({ inquiry }) {
             {/* Live GST preview — only when at least one part is priced */}
             {readyLines.length > 0 && (() => {
               const g = calcGst(readyLines, gstOption, customTax);
+              const fmtAmt = (v) => `${quoteCurrency} ${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
               return (
                 <div className="flex items-center gap-3 rounded-lg border border-[#FDE68A] bg-[#FFFDF5] px-3 py-1.5">
                   {gstOption.type === "CGST_SGST" && (
                     <span className="text-[11px] text-slate-500">
-                      CGST {gstOption.rate / 2}%: <span className="font-semibold text-slate-700">{INR(g.cgst)}</span>
+                      CGST {gstOption.rate / 2}%: <span className="font-semibold text-slate-700">{fmtAmt(g.cgst)}</span>
                       <span className="mx-1.5 text-slate-300">|</span>
-                      SGST {gstOption.rate / 2}%: <span className="font-semibold text-slate-700">{INR(g.sgst)}</span>
+                      SGST {gstOption.rate / 2}%: <span className="font-semibold text-slate-700">{fmtAmt(g.sgst)}</span>
                     </span>
                   )}
                   {gstOption.type === "IGST" && (
                     <span className="text-[11px] text-slate-500">
-                      IGST {gstOption.rate}%: <span className="font-semibold text-slate-700">{INR(g.igst)}</span>
+                      IGST {gstOption.rate}%: <span className="font-semibold text-slate-700">{fmtAmt(g.igst)}</span>
                     </span>
                   )}
                   {(gstOption.type === "NONE" || gstOption.type === "EXPORT") && (
-                    <span className="text-[11px] text-slate-500">GST: <span className="font-semibold text-slate-700">₹0.00</span></span>
+                    <span className="text-[11px] text-slate-500">GST: <span className="font-semibold text-slate-700">{quoteCurrency} 0.00</span></span>
                   )}
                   {gstOption.type === "CUSTOM" && (
                     isCustomTaxValid(customTax) ? (
                       <span className="text-[11px] text-slate-500">
                         {customTaxName.trim() || "Custom Tax"} @ {parseFloat(String(customTaxRate).replace(/[^0-9.]/g, "")) || 0}%:{" "}
-                        <span className="font-semibold text-slate-700">{INR(g.customAmount)}</span>
+                        <span className="font-semibold text-slate-700">{fmtAmt(g.customAmount)}</span>
                       </span>
                     ) : (
                       <span className="text-[11px] text-rose-500">Enter tax name &amp; valid %</span>
                     )
                   )}
                   <span className="text-[11px] text-slate-300">|</span>
-                  <span className="text-[12px] font-bold text-[#B45309]">Total: {INR(g.grandTotal)}</span>
+                  <span className="text-[12px] font-bold text-[#B45309]">Total: {fmtAmt(g.grandTotal)}</span>
                 </div>
               );
             })()}

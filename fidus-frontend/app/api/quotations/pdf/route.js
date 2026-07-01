@@ -58,6 +58,7 @@ export async function GET(request) {
         clientAddress: q.client_address,
         lines: q.lines || [],
         gstData,
+        quoteCurrency: q.currency || "INR",
       })
     );
 

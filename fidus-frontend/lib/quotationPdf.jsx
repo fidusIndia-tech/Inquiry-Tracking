@@ -24,13 +24,10 @@ const styles = StyleSheet.create({
 
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   logo: { width: 120, height: 40, objectFit: "contain" },
-  taglineBlock: { alignItems: "flex-end" },
-  tagline: { fontSize: 10, fontWeight: 700 },
-  cin: { fontSize: 8, color: "#6b7280", marginTop: 2 },
 
   companyBlock: { marginTop: 18 },
   companyName: { fontSize: 10, fontWeight: 700 },
-  companyAddress: { fontSize: 9, color: "#374151", marginTop: 2, lineHeight: 1.4 },
+  companyAddress: { fontSize: 9, color: "#374151", marginTop: 2, lineHeight: 1.5 },
   divider: { borderBottomWidth: 1, borderBottomColor: "#9ca3af", marginTop: 10, marginBottom: 10 },
 
   amendClientRow: { flexDirection: "row", justifyContent: "space-between" },
@@ -97,15 +94,11 @@ function formatDate(d) {
   return `${mm}/${dd}/${dt.getFullYear()}`;
 }
 
-const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£" };
-
-function currencySymbol(currency) {
-  if (!currency) return "₹";
-  return CURRENCY_SYMBOLS[currency.toUpperCase()] || `${currency.toUpperCase()} `;
-}
-
+// Use currency code (e.g. "INR 1,23,456.00") instead of symbol to avoid
+// Helvetica not supporting ₹ — renders as ¹ in react-pdf.
 function formatMoney(value, currency) {
-  return `${currencySymbol(currency)}${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const code = (currency || "INR").toUpperCase();
+  return `${code} ${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /**
@@ -114,7 +107,9 @@ function formatMoney(value, currency) {
  * Mirrors the company's existing Odoo-generated quotation PDF layout exactly,
  * so this can replace the manual Odoo-download step in the employee's flow.
  *
- * lines: [{ part_number, description, brand, lead_time, quantity, uom, selling_price, currency }]
+ * lines: [{ part_number, description, brand, lead_time, quantity, uom, selling_price }]
+ * quoteCurrency: employee-selected output currency (INR/USD/EUR/AED/GBP). All
+ *   amounts in the PDF use this currency regardless of what vendors quoted in.
  */
 export default function QuotationDocument({
   quotationNumber,
@@ -126,7 +121,10 @@ export default function QuotationDocument({
   clientAddress,
   lines,
   gstData,
+  quoteCurrency,
 }) {
+  const currency = (quoteCurrency || "INR").toUpperCase();
+
   const expirationDate = new Date(quotedAt);
   expirationDate.setDate(expirationDate.getDate() + 21);
 
@@ -134,12 +132,10 @@ export default function QuotationDocument({
     ...l,
     amount: Number(l.quantity || 0) * Number(l.selling_price || 0),
   }));
-  const totalsCurrency = lines.find((l) => l.currency)?.currency || null;
 
   // Use server-computed gstData; fall back to zero-GST if missing.
   const gst = gstData || { type: "NONE", rate: 0, label: "No GST", taxable: computed.reduce((s, l) => s + l.amount, 0), cgst: 0, sgst: 0, igst: 0, customName: "", customRate: 0, customAmount: 0, totalGst: 0, grandTotal: computed.reduce((s, l) => s + l.amount, 0) };
 
-  // Per-line tax label shown in the "Taxes" column.
   const taxLabel = gst.type === "CGST_SGST" ? `CGST+SGST ${gst.rate}%`
                  : gst.type === "IGST"       ? `IGST ${gst.rate}%`
                  : gst.type === "CUSTOM"     ? `${gst.customName} ${gst.customRate}%`
@@ -149,20 +145,18 @@ export default function QuotationDocument({
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Header */}
+        {/* Header — logo only, no tagline or CIN */}
         <View style={styles.headerRow}>
           <Image src={LOGO_PATH} style={styles.logo} />
-          <View style={styles.taglineBlock}>
-            <Text style={styles.tagline}>Think & Get</Text>
-            <Text style={styles.cin}>CIN : U74999HR2019PTC078487</Text>
-          </View>
         </View>
 
+        {/* Company block with wrapped address */}
         <View style={styles.companyBlock}>
           <Text style={styles.companyName}>FIDUS INDIA AUTOMATION PVT LTD</Text>
-          <Text style={styles.companyAddress}>
-            39SP, HSIIDC, Udyog Vihar Phase VI, Pace City II, Sector 37, Gurugram -122001 Haryana India
-          </Text>
+          <Text style={styles.companyAddress}>39SP, HSIIDC, Udyog Vihar Phase VI,</Text>
+          <Text style={styles.companyAddress}>Pace City II, Sector 37,</Text>
+          <Text style={styles.companyAddress}>Gurugram - 122001,</Text>
+          <Text style={styles.companyAddress}>Haryana, India</Text>
         </View>
 
         <View style={styles.divider} />
@@ -219,9 +213,9 @@ export default function QuotationDocument({
               <Text style={[styles.colMake, styles.td]}>{l.brand || "-"}</Text>
               <Text style={[styles.colLead, styles.td]}>{l.lead_time || "—"}</Text>
               <Text style={[styles.colQty, styles.td]}>{l.quantity} {l.uom || ""}</Text>
-              <Text style={[styles.colUnit, styles.td]}>{formatMoney(l.selling_price, l.currency)}</Text>
+              <Text style={[styles.colUnit, styles.td]}>{formatMoney(l.selling_price, currency)}</Text>
               <Text style={[styles.colTax, styles.td]}>{taxLabel}</Text>
-              <Text style={[styles.colAmt, styles.td]}>{formatMoney(l.amount, l.currency)}</Text>
+              <Text style={[styles.colAmt, styles.td]}>{formatMoney(l.amount, currency)}</Text>
             </View>
           ))}
         </View>
@@ -230,42 +224,42 @@ export default function QuotationDocument({
         <View style={styles.totalsBlock}>
           <View style={styles.totalsRow}>
             <Text style={styles.totalsLabelRed}>Taxable Amount</Text>
-            <Text style={styles.totalsValue}>{formatMoney(gst.taxable, totalsCurrency)}</Text>
+            <Text style={styles.totalsValue}>{formatMoney(gst.taxable, currency)}</Text>
           </View>
           {gst.type === "CGST_SGST" && (
             <>
               <View style={styles.totalsRow}>
                 <Text style={styles.totalsLabel}>CGST @ {gst.rate / 2}%</Text>
-                <Text style={styles.totalsValue}>{formatMoney(gst.cgst, totalsCurrency)}</Text>
+                <Text style={styles.totalsValue}>{formatMoney(gst.cgst, currency)}</Text>
               </View>
               <View style={styles.totalsRow}>
                 <Text style={styles.totalsLabel}>SGST @ {gst.rate / 2}%</Text>
-                <Text style={styles.totalsValue}>{formatMoney(gst.sgst, totalsCurrency)}</Text>
+                <Text style={styles.totalsValue}>{formatMoney(gst.sgst, currency)}</Text>
               </View>
             </>
           )}
           {gst.type === "IGST" && (
             <View style={styles.totalsRow}>
               <Text style={styles.totalsLabel}>IGST @ {gst.rate}%</Text>
-              <Text style={styles.totalsValue}>{formatMoney(gst.igst, totalsCurrency)}</Text>
+              <Text style={styles.totalsValue}>{formatMoney(gst.igst, currency)}</Text>
             </View>
           )}
           {gst.type === "CUSTOM" && (
             <View style={styles.totalsRow}>
               <Text style={styles.totalsLabel}>{gst.customName} @ {gst.customRate}%</Text>
-              <Text style={styles.totalsValue}>{formatMoney(gst.customAmount, totalsCurrency)}</Text>
+              <Text style={styles.totalsValue}>{formatMoney(gst.customAmount, currency)}</Text>
             </View>
           )}
           {(gst.type === "NONE" || gst.type === "EXPORT") && (
             <View style={styles.totalsRow}>
               <Text style={styles.totalsLabel}>{gst.type === "EXPORT" ? "GST (Export / LUT / Zero Rated)" : "GST"}</Text>
-              <Text style={styles.totalsValue}>{formatMoney(0, totalsCurrency)}</Text>
+              <Text style={styles.totalsValue}>{formatMoney(0, currency)}</Text>
             </View>
           )}
           <View style={styles.totalsDivider} />
           <View style={styles.totalsRow}>
             <Text style={styles.totalsLabelRed}>Grand Total</Text>
-            <Text style={styles.totalsValueBold}>{formatMoney(gst.grandTotal, totalsCurrency)}</Text>
+            <Text style={styles.totalsValueBold}>{formatMoney(gst.grandTotal, currency)}</Text>
           </View>
           {gst.type === "EXPORT" && (
             <View style={{ marginTop: 4 }}>
@@ -276,7 +270,7 @@ export default function QuotationDocument({
 
         {/* Terms and conditions */}
         <View style={styles.terms}>
-          {buildTerms((totalsCurrency || "INR").toUpperCase()).map((t, i) => (
+          {buildTerms(currency).map((t, i) => (
             <Text key={i} style={styles.termsItem}>{i + 1}. {t}</Text>
           ))}
         </View>

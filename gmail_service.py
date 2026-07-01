@@ -7,6 +7,7 @@ from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import parseaddr
 from typing import Generator
 from googleapiclient.errors import HttpError
 from config import get_settings
@@ -172,9 +173,13 @@ def send_message(
 
     Returns {"id": <gmail message id>, "thread_id": <gmail thread id>}.
     """
+    _, clean_to = parseaddr(to.strip())
+    if not clean_to:
+        raise ValueError(f"Invalid or empty 'to' address: {to!r}")
+
     has_attachment = attachment_filename and attachment_bytes
     msg = MIMEMultipart("mixed") if has_attachment else MIMEMultipart("alternative")
-    msg["To"] = to
+    msg["To"] = clean_to
     msg["Subject"] = subject
     if in_reply_to_rfc_message_id:
         msg["In-Reply-To"] = in_reply_to_rfc_message_id

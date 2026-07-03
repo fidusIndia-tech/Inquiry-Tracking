@@ -1423,7 +1423,19 @@ function QuotesTab({ inquiry }) {
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed to add"); }
       const d = await fetch(`/api/quotes?unique_code=${encodeURIComponent(inquiry.unique_code)}`).then((r) => r.json());
-      setQuotes(Array.isArray(d.quotes) ? d.quotes : []);
+      const fresh = Array.isArray(d.quotes) ? d.quotes : [];
+      setQuotes(fresh);
+      // Auto-select the newly saved price so the employee only needs to
+      // enter their selling price — no extra radio click required.
+      const saved = fresh.find(
+        (q) => q.vendor_email === manualEmail && norm(q.part_number) === norm(partNumber)
+      );
+      if (saved) {
+        setSelected((prev) => ({ ...prev, [partNumber]: saved.id }));
+        if (manualForm.lead_time) {
+          setLeadTimes((prev) => ({ ...prev, [partNumber]: manualForm.lead_time }));
+        }
+      }
       setShowAddManual(null);
       setManualForm({ vendor_name: "", unit_price: "", currency: quoteCurrency, lead_time: "", availability: "", remarks: "" });
     } catch (e) { alert(e.message); }

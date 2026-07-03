@@ -164,7 +164,7 @@ function DetailsTab({ inquiry }) {
       {items.length > 0 && (
         <div>
           <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Line Items ({items.length}) <span className="font-normal text-slate-300">· click a brand to edit</span>
+            Line Items ({items.length}) <span className="font-normal text-slate-300">· click brand or part number to edit</span>
             {items.some((i) => i.brandSource === "auto") && (
               <span className="flex items-center gap-1 font-normal text-[#8B5CF6]">
                 <Bot size={10} />= auto-detected, verify before relying on it
@@ -187,7 +187,9 @@ function DetailsTab({ inquiry }) {
                     <td className="px-1 py-1">
                       {item.id ? <BrandCell item={item} /> : <span className="px-2 text-slate-600">{item.brand || "—"}</span>}
                     </td>
-                    <td className="px-3 py-2 font-semibold text-slate-900">{item.partNumber || "—"}</td>
+                    <td className="px-1 py-1">
+                      {item.id ? <PartNumberCell item={item} /> : <span className="px-2 font-semibold text-slate-900">{item.partNumber || "—"}</span>}
+                    </td>
                     <td className="px-3 py-2 text-slate-600">{item.quantity   || "—"}</td>
                     <td className="px-3 py-2 text-slate-600">{item.uom        || "—"}</td>
                     <td className="px-3 py-2 text-slate-500">{item.itemNotes  || "—"}</td>
@@ -202,6 +204,46 @@ function DetailsTab({ inquiry }) {
   );
 }
 
+function PartNumberCell({ item }) {
+  const [value,   setValue]   = useState(item.partNumber || "");
+  const [saving,  setSaving]  = useState(false);
+  const [saved,   setSaved]   = useState(false);
+  const savedRef = useRef(item.partNumber || "");
+
+  const handleBlur = async () => {
+    if (value === savedRef.current) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/inquiries/items", {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ id: item.id, part_number: value }),
+      });
+      if (res.ok) {
+        savedRef.current = value;
+        setSaved(true);
+        setTimeout(() => setSaved(false), 1500);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="relative flex items-center gap-1.5">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        placeholder="Enter part no…"
+        className="w-full min-w-[100px] rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[11px] font-semibold text-slate-900 outline-none transition hover:border-[#E4E8EE] focus:border-[#5BA7FF] focus:bg-white focus:ring-2 focus:ring-[#5BA7FF]/10 placeholder:text-slate-300 placeholder:italic"
+      />
+      {saving && <RefreshCw size={10} className="shrink-0 animate-spin text-slate-300" />}
+      {saved  && <Check     size={11} className="shrink-0 text-emerald-500" />}
+    </div>
+  );
+}
+
 /* ─────────────────────────────────────────────
    Vendors Tab
 ───────────────────────────────────────────── */
@@ -209,23 +251,29 @@ function DetailsTab({ inquiry }) {
 // Vendor discovery is employee-triggered, not automatic — this renders
 // either the "Search Vendors" button (idle/done/failed) or a live progress
 // bar (queued/running), driven by polling /api/parser/vendors/discovery-status.
-function DiscoveryControl({ run, starting, error, onStart }) {
+function DiscoveryControl({ run, starting, error, onStart, onDismiss }) {
   const isActive = run && (run.status === "queued" || run.status === "running");
 
   if (isActive) {
-    const pct = run.total_items ? Math.round((run.items_done / run.total_items) * 100) : 4;
+    const pct = run.total_items > 0 ? Math.round((run.items_done / run.total_items) * 100) : 4;
     return (
       <div className="rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2.5">
         <div className="flex items-center justify-between text-[11px] font-semibold text-[#1D6FD8]">
           <span className="flex items-center gap-1.5">
             <Loader2 size={12} className="animate-spin" />
-            {run.current_brand ? `Searching ${run.current_brand}...` : "Searching vendors..."}
+            {run.current_brand ? `Searching ${run.current_brand}…` : "Searching vendors…"}
+            {run.total_items > 0 && (
+              <span className="font-normal text-[#5B8FD9]">({run.items_done}/{run.total_items})</span>
+            )}
           </span>
-          <span>{run.items_done}/{run.total_items || "?"}</span>
+          <button onClick={onDismiss}
+            className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium text-[#5B8FD9] hover:bg-[#DBEAFE] transition">
+            <X size={11} />Dismiss
+          </button>
         </div>
         <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#DBEAFE]">
           <div
-            className="h-full rounded-full bg-[#3B82F6] transition-all"
+            className="h-full rounded-full bg-[#3B82F6] transition-all duration-700"
             style={{ width: `${Math.max(pct, 4)}%` }}
           />
         </div>
@@ -553,6 +601,7 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
             starting={discoveryStarting}
             error={discoveryError}
             onStart={startDiscovery}
+            onDismiss={() => setDiscoveryRun(null)}
           />
           {filteredDiscovered.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[#D0DCF4] bg-[#FAFBFF] px-4 py-8 text-center">

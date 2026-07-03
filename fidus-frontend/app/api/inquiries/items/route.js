@@ -29,10 +29,19 @@ export async function PATCH(request) {
 
     let result;
     if (id) {
-      result = await query(
-        `UPDATE inquiry_items SET brand = $1, brand_source = NULL WHERE id = $2 RETURNING id, brand, brand_source`,
-        [brand?.trim() || null, id]
-      );
+      if (part_number !== undefined) {
+        // Part-number edit from the Details tab
+        result = await query(
+          `UPDATE inquiry_items SET part_number = $1 WHERE id = $2 RETURNING id, part_number`,
+          [part_number?.trim() || null, id]
+        );
+      } else {
+        // Brand edit from the Details tab (existing behaviour)
+        result = await query(
+          `UPDATE inquiry_items SET brand = $1, brand_source = NULL WHERE id = $2 RETURNING id, brand, brand_source`,
+          [brand?.trim() || null, id]
+        );
+      }
     } else if (unique_code && part_number) {
       result = await query(
         `UPDATE inquiry_items ii

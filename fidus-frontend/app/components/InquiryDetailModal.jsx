@@ -1245,6 +1245,7 @@ function QuotesTab({ inquiry }) {
   const [expandedItems,       setExpandedItems]       = useState({});
   const [unmatchedAssign,     setUnmatchedAssign]     = useState({});
   const [savingAssign,        setSavingAssign]        = useState(null);
+  const [rawReplyQuote,       setRawReplyQuote]       = useState(null);
 
   /* ── Data fetch ── */
   useEffect(() => {
@@ -1396,13 +1397,20 @@ function QuotesTab({ inquiry }) {
     if (!manualForm.vendor_name.trim() || !manualForm.unit_price) return;
     setAddingManual(true);
     try {
+      // Use a synthetic email derived from vendor name so the dedup index
+      // (inquiry_code, vendor_email, part_number) creates a NEW row instead
+      // of colliding with existing extracted quotes that have a null email.
+      const manualEmail =
+        manualForm.vendor_name.trim().toLowerCase().replace(/[^a-z0-9]+/g, ".") +
+        "@manual.fiapl";
       const res = await fetch("/api/quotes", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          unique_code: inquiry.unique_code,
-          vendor_name: manualForm.vendor_name.trim(),
-          source_type: "manual",
+          unique_code:  inquiry.unique_code,
+          vendor_name:  manualForm.vendor_name.trim(),
+          vendor_email: manualEmail,
+          source_type:  "manual",
           quotes: [{
             part_number:  partNumber,
             unit_price:   parseFloat(manualForm.unit_price),
@@ -1555,6 +1563,74 @@ function QuotesTab({ inquiry }) {
           </div>
         )}
 
+        {/* Vendor reply viewer modal */}
+        {rawReplyQuote && (
+          <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 sm:items-center"
+               onClick={() => setRawReplyQuote(null)}>
+            <div className="w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl border border-[#E4E8EE] bg-white shadow-2xl"
+                 onClick={(e) => e.stopPropagation()}>
+              {/* Email header */}
+              <div className="flex items-start justify-between border-b border-[#EEF2F6] px-5 py-4"
+                   style={{ background: "linear-gradient(90deg,#F5F8FF,#EEF4FF)" }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Vendor Reply</p>
+                  <p className="text-[14px] font-bold text-slate-900 truncate">{rawReplyQuote.vendor_name || "Unknown Vendor"}</p>
+                  {rawReplyQuote.vendor_email && (
+                    <p className="text-[11px] text-slate-400 mt-0.5">{rawReplyQuote.vendor_email}</p>
+                  )}
+                  <div className="flex flex-wrap gap-3 mt-2">
+                    {rawReplyQuote.part_number && (
+                      <span className="text-[10px] text-[#1D6FD8] font-semibold">Part: {rawReplyQuote.part_number}</span>
+                    )}
+                    {rawReplyQuote.unit_price && (
+                      <span className="text-[10px] text-slate-500">Price: {formatQuotePrice(rawReplyQuote.unit_price, rawReplyQuote.currency)}</span>
+                    )}
+                    {rawReplyQuote.lead_time && (
+                      <span className="text-[10px] text-slate-500">Lead Time: {rawReplyQuote.lead_time}</span>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => setRawReplyQuote(null)}
+                  className="ml-3 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                  <X size={14} />
+                </button>
+              </div>
+              {/* Email body */}
+              <div className="flex-1 overflow-y-auto px-5 py-4">
+                {rawReplyQuote.raw_reply ? (
+                  (rawReplyQuote.raw_reply_is_html || /<[a-zA-Z][^>]*>/.test(rawReplyQuote.raw_reply)) ? (
+                    <div
+                      className="text-[12px] leading-relaxed text-slate-700
+                        [&_table]:w-full [&_table]:border-collapse [&_table]:my-3 [&_table]:text-[11px]
+                        [&_td]:border [&_td]:border-[#E4E8EE] [&_td]:px-3 [&_td]:py-2
+                        [&_th]:border [&_th]:border-[#E4E8EE] [&_th]:px-3 [&_th]:py-2 [&_th]:bg-[#F3F6FC] [&_th]:font-semibold [&_th]:text-left
+                        [&_p]:my-2 [&_br]:block [&_div]:my-1
+                        [&_a]:text-[#4451E8] [&_a]:underline
+                        [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2
+                        [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2
+                        [&_li]:my-0.5
+                        [&_b]:font-semibold [&_strong]:font-semibold"
+                      dangerouslySetInnerHTML={{ __html: rawReplyQuote.raw_reply }}
+                    />
+                  ) : (
+                    <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">
+                      {rawReplyQuote.raw_reply}
+                    </p>
+                  )
+                ) : (
+                  <p className="text-[12px] text-slate-400 italic">No reply content available.</p>
+                )}
+                {rawReplyQuote.remarks && (
+                  <div className="mt-4 rounded-xl border border-[#E4E8EE] bg-[#FAFBFF] p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Remarks</p>
+                    <p className="text-[12px] text-slate-700">{rawReplyQuote.remarks}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Horizontal comparison table (when inquiry items are available) ── */}
         {hasItems && (
           <div className="overflow-x-auto rounded-xl border border-[#E4E8EE]">
@@ -1627,12 +1703,24 @@ function QuotesTab({ inquiry }) {
                                     }}
                                     className="h-3 w-3 accent-[#4451E8] shrink-0 cursor-pointer"
                                   />
-                                  <span className="text-[10px] font-semibold text-slate-800 truncate"
-                                        style={{ maxWidth: "80px" }} title={q.vendor_name || ""}>
+                                  <span
+                                    className="text-[10px] font-semibold text-slate-800 truncate"
+                                    style={{ maxWidth: "80px" }}
+                                    title={q.raw_reply ? `${q.vendor_name || ""} — double-click to view reply` : (q.vendor_name || "")}
+                                    onDoubleClick={(e) => {
+                                      if (!q.raw_reply) return;
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setRawReplyQuote(q);
+                                    }}
+                                  >
                                     {q.vendor_name || "Unknown"}
                                   </span>
                                   {q.source_type === "manual" && (
                                     <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[8px] font-bold text-violet-600">M</span>
+                                  )}
+                                  {q.raw_reply && (
+                                    <span className="shrink-0 text-[8px] text-slate-300" title="Double-click vendor name to view reply">✉</span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-1.5 pl-4">

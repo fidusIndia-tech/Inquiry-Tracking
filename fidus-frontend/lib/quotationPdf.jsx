@@ -22,10 +22,11 @@ function buildTerms(currencyCode) {
 const styles = StyleSheet.create({
   page: { padding: 40, paddingBottom: 70, fontSize: 9, fontFamily: "Helvetica", color: "#1f2937" },
 
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  logo: { width: 120, height: 40, objectFit: "contain" },
+  // Logo sits flush top-left; no flex-space-between that can shift it right
+  logoWrap: { alignItems: "flex-start" },
+  logo: { width: 110, height: 36, objectFit: "contain", objectPositionX: 0 },
 
-  companyBlock: { marginTop: 18 },
+  companyBlock: { marginTop: 14 },
   companyName: { fontSize: 10, fontWeight: 700 },
   companyAddress: { fontSize: 9, color: "#374151", marginTop: 2, lineHeight: 1.5 },
   divider: { borderBottomWidth: 1, borderBottomColor: "#9ca3af", marginTop: 10, marginBottom: 10 },
@@ -48,25 +49,29 @@ const styles = StyleSheet.create({
     flexDirection: "row", backgroundColor: "#f3f4f6",
     borderTopWidth: 1, borderTopColor: "#d1d5db",
     borderBottomWidth: 1, borderBottomColor: "#d1d5db",
-    paddingVertical: 6,
+    paddingVertical: 5,
   },
   tableRow: {
     flexDirection: "row",
     borderBottomWidth: 1, borderBottomColor: "#e5e7eb",
-    paddingVertical: 6,
+    paddingVertical: 5,
   },
-  colSr:   { width: "6%",  paddingHorizontal: 4 },
-  colPart: { width: "12%", paddingHorizontal: 4 },
-  colDesc: { width: "22%", paddingHorizontal: 4 },
-  colMake: { width: "10%", paddingHorizontal: 4 },
-  colLead: { width: "12%", paddingHorizontal: 4 },
-  colQty:  { width: "10%", paddingHorizontal: 4, textAlign: "right" },
-  colUnit: { width: "9%",  paddingHorizontal: 4, textAlign: "right" },
-  colTax:  { width: "10%", paddingHorizontal: 4 },
-  colAmt:  { width: "9%",  paddingHorizontal: 4, textAlign: "right" },
-  th: { fontSize: 8, fontWeight: 700 },
-  td: { fontSize: 8 },
-  tdBold: { fontSize: 8, fontWeight: 700 },
+  // Wider Part Number + Description columns to prevent overflow.
+  // Each column is a View so react-pdf wraps text correctly within the boundary.
+  colSr:   { width: "4%",  paddingHorizontal: 3 },
+  colPart: { width: "17%", paddingHorizontal: 3 },
+  colDesc: { width: "24%", paddingHorizontal: 3 },
+  colMake: { width: "8%",  paddingHorizontal: 3 },
+  colLead: { width: "10%", paddingHorizontal: 3 },
+  colQty:  { width: "8%",  paddingHorizontal: 3 },
+  colUnit: { width: "10%", paddingHorizontal: 3 },
+  colTax:  { width: "9%",  paddingHorizontal: 3 },
+  colAmt:  { width: "10%", paddingHorizontal: 3 },
+  th: { fontSize: 7.5, fontWeight: 700 },
+  td: { fontSize: 7.5 },
+  tdBold: { fontSize: 7.5, fontWeight: 700 },
+  tdRight: { fontSize: 7.5, textAlign: "right" },
+  tdBoldRight: { fontSize: 7.5, fontWeight: 700, textAlign: "right" },
 
   totalsBlock: { marginTop: 12, alignItems: "flex-end" },
   totalsRow: { flexDirection: "row", width: 220, justifyContent: "space-between", paddingVertical: 4 },
@@ -146,8 +151,8 @@ export default function QuotationDocument({
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Header — logo only, no tagline or CIN */}
-        <View style={styles.headerRow}>
+        {/* Logo — flush top-left */}
+        <View style={styles.logoWrap}>
           <Image src={LOGO_PATH} style={styles.logo} />
         </View>
 
@@ -195,28 +200,31 @@ export default function QuotationDocument({
 
         {/* Line items table */}
         <View style={styles.table}>
+          {/* Each cell is a View (sets width boundary) wrapping a Text (wraps content).
+              This is the correct react-pdf pattern — mixing layout+text styles on a
+              single Text node causes the text to ignore column width and overflow. */}
           <View style={styles.tableHeaderRow}>
-            <Text style={[styles.colSr, styles.th]}>Sr No.</Text>
-            <Text style={[styles.colPart, styles.th]}>Part Number</Text>
-            <Text style={[styles.colDesc, styles.th]}>Description</Text>
-            <Text style={[styles.colMake, styles.th]}>Make</Text>
-            <Text style={[styles.colLead, styles.th]}>Lead Time</Text>
-            <Text style={[styles.colQty, styles.th]}>Quantity</Text>
-            <Text style={[styles.colUnit, styles.th]}>Unit Price</Text>
-            <Text style={[styles.colTax, styles.th]}>Taxes</Text>
-            <Text style={[styles.colAmt, styles.th]}>Amount</Text>
+            <View style={styles.colSr}><Text style={styles.th}>Sr No.</Text></View>
+            <View style={styles.colPart}><Text style={styles.th}>Part Number</Text></View>
+            <View style={styles.colDesc}><Text style={styles.th}>Description</Text></View>
+            <View style={styles.colMake}><Text style={styles.th}>Make</Text></View>
+            <View style={styles.colLead}><Text style={styles.th}>Lead Time</Text></View>
+            <View style={styles.colQty}><Text style={[styles.th, { textAlign: "right" }]}>Quantity</Text></View>
+            <View style={styles.colUnit}><Text style={[styles.th, { textAlign: "right" }]}>Unit Price</Text></View>
+            <View style={styles.colTax}><Text style={styles.th}>Taxes</Text></View>
+            <View style={styles.colAmt}><Text style={[styles.th, { textAlign: "right" }]}>Amount</Text></View>
           </View>
           {computed.map((l, idx) => (
             <View key={idx} style={styles.tableRow}>
-              <Text style={[styles.colSr, styles.td]}>{String(idx + 1).padStart(2, "0")}</Text>
-              <Text style={[styles.colPart, styles.tdBold]}>{l.part_number || "—"}</Text>
-              <Text style={[styles.colDesc, styles.td]}>{l.description || "—"}</Text>
-              <Text style={[styles.colMake, styles.td]}>{l.brand || "-"}</Text>
-              <Text style={[styles.colLead, styles.td]}>{l.lead_time || "—"}</Text>
-              <Text style={[styles.colQty, styles.td]}>{l.quantity} {l.uom || ""}</Text>
-              <Text style={[styles.colUnit, styles.td]}>{formatMoney(l.selling_price, currency)}</Text>
-              <Text style={[styles.colTax, styles.td]}>{taxLabel}</Text>
-              <Text style={[styles.colAmt, styles.td]}>{formatMoney(l.amount, currency)}</Text>
+              <View style={styles.colSr}><Text style={styles.td}>{String(idx + 1).padStart(2, "0")}</Text></View>
+              <View style={styles.colPart}><Text style={styles.tdBold}>{l.part_number || "—"}</Text></View>
+              <View style={styles.colDesc}><Text style={styles.td}>{l.description || "—"}</Text></View>
+              <View style={styles.colMake}><Text style={styles.td}>{l.brand || "-"}</Text></View>
+              <View style={styles.colLead}><Text style={styles.td}>{l.lead_time || "—"}</Text></View>
+              <View style={styles.colQty}><Text style={styles.tdRight}>{l.quantity} {l.uom || ""}</Text></View>
+              <View style={styles.colUnit}><Text style={styles.tdRight}>{formatMoney(l.selling_price, currency)}</Text></View>
+              <View style={styles.colTax}><Text style={styles.td}>{taxLabel}</Text></View>
+              <View style={styles.colAmt}><Text style={styles.tdBoldRight}>{formatMoney(l.amount, currency)}</Text></View>
             </View>
           ))}
         </View>

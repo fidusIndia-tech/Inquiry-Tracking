@@ -1380,6 +1380,7 @@ function QuotesTab({ inquiry }) {
   const [rawReplyQuote,       setRawReplyQuote]       = useState(null);
   const [termsText,           setTermsText]           = useState(DEFAULT_TERMS);
   const [showPreview,         setShowPreview]         = useState(false);
+  const [downloading,         setDownloading]         = useState(false);
 
   /* ── Data fetch ── */
   useEffect(() => {
@@ -1625,6 +1626,51 @@ function QuotesTab({ inquiry }) {
       setSendError(e.message);
     } finally {
       setSending(false);
+    }
+  };
+
+  /* ── Save record + download PDF (no-email flow for portal clients) ── */
+  const downloadQuote = async () => {
+    if (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax)) {
+      setSendError("Enter a valid custom tax name and a non-negative percentage first.");
+      return;
+    }
+    setDownloading(true); setSendError("");
+    try {
+      const saveRes = await fetch("/api/quotes/save-without-send", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          unique_code:    inquiry.unique_code,
+          lines:          readyLines,
+          salesperson,
+          gstOption,
+          customTax:      gstOption.type === "CUSTOM" ? customTax : null,
+          quote_currency: quoteCurrency,
+          terms_text:     termsText.trim() || null,
+        }),
+      });
+      const saveData = await saveRes.json();
+      if (!saveRes.ok) throw new Error(saveData.error || "Failed to save quotation");
+
+      // Stream the PDF and trigger browser download
+      const pdfRes = await fetch(`/api/quotations/pdf?id=${saveData.quotation_id}`);
+      if (!pdfRes.ok) throw new Error("Failed to generate PDF");
+      const blob = await pdfRes.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `${saveData.quotation_number}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setShowPreview(false);
+      setSentOk(true);
+      setSentInfo({ quotation_number: saveData.quotation_number, amendment_code: saveData.amendment_code });
+    } catch (e) {
+      setSendError(e.message);
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -2282,7 +2328,10 @@ function QuotesTab({ inquiry }) {
               className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
             >
-              <Send size={13} />{priorQuotationCount > 0 ? `Preview Revision R${priorQuotationCount}` : "Preview & Send Quote"}
+              <Send size={13} />
+              {priorQuotationCount > 0
+                ? (inquiry.sender_email ? `Preview Revision R${priorQuotationCount}` : `Preview & Download Revision R${priorQuotationCount}`)
+                : (inquiry.sender_email ? "Preview & Send Quote" : "Preview & Download Quote")}
             </button>
           )}
         </div>
@@ -2303,11 +2352,15 @@ function QuotesTab({ inquiry }) {
               <div className="flex items-center justify-between border-b border-[#EEF2F6] px-5 py-4"
                    style={{ background: "linear-gradient(90deg,#F5F8FF,#F0F6FF)" }}>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Review before sending</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                    {inquiry.sender_email ? "Review before sending" : "Review before downloading"}
+                  </p>
                   <h3 className="text-[15px] font-bold text-slate-900 mt-0.5">Quotation Preview</h3>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    To: <span className="font-semibold text-slate-600">{inquiry.client_name || inquiry.sender_name || "Client"}</span>
-                    {inquiry.sender_email ? <span className="ml-1 text-slate-400">({inquiry.sender_email})</span> : null}
+                    For: <span className="font-semibold text-slate-600">{inquiry.client_name || inquiry.sender_name || "Client"}</span>
+                    {inquiry.sender_email
+                      ? <span className="ml-1 text-slate-400">({inquiry.sender_email})</span>
+                      : <span className="ml-1 rounded-md bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Portal client · PDF only</span>}
                   </p>
                 </div>
                 <button onClick={() => setShowPreview(false)} className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-[#F3F5F7] transition">
@@ -2390,21 +2443,33 @@ function QuotesTab({ inquiry }) {
                 <p className="text-[11px] text-slate-400">
                   {priorQuotationCount > 0
                     ? <><span className="font-semibold text-amber-600">Revision R{priorQuotationCount}</span> will be created.</>
-                    : "This will send the quotation email and attach a PDF."}
+                    : inquiry.sender_email
+                      ? "This will send the quotation email and attach a PDF."
+                      : "Quotation will be saved and the PDF will download — no email sent."}
                 </p>
                 <div className="flex items-center gap-2">
                   <button onClick={() => { setShowPreview(false); setSendError(""); }}
-                    disabled={sending}
+                    disabled={sending || downloading}
                     className="h-9 rounded-xl border border-[#E4E8EE] bg-white px-4 text-[12px] font-medium text-slate-700 transition hover:bg-[#F3F5F7] disabled:opacity-50">
                     Go Back
                   </button>
-                  <button onClick={sendQuote} disabled={sending}
-                    className="flex h-9 items-center gap-2 rounded-xl px-5 text-[13px] font-semibold text-white transition disabled:opacity-50"
-                    style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}>
-                    {sending
-                      ? <><RefreshCw size={13} className="animate-spin" />Sending…</>
-                      : <><Send size={13} />Confirm &amp; Send</>}
-                  </button>
+                  {inquiry.sender_email ? (
+                    <button onClick={sendQuote} disabled={sending}
+                      className="flex h-9 items-center gap-2 rounded-xl px-5 text-[13px] font-semibold text-white transition disabled:opacity-50"
+                      style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}>
+                      {sending
+                        ? <><RefreshCw size={13} className="animate-spin" />Sending…</>
+                        : <><Send size={13} />Confirm &amp; Send</>}
+                    </button>
+                  ) : (
+                    <button onClick={downloadQuote} disabled={downloading}
+                      className="flex h-9 items-center gap-2 rounded-xl px-5 text-[13px] font-semibold text-white transition disabled:opacity-50"
+                      style={{ background: "linear-gradient(135deg,#F59E0B,#FBBF24)", boxShadow: "0 2px 8px rgba(245,158,11,0.28)" }}>
+                      {downloading
+                        ? <><RefreshCw size={13} className="animate-spin" />Saving…</>
+                        : <><FileText size={13} />Save &amp; Download PDF</>}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

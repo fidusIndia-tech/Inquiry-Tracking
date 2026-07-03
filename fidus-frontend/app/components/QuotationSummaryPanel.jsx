@@ -19,13 +19,14 @@ const ACCENT_PALETTE = {
 };
 
 const QUOTATION_STATUS_OPTIONS = [
-  { value: "",          label: "All Statuses" },
-  { value: "draft",     label: "Draft" },
-  { value: "sent",      label: "Sent" },
-  { value: "revised",   label: "Revised" },
-  { value: "accepted",  label: "Accepted" },
-  { value: "lost",      label: "Lost" },
-  { value: "cancelled", label: "Cancelled" },
+  { value: "",           label: "All Statuses" },
+  { value: "draft",      label: "Draft" },
+  { value: "sent",       label: "Sent" },
+  { value: "downloaded", label: "Downloaded" },
+  { value: "revised",    label: "Revised" },
+  { value: "accepted",   label: "Accepted" },
+  { value: "lost",       label: "Lost" },
+  { value: "cancelled",  label: "Cancelled" },
 ];
 
 const REVISION_FILTER_OPTIONS = [
@@ -35,12 +36,13 @@ const REVISION_FILTER_OPTIONS = [
 ];
 
 const QUOTE_STATUS_BADGE = {
-  draft:     { bg: "#F3F4F6", text: "#6B7280", label: "Draft" },
-  sent:      { bg: "#EFF6FF", text: "#1D6FD8", label: "Sent" },
-  revised:   { bg: "#F5F3FF", text: "#6D28D9", label: "Revised" },
-  accepted:  { bg: "#ECFDF5", text: "#059669", label: "Accepted" },
-  lost:      { bg: "#FFF1F2", text: "#BE123C", label: "Lost" },
-  cancelled: { bg: "#FFF1F2", text: "#BE123C", label: "Cancelled" },
+  draft:      { bg: "#F3F4F6", text: "#6B7280", label: "Draft" },
+  sent:       { bg: "#EFF6FF", text: "#1D6FD8", label: "Sent" },
+  downloaded: { bg: "#FFFBEB", text: "#B45309", label: "Downloaded" },
+  revised:    { bg: "#F5F3FF", text: "#6D28D9", label: "Revised" },
+  accepted:   { bg: "#ECFDF5", text: "#059669", label: "Accepted" },
+  lost:       { bg: "#FFF1F2", text: "#BE123C", label: "Lost" },
+  cancelled:  { bg: "#FFF1F2", text: "#BE123C", label: "Cancelled" },
 };
 
 /* ── Helpers ── */
@@ -259,7 +261,7 @@ export default function QuotationSummaryPanel({ onOpenInquiry, salespersonLock }
       <section className="flex flex-wrap gap-3">
         <MetricCard icon={<FileText size={15} />}    label="Total Quotations"     value={summary ? s.total : "—"}                      accent="blue"   delay="0ms" />
         <MetricCard icon={<Pencil size={15} />}      label="Draft"                value={summary ? s.draft : "—"}                      accent="indigo" delay="40ms" />
-        <MetricCard icon={<CheckCircle2 size={15}/>} label="Sent"                 value={summary ? s.sent : "—"}                       accent="mint"   delay="80ms" />
+        <MetricCard icon={<CheckCircle2 size={15}/>} label="Sent / Downloaded"    value={summary ? s.sent : "—"}                       accent="mint"   delay="80ms" />
         <MetricCard icon={<RefreshCw size={15} />}   label="Revised"              value={summary ? s.revised : "—"}                    accent="violet" delay="120ms" />
         <MetricCard icon={<Award size={15} />}       label="Converted / Accepted" value={summary ? s.converted : "—"}                  accent="mint"   delay="160ms" />
         <MetricCard icon={<Ban size={15} />}         label="Lost / Cancelled"     value={summary ? s.lost : "—"}                       accent="rose"   delay="200ms" />

@@ -71,7 +71,7 @@ export async function GET(request) {
       SELECT
         (SELECT COUNT(*)                                                  FROM quotations q ${spWhere})  AS total,
         (SELECT COUNT(*) FILTER (WHERE q.status = 'draft')               FROM quotations q ${spWhere})  AS draft,
-        (SELECT COUNT(*) FILTER (WHERE q.status = 'sent' AND NOT q.is_revision) FROM quotations q ${spWhere}) AS sent,
+        (SELECT COUNT(*) FILTER (WHERE q.status IN ('sent','downloaded') AND NOT q.is_revision) FROM quotations q ${spWhere}) AS sent,
         (SELECT COUNT(*) FILTER (WHERE q.is_revision)                    FROM quotations q ${spWhere})  AS revised,
         (SELECT COUNT(DISTINCT q.inquiry_unique_code)
            FILTER (WHERE i.status = 'converted')

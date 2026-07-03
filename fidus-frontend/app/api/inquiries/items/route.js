@@ -8,15 +8,12 @@ async function ensureSchema() {
 }
 
 /**
- * Lets an admin/employee correct a line item's brand when the client's
- * email didn't state it explicitly but the part number is recognizable
- * (e.g. starts with a known manufacturer prefix). Editing the brand here
- * makes the item eligible for vendor discovery and brand-based filtering,
- * which both require a non-null brand.
+ * Lets an admin/employee correct a line item's brand, part number, or quantity
+ * from the Details tab.
  *
  * Two ways to target a row:
- *  - { id, brand }                          — manual edit from the Details tab.
- *    Clears brand_source since a human just confirmed/overrode it.
+ *  - { id, brand | part_number | quantity }   — manual edit from the Details tab.
+ *    Brand edits clear brand_source since a human just confirmed/overrode it.
  *  - { unique_code, part_number, brand, source: "auto" } — called by the
  *    Python brand-identification step when it successfully searches out a
  *    brand the client never stated. Tags the row so the UI can show it was
@@ -25,15 +22,19 @@ async function ensureSchema() {
 export async function PATCH(request) {
   try {
     await ensureSchema();
-    const { id, unique_code, part_number, brand, source } = await request.json();
+    const { id, unique_code, part_number, brand, quantity, source } = await request.json();
 
     let result;
     if (id) {
       if (part_number !== undefined) {
-        // Part-number edit from the Details tab
         result = await query(
           `UPDATE inquiry_items SET part_number = $1 WHERE id = $2 RETURNING id, part_number`,
           [part_number?.trim() || null, id]
+        );
+      } else if (quantity !== undefined) {
+        result = await query(
+          `UPDATE inquiry_items SET quantity = $1 WHERE id = $2 RETURNING id, quantity`,
+          [quantity?.toString().trim() || null, id]
         );
       } else {
         // Brand edit from the Details tab (existing behaviour)

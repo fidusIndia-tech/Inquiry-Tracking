@@ -164,7 +164,7 @@ function DetailsTab({ inquiry }) {
       {items.length > 0 && (
         <div>
           <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Line Items ({items.length}) <span className="font-normal text-slate-300">· click brand or part number to edit</span>
+            Line Items ({items.length}) <span className="font-normal text-slate-300">· click brand, part number, or qty to edit</span>
             {items.some((i) => i.brandSource === "auto") && (
               <span className="flex items-center gap-1 font-normal text-[#8B5CF6]">
                 <Bot size={10} />= auto-detected, verify before relying on it
@@ -190,7 +190,9 @@ function DetailsTab({ inquiry }) {
                     <td className="px-1 py-1">
                       {item.id ? <PartNumberCell item={item} /> : <span className="px-2 font-semibold text-slate-900">{item.partNumber || "—"}</span>}
                     </td>
-                    <td className="px-3 py-2 text-slate-600">{item.quantity   || "—"}</td>
+                    <td className="px-1 py-1">
+                      {item.id ? <QuantityCell item={item} /> : <span className="px-2 text-slate-600">{item.quantity || "—"}</span>}
+                    </td>
                     <td className="px-3 py-2 text-slate-600">{item.uom        || "—"}</td>
                     <td className="px-3 py-2 text-slate-500">{item.itemNotes  || "—"}</td>
                   </tr>
@@ -200,6 +202,46 @@ function DetailsTab({ inquiry }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function QuantityCell({ item }) {
+  const [value,   setValue]   = useState(String(item.quantity ?? ""));
+  const [saving,  setSaving]  = useState(false);
+  const [saved,   setSaved]   = useState(false);
+  const savedRef = useRef(String(item.quantity ?? ""));
+
+  const handleBlur = async () => {
+    if (value === savedRef.current) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/inquiries/items", {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ id: item.id, quantity: value }),
+      });
+      if (res.ok) {
+        savedRef.current = value;
+        setSaved(true);
+        setTimeout(() => setSaved(false), 1500);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="relative flex items-center gap-1.5">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        placeholder="Qty…"
+        className="w-full min-w-[48px] rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[11px] text-slate-600 outline-none transition hover:border-[#E4E8EE] focus:border-[#5BA7FF] focus:bg-white focus:ring-2 focus:ring-[#5BA7FF]/10 placeholder:text-slate-300 placeholder:italic"
+      />
+      {saving && <RefreshCw size={10} className="shrink-0 animate-spin text-slate-300" />}
+      {saved  && <Check     size={11} className="shrink-0 text-emerald-500" />}
     </div>
   );
 }

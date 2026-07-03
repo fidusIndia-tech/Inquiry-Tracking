@@ -737,6 +737,21 @@ def extract_vendor_quote(self, message_id: str) -> dict:
 
     part_numbers = [p.strip() for p in (draft.get("part_number") or "").split(",") if p.strip()] if draft else []
 
+    # When no specific draft matched, collect all unique part numbers from every
+    # draft for this inquiry so GPT still has the full parts context. Without
+    # this, a vendor replying from an unexpected email address / new thread
+    # gets "parts we asked about: (not specified)" and extraction always fails.
+    if not part_numbers and drafts:
+        seen_pns: set[str] = set()
+        fallback_pns: list[str] = []
+        for d in drafts:
+            for pn in (d.get("part_number") or "").split(","):
+                pn = pn.strip()
+                if pn and pn.lower() not in seen_pns:
+                    fallback_pns.append(pn)
+                    seen_pns.add(pn.lower())
+        part_numbers = fallback_pns
+
     # If the vendor attached a PDF/DOCX quotation instead of writing prices in
     # the email body, the body alone has no price data and extract_quote returns
     # nothing. Extract text from any attachments and append it so GPT sees the
@@ -757,6 +772,33 @@ def extract_vendor_quote(self, message_id: str) -> dict:
             )
 
     quotes = extract_quote(body_plain, parsed.get("body_html"), part_numbers)
+
+    # A vendor has replied to our RFQ — stop reminders regardless of whether
+    # we could extract a structured price. Without this, a vendor who replies
+    # with a short ambiguous message (e.g. "Net price €50,00" with no per-part
+    # breakdown) would still receive follow-up reminders because the
+    # vendor_quotes table has no row for them.
+    _target_draft = draft
+    if _target_draft is None and sender_email:
+        _target_draft = next(
+            (d for d in drafts if (d.get("vendor_email") or "").lower() == sender_email.lower()),
+            None,
+        )
+    if _target_draft:
+        try:
+            patch_draft(
+                _target_draft["id"],
+                replied_at=datetime.now(timezone.utc).isoformat(),
+            )
+            logger.info(
+                "extract_vendor_quote | marked draft replied | draft_id=%s | unique_code=%s",
+                _target_draft["id"], unique_code,
+            )
+        except Exception as exc:
+            logger.warning(
+                "extract_vendor_quote | failed to mark draft replied | draft=%s: %s",
+                _target_draft.get("id"), exc,
+            )
 
     if not quotes:
         logger.info("extract_vendor_quote | no price found in reply | unique_code=%s", unique_code)

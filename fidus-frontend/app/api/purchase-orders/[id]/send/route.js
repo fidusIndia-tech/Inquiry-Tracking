@@ -60,6 +60,9 @@ function buildPoEmailBody(po, items) {
   </table>
 
   <p style="text-align:right;margin-top:8px;font-size:13px;">
+    Untaxed Amount: ${fmt(po.subtotal)}<br/>
+    ${po.gst_type === "IGST"      ? `IGST (${po.gst_rate}%): ${fmt(po.tax_amount)}<br/>` : ""}
+    ${po.gst_type === "CGST_SGST" ? `CGST (${Number(po.gst_rate)/2}%): ${fmt(Number(po.tax_amount)/2)}<br/>SGST (${Number(po.gst_rate)/2}%): ${fmt(Number(po.tax_amount)/2)}<br/>` : ""}
     <strong>Total: ${fmt(po.grand_total)}</strong>
   </p>
 
@@ -110,8 +113,11 @@ export async function POST(request, { params }) {
         vendorAddress:   po.vendor_address,
         items,
         currency:        po.currency || "INR",
-        subtotal:        po.subtotal,
-        grandTotal:      po.grand_total,
+        subtotal:        Number(po.subtotal)    || 0,
+        grandTotal:      Number(po.grand_total) || 0,
+        taxAmount:       Number(po.tax_amount)  || 0,
+        gstType:         po.gst_type  || "NONE",
+        gstRate:         Number(po.gst_rate) || 0,
         notes:           po.notes,
       })
     );

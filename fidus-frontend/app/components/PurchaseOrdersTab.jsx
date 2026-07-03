@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   ShoppingCart, CheckCircle, AlertCircle, RefreshCw,
-  Download, Send, XCircle, Eye, Package,
+  Download, Send, XCircle, Eye, Package, Pencil, Save,
 } from "lucide-react";
 
 const STATUS_STYLES = {
@@ -11,6 +11,13 @@ const STATUS_STYLES = {
   sent:      { bg: "#F0FDF4", text: "#16A34A", label: "Sent"      },
   cancelled: { bg: "#FEF2F2", text: "#DC2626", label: "Cancelled" },
 };
+
+const GST_OPTIONS = [
+  { value: "NONE",      label: "No GST / Exempt",        rate: 0  },
+  { value: "IGST",      label: "IGST (Interstate)",       rate: 18 },
+  { value: "CGST_SGST", label: "CGST + SGST (Intrastate)", rate: 18 },
+  { value: "EXPORT",    label: "Export / LUT (0%)",       rate: 0  },
+];
 
 function badge(status) {
   const s = STATUS_STYLES[status] || { bg: "#F3F4F6", text: "#6B7280", label: status };
@@ -22,17 +29,96 @@ function badge(status) {
   );
 }
 
-function formatMoney(value, currency) {
+function fmtMoney(value, currency) {
   const code = (currency || "INR").toUpperCase();
-  return `${code} ${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const sym  = code === "INR" ? "₹" : code;
+  return `${sym} ${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/* ── Vendor details editor inside each PO card ── */
+function VendorEditor({ po, onSaved }) {
+  const [open, setOpen]    = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr]      = useState("");
+  const [form, setForm]    = useState({
+    vendor_name:    po.vendor_name    || "",
+    vendor_email:   po.vendor_email   || "",
+    vendor_phone:   po.vendor_phone   || "",
+    vendor_address: po.vendor_address || "",
+  });
+
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const save = async () => {
+    setSaving(true); setErr("");
+    try {
+      const res = await fetch(`/api/purchase-orders/${po.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Save failed");
+      setOpen(false);
+      onSaved(data.purchase_order);
+    } catch (e) { setErr(e.message); }
+    finally { setSaving(false); }
+  };
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition">
+        <Pencil size={11} /> Edit vendor details
+      </button>
+    );
+  }
+
+  return (
+    <div className="border-t border-[#EEF2F6] px-4 py-3 bg-[#FAFBFF]">
+      <p className="text-[11px] font-semibold text-slate-600 mb-2">Edit Vendor Details</p>
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          ["Vendor Name",    "vendor_name",    "text"],
+          ["Email",          "vendor_email",   "email"],
+          ["Phone",          "vendor_phone",   "text"],
+          ["Address",        "vendor_address", "text"],
+        ].map(([label, key]) => (
+          <div key={key}>
+            <label className="block text-[10px] text-slate-500 mb-0.5">{label}</label>
+            <input
+              value={form[key]}
+              onChange={(e) => set(key, e.target.value)}
+              className="w-full rounded border border-[#E4E9F5] px-2 py-1 text-[11px] focus:border-[#4451E8] focus:outline-none"
+            />
+          </div>
+        ))}
+      </div>
+      {err && <p className="mt-1.5 text-[10px] text-red-500">{err}</p>}
+      <div className="mt-2.5 flex gap-2">
+        <button onClick={save} disabled={saving}
+          className="flex items-center gap-1 rounded bg-[#4451E8] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#3340D0] disabled:opacity-60">
+          <Save size={11} /> {saving ? "Saving…" : "Save"}
+        </button>
+        <button onClick={() => setOpen(false)}
+          className="rounded border border-[#E4E9F5] px-3 py-1.5 text-[11px] text-slate-600 hover:bg-[#F3F5F7]">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /* ── Single PO card ── */
-function PoCard({ po, onRefresh }) {
+function PoCard({ po: initialPo, onRefresh }) {
+  const [po, setPo]               = useState(initialPo);
   const [sending, setSending]     = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [expanded, setExpanded]   = useState(false);
   const [error, setError]         = useState("");
+
+  const cur = po.currency || "INR";
+  const items = po.items || [];
 
   const handleDownload = async () => {
     setError("");
@@ -46,6 +132,7 @@ function PoCard({ po, onRefresh }) {
   };
 
   const handleSend = async () => {
+    if (!po.vendor_email) { setError("Vendor email is missing — edit vendor details first."); return; }
     if (!confirm(`Send PO ${po.po_number} to ${po.vendor_email}?`)) return;
     setSending(true); setError("");
     try {
@@ -69,11 +156,14 @@ function PoCard({ po, onRefresh }) {
     finally { setCancelling(false); }
   };
 
-  const items = po.items || [];
+  const gstLabel = po.gst_type === "IGST"      ? `IGST ${po.gst_rate}%`
+                 : po.gst_type === "CGST_SGST"  ? `CGST+SGST ${po.gst_rate}%`
+                 : po.gst_type === "EXPORT"      ? "Export/LUT"
+                 : "No GST";
 
   return (
     <div className="rounded-xl border border-[#E4E9F5] bg-white" style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-      {/* Card header */}
+      {/* Header */}
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="flex items-center gap-3 min-w-0">
           <Package size={15} className="shrink-0 text-amber-600" />
@@ -82,12 +172,18 @@ function PoCard({ po, onRefresh }) {
             <p className="text-[11px] text-slate-500 truncate mt-0.5">
               {po.vendor_name || po.vendor_email || "Unknown vendor"}
               {po.vendor_email ? <span className="ml-1 text-slate-400">· {po.vendor_email}</span> : null}
+              <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{gstLabel}</span>
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {badge(po.status)}
-          <span className="text-[12px] font-semibold text-slate-700">{formatMoney(po.grand_total, po.currency)}</span>
+          <div className="text-right">
+            {Number(po.tax_amount) > 0 && (
+              <p className="text-[10px] text-slate-400">{fmtMoney(po.subtotal, cur)} + tax</p>
+            )}
+            <p className="text-[12px] font-bold text-slate-800">{fmtMoney(po.grand_total, cur)}</p>
+          </div>
           <button onClick={() => setExpanded((v) => !v)}
             className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E4E9F5] text-slate-400 hover:bg-[#F3F5F7]">
             <Eye size={13} />
@@ -95,13 +191,13 @@ function PoCard({ po, onRefresh }) {
         </div>
       </div>
 
-      {/* Items table (expandable) */}
+      {/* Items table */}
       {expanded && items.length > 0 && (
         <div className="border-t border-[#EEF2F6] overflow-x-auto">
           <table className="w-full text-[11px]">
             <thead>
               <tr className="bg-[#F8FAFF]">
-                {["#", "Part Number", "Description", "Make", "Qty", "UOM", "Unit Price", "Lead Time", "Availability"].map((h) => (
+                {["#", "Part Number", "Description", "Make", "Taxes", "Qty", "UOM", "Unit Price", "Amount"].map((h) => (
                   <th key={h} className="px-3 py-2 text-left font-semibold text-slate-500 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -111,18 +207,39 @@ function PoCard({ po, onRefresh }) {
                 <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-[#FAFBFF]"}>
                   <td className="px-3 py-2 text-slate-400">{String(i + 1).padStart(2, "0")}</td>
                   <td className="px-3 py-2 font-semibold text-slate-800">{item.part_number || "—"}</td>
-                  <td className="px-3 py-2 text-slate-600 max-w-[180px] truncate">{item.description || "—"}</td>
-                  <td className="px-3 py-2 text-slate-600">{item.brand || "—"}</td>
+                  <td className="px-3 py-2 text-slate-600 max-w-[160px] truncate">{item.description || "—"}</td>
+                  <td className="px-3 py-2">{item.brand || "—"}</td>
+                  <td className="px-3 py-2 text-slate-500">{gstLabel}</td>
                   <td className="px-3 py-2 text-right">{item.quantity || "—"}</td>
                   <td className="px-3 py-2">{item.uom || "—"}</td>
-                  <td className="px-3 py-2 text-right">{item.unit_price != null ? formatMoney(item.unit_price, item.currency || po.currency) : "—"}</td>
-                  <td className="px-3 py-2">{item.lead_time || "—"}</td>
-                  <td className="px-3 py-2">{item.availability || "—"}</td>
+                  <td className="px-3 py-2 text-right">{item.unit_price != null ? fmtMoney(item.unit_price, item.currency || cur) : "—"}</td>
+                  <td className="px-3 py-2 text-right font-semibold">{item.amount != null ? fmtMoney(item.amount, item.currency || cur) : "—"}</td>
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="border-t border-[#D0DCF4] bg-[#EEF4FF]">
+                <td colSpan={8} className="px-3 py-2 text-right text-[11px] font-semibold text-slate-600">Untaxed Amount</td>
+                <td className="px-3 py-2 text-right text-[11px] font-semibold">{fmtMoney(po.subtotal, cur)}</td>
+              </tr>
+              {Number(po.tax_amount) > 0 && (
+                <tr className="bg-[#EEF4FF]">
+                  <td colSpan={8} className="px-3 py-2 text-right text-[11px] font-semibold text-slate-600">{gstLabel}</td>
+                  <td className="px-3 py-2 text-right text-[11px] font-semibold">{fmtMoney(po.tax_amount, cur)}</td>
+                </tr>
+              )}
+              <tr className="border-t border-[#4451E8] bg-[#EEF4FF]">
+                <td colSpan={8} className="px-3 py-2 text-right text-[12px] font-bold text-[#4451E8]">Total</td>
+                <td className="px-3 py-2 text-right text-[12px] font-bold text-[#4451E8]">{fmtMoney(po.grand_total, cur)}</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
+      )}
+
+      {/* Vendor editor */}
+      {po.status !== "cancelled" && (
+        <VendorEditor po={po} onSaved={(updated) => setPo((prev) => ({ ...prev, ...updated }))} />
       )}
 
       {/* Actions */}
@@ -132,12 +249,10 @@ function PoCard({ po, onRefresh }) {
             className="flex items-center gap-1.5 rounded-lg border border-[#E4E9F5] bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-[#F3F5F7] transition">
             <Download size={12} /> Download PDF
           </button>
-          {po.vendor_email && (
-            <button onClick={handleSend} disabled={sending}
-              className="flex items-center gap-1.5 rounded-lg bg-[#4451E8] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#3340D0] transition disabled:opacity-60">
-              <Send size={12} /> {sending ? "Sending…" : po.status === "sent" ? "Resend" : "Send to Vendor"}
-            </button>
-          )}
+          <button onClick={handleSend} disabled={sending}
+            className="flex items-center gap-1.5 rounded-lg bg-[#4451E8] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#3340D0] transition disabled:opacity-60">
+            <Send size={12} /> {sending ? "Sending…" : po.status === "sent" ? "Resend to Vendor" : "Send to Vendor"}
+          </button>
           <button onClick={handleCancel} disabled={cancelling}
             className="ml-auto flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-100 transition disabled:opacity-60">
             <XCircle size={12} /> {cancelling ? "Cancelling…" : "Cancel PO"}
@@ -154,14 +269,47 @@ function PoCard({ po, onRefresh }) {
   );
 }
 
+/* ── GST selector (shown before Generate) ── */
+function GstSelector({ gstType, gstRate, onChangeType, onChangeRate }) {
+  const opt = GST_OPTIONS.find((o) => o.value === gstType) || GST_OPTIONS[0];
+  const showRate = gstType === "IGST" || gstType === "CGST_SGST";
+  return (
+    <div className="mt-3 rounded-lg border border-[#E4E9F5] bg-white px-4 py-3">
+      <p className="text-[11px] font-semibold text-slate-600 mb-2">GST / Tax applicable on this PO</p>
+      <div className="flex flex-wrap gap-2 mb-2">
+        {GST_OPTIONS.map((o) => (
+          <button key={o.value} onClick={() => { onChangeType(o.value); if (o.rate) onChangeRate(String(o.rate)); else onChangeRate("0"); }}
+            className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition ${gstType === o.value ? "bg-[#4451E8] border-[#4451E8] text-white" : "border-[#E4E9F5] text-slate-600 hover:bg-[#F3F5F7]"}`}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      {showRate && (
+        <div className="flex items-center gap-2">
+          <label className="text-[11px] text-slate-500">Rate (%)</label>
+          <input type="number" value={gstRate} onChange={(e) => onChangeRate(e.target.value)} min="0" max="100" step="0.5"
+            className="w-20 rounded border border-[#E4E9F5] px-2 py-1 text-[11px] focus:border-[#4451E8] focus:outline-none" />
+          <span className="text-[10px] text-slate-400">
+            {gstType === "CGST_SGST" ? `(CGST ${Number(gstRate)/2}% + SGST ${Number(gstRate)/2}%)` : ""}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Main tab ── */
 export default function PurchaseOrdersTab({ inquiry }) {
-  const [pos, setPos]             = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [pos, setPos]               = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [error, setError]         = useState("");
+  const [error, setError]           = useState("");
   const [confirming, setConfirming] = useState(false);
   const [acceptedQuotation, setAcceptedQuotation] = useState(null);
+
+  // GST state for generation
+  const [gstType, setGstType] = useState("NONE");
+  const [gstRate, setGstRate] = useState("18");
 
   const fetchPos = useCallback(async () => {
     setLoading(true); setError("");
@@ -180,7 +328,6 @@ export default function PurchaseOrdersTab({ inquiry }) {
       const data = await res.json();
       if (!res.ok) return;
       const quotations = data.quotations || [];
-      // Prefer one already marked accepted; fall back to sent/downloaded (awaiting client confirm)
       const accepted = quotations.find((q) => q.status === "accepted")
                     || quotations.find((q) => q.status === "downloaded" || q.status === "sent");
       setAcceptedQuotation(accepted || null);
@@ -207,7 +354,6 @@ export default function PurchaseOrdersTab({ inquiry }) {
 
   const handleGenerate = async () => {
     if (!acceptedQuotation) return;
-    if (!confirm("Generate Purchase Orders from the confirmed quotation?")) return;
     setGenerating(true); setError("");
     try {
       const res = await fetch("/api/purchase-orders", {
@@ -215,13 +361,15 @@ export default function PurchaseOrdersTab({ inquiry }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           inquiry_unique_code: inquiry.unique_code,
-          quotation_id: acceptedQuotation.id,
+          quotation_id:        acceptedQuotation.id,
+          gst_type:            gstType,
+          gst_rate:            Number(gstRate) || 0,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "PO generation failed");
       if (data.missing_vendor_lines?.length > 0) {
-        alert(`POs generated. Note: the following parts had no vendor selected and were skipped: ${data.missing_vendor_lines.join(", ")}`);
+        alert(`POs generated. Note: parts with no vendor selected were skipped: ${data.missing_vendor_lines.join(", ")}`);
       }
       await fetchPos();
     } catch (e) { setError(e.message); }
@@ -230,28 +378,25 @@ export default function PurchaseOrdersTab({ inquiry }) {
 
   const activePOs = pos.filter((p) => p.status !== "cancelled");
   const hasActivePOs = activePOs.length > 0;
-
-  /* ── Determine which state we're in ── */
-  const isConverted = inquiry.status === "converted";
-  const hasAccepted = acceptedQuotation != null;
   const isAlreadyConfirmed = acceptedQuotation?.status === "accepted" || inquiry.status === "converted";
+  const hasAccepted = acceptedQuotation != null;
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto p-5 gap-4">
 
-      {/* Step 1: No accepted quotation — must confirm first */}
+      {/* Step 1: no quotation yet */}
       {!hasAccepted && !hasActivePOs && !loading && (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#E4E9F5] py-12 text-center">
           <ShoppingCart size={32} className="mb-3 text-slate-300" />
           <p className="text-[13px] font-semibold text-slate-500">No confirmed quotation yet</p>
-          <p className="mt-1 text-[12px] text-slate-400">
+          <p className="mt-1 text-[12px] text-slate-400 max-w-sm">
             Go to <span className="font-semibold">Reply to Client</span> tab, send or download the quotation,
-            then come back here to generate Purchase Orders once the client confirms.
+            then return here to generate Purchase Orders once the client confirms.
           </p>
         </div>
       )}
 
-      {/* Step 2: Has accepted/downloaded quotation but not yet "accepted" status — show Confirm button */}
+      {/* Step 2: quotation sent but not client-confirmed */}
       {hasAccepted && !isAlreadyConfirmed && !hasActivePOs && (
         <div className="rounded-xl border border-[#FDE68A] bg-[#FFFBEB] p-5">
           <div className="flex items-start gap-3">
@@ -272,8 +417,8 @@ export default function PurchaseOrdersTab({ inquiry }) {
         </div>
       )}
 
-      {/* Step 3: Quotation is confirmed — show Generate button */}
-      {(isAlreadyConfirmed || isConverted) && !hasActivePOs && !loading && (
+      {/* Step 3: confirmed — show GST selector + Generate button */}
+      {isAlreadyConfirmed && !hasActivePOs && !loading && (
         <div className="rounded-xl border border-[#C6F6D5] bg-[#F0FDF4] p-5">
           <div className="flex items-start gap-3">
             <CheckCircle size={18} className="mt-0.5 shrink-0 text-green-500" />
@@ -285,6 +430,13 @@ export default function PurchaseOrdersTab({ inquiry }) {
                   : "This inquiry has been converted."}
                 {" "}One Purchase Order will be created per vendor.
               </p>
+
+              <GstSelector
+                gstType={gstType} gstRate={gstRate}
+                onChangeType={setGstType} onChangeRate={setGstRate}
+              />
+
+              {error && <p className="mt-2 text-[11px] text-red-600">{error}</p>}
               <button onClick={handleGenerate} disabled={generating || !acceptedQuotation}
                 className="mt-3 flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-[12px] font-semibold text-white hover:bg-green-700 transition disabled:opacity-60">
                 <ShoppingCart size={13} /> {generating ? "Generating…" : "Generate Purchase Orders"}
@@ -317,7 +469,6 @@ export default function PurchaseOrdersTab({ inquiry }) {
             <PoCard key={po.id} po={po} onRefresh={fetchPos} />
           ))}
 
-          {/* Cancelled POs — collapsed at bottom */}
           {pos.filter((p) => p.status === "cancelled").length > 0 && (
             <details className="mt-2">
               <summary className="cursor-pointer text-[11px] text-slate-400 hover:text-slate-600 select-none">
@@ -332,16 +483,22 @@ export default function PurchaseOrdersTab({ inquiry }) {
           )}
 
           {/* Re-generate after all cancelled */}
-          {(isAlreadyConfirmed || isConverted) && hasActivePOs === false && pos.length > 0 && (
-            <div className="flex items-center justify-center pt-2">
+          {isAlreadyConfirmed && !hasActivePOs && pos.length > 0 && (
+            <div className="rounded-xl border border-[#E4E9F5] p-4">
+              <p className="text-[12px] font-semibold text-slate-600 mb-2">All POs were cancelled — re-generate</p>
+              <GstSelector
+                gstType={gstType} gstRate={gstRate}
+                onChangeType={setGstType} onChangeRate={setGstRate}
+              />
+              {error && <p className="mt-2 text-[11px] text-red-600">{error}</p>}
               <button onClick={handleGenerate} disabled={generating || !acceptedQuotation}
-                className="flex items-center gap-1.5 rounded-lg border border-[#4451E8] px-4 py-2 text-[12px] font-semibold text-[#4451E8] hover:bg-[#EEF4FF] transition disabled:opacity-60">
+                className="mt-3 flex items-center gap-1.5 rounded-lg border border-[#4451E8] px-4 py-2 text-[12px] font-semibold text-[#4451E8] hover:bg-[#EEF4FF] transition disabled:opacity-60">
                 <ShoppingCart size={13} /> {generating ? "Generating…" : "Re-generate POs"}
               </button>
             </div>
           )}
 
-          {error && !generating && !confirming && (
+          {error && !generating && !confirming && !isAlreadyConfirmed && (
             <p className="flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600">
               <AlertCircle size={13} className="shrink-0" /> {error}
             </p>

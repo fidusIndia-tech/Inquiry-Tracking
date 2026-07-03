@@ -45,6 +45,10 @@ async function ensurePoSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS po_unique_code_idx ON purchase_orders(inquiry_unique_code)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS po_quotation_idx   ON purchase_orders(quotation_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS po_status_idx      ON purchase_orders(status)`);
+  // GST fields added after initial schema
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS gst_type  TEXT    NOT NULL DEFAULT 'NONE'`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS gst_rate  NUMERIC NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS tax_amount NUMERIC NOT NULL DEFAULT 0`);
   // Add converted_at to inquiries if missing (used by confirm endpoint)
   await pool.query(`ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS converted_at TIMESTAMPTZ`);
   _poSchemaReady = true;
@@ -78,7 +82,9 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensurePoSchema();
-    const { inquiry_unique_code, quotation_id, created_by } = await request.json();
+    const { inquiry_unique_code, quotation_id, created_by, gst_type, gst_rate } = await request.json();
+    const resolvedGstType = (gst_type || "NONE").toUpperCase();
+    const resolvedGstRate = Number(gst_rate) || 0;
     if (!inquiry_unique_code || !quotation_id) {
       return Response.json({ error: "inquiry_unique_code and quotation_id are required" }, { status: 400 });
     }
@@ -173,17 +179,20 @@ export async function POST(request) {
         vendor_quote_id: l.vendor_quote_id || null,
       }));
 
-      const subtotal = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+      const subtotal   = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+      const taxAmount  = resolvedGstType !== "NONE" ? subtotal * resolvedGstRate / 100 : 0;
+      const grandTotal = subtotal + taxAmount;
 
       const poRes = await query(
         `INSERT INTO purchase_orders
            (po_number, inquiry_unique_code, quotation_id, vendor_name, vendor_email,
-            currency, subtotal, grand_total, status, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'generated', $9)
+            currency, subtotal, tax_amount, grand_total, gst_type, gst_rate, status, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'generated', $12)
          RETURNING *`,
         [poNumber, inquiry_unique_code, quotation_id,
          group.vendor_name, group.vendor_email,
-         currency, subtotal, subtotal, created_by || null]
+         currency, subtotal, taxAmount, grandTotal,
+         resolvedGstType, resolvedGstRate, created_by || null]
       );
       const po = poRes.rows[0];
 

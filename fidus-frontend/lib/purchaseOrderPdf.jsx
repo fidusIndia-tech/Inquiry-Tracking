@@ -3,96 +3,119 @@ import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/render
 
 const LOGO_PATH = path.join(process.cwd(), "public", "logo-dark.png");
 
-const styles = StyleSheet.create({
-  page: { padding: 40, paddingBottom: 70, fontSize: 9, fontFamily: "Helvetica", color: "#1f2937" },
+const C = {
+  red:     "#B45309",
+  blue:    "#1e3a5f",
+  gray:    "#374151",
+  lgray:   "#6b7280",
+  xgray:   "#9ca3af",
+  border:  "#d1d5db",
+  rowalt:  "#F8FAFF",
+  headbg:  "#f3f4f6",
+};
 
-  logoWrap: { alignItems: "flex-start" },
-  logo:     { width: 110, height: 36, objectFit: "contain", objectPositionX: 0 },
+const s = StyleSheet.create({
+  page: { padding: 36, paddingBottom: 60, fontSize: 8.5, fontFamily: "Helvetica", color: C.gray },
 
-  companyBlock:   { marginTop: 14 },
-  companyName:    { fontSize: 10, fontWeight: 700 },
-  companyAddress: { fontSize: 9, color: "#374151", marginTop: 2, lineHeight: 1.5 },
-  divider:        { borderBottomWidth: 1, borderBottomColor: "#9ca3af", marginTop: 10, marginBottom: 10 },
+  /* ── top bar ── */
+  topRow:       { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  logo:         { width: 100, height: 30, objectFit: "contain", objectPositionX: 0 },
+  topRight:     { alignItems: "flex-end" },
+  tagline:      { fontSize: 9, fontFamily: "Helvetica-Bold", color: C.blue },
+  cin:          { fontSize: 7.5, color: C.lgray, marginTop: 3 },
 
-  poHeaderRow:  { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
-  poBlock:      {},
-  poNumber:     { fontSize: 18, fontWeight: 700, color: "#B45309" },
-  poSubLabel:   { fontSize: 8, color: "#64748b", marginTop: 3 },
-  poSubValue:   { fontSize: 9, color: "#1f2937" },
+  /* ── company block ── */
+  compBlock:   { marginTop: 8 },
+  compName:    { fontSize: 9.5, fontFamily: "Helvetica-Bold" },
+  compLine:    { fontSize: 8, color: C.gray, marginTop: 1.5, lineHeight: 1.4 },
 
-  vendorBlock: { alignItems: "flex-start", maxWidth: 240 },
-  vendorLabel: { fontSize: 8, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 1 },
-  vendorName:  { fontSize: 10, fontWeight: 700, marginTop: 3 },
-  vendorLine:  { fontSize: 9, color: "#374151", marginTop: 2 },
+  divider: { borderBottomWidth: 1, borderBottomColor: C.border, marginTop: 10, marginBottom: 10 },
 
-  table: { marginTop: 16 },
-  tableHeaderRow: {
-    flexDirection: "row", backgroundColor: "#f3f4f6",
-    borderTopWidth: 1, borderTopColor: "#d1d5db",
-    borderBottomWidth: 1, borderBottomColor: "#d1d5db",
-    paddingVertical: 5,
-  },
-  tableRow: {
-    flexDirection: "row",
-    borderBottomWidth: 1, borderBottomColor: "#e5e7eb",
-    paddingVertical: 5,
-  },
-  colSr:   { width: "4%",  paddingHorizontal: 3 },
-  colPart: { width: "17%", paddingHorizontal: 3 },
-  colDesc: { width: "24%", paddingHorizontal: 3 },
-  colMake: { width: "8%",  paddingHorizontal: 3 },
-  colQty:  { width: "8%",  paddingHorizontal: 3 },
-  colUom:  { width: "7%",  paddingHorizontal: 3 },
-  colUnit: { width: "12%", paddingHorizontal: 3 },
-  colLead: { width: "10%", paddingHorizontal: 3 },
-  colAvail:{ width: "10%", paddingHorizontal: 3 },
-  th:      { fontSize: 7.5, fontWeight: 700 },
-  td:      { fontSize: 7.5 },
-  tdBold:  { fontSize: 7.5, fontWeight: 700 },
-  tdRight: { fontSize: 7.5, textAlign: "right" },
-  tdBoldRight: { fontSize: 7.5, fontWeight: 700, textAlign: "right" },
+  /* ── address row ── */
+  addrRow:     { flexDirection: "row", gap: 16, marginBottom: 12 },
+  addrBlock:   { flex: 1 },
+  addrLabel:   { fontSize: 8, fontFamily: "Helvetica-Bold", marginBottom: 3 },
+  addrLine:    { fontSize: 8, color: C.gray, lineHeight: 1.5 },
 
-  totalsBlock:    { marginTop: 12, alignItems: "flex-end" },
-  totalsRow:      { flexDirection: "row", width: 220, justifyContent: "space-between", paddingVertical: 4 },
-  totalsLabel:    { fontSize: 9 },
-  totalsLabelRed: { fontSize: 9, fontWeight: 700, color: "#B45309" },
-  totalsValue:    { fontSize: 9 },
-  totalsValueBold:{ fontSize: 10, fontWeight: 700, color: "#B45309" },
-  totalsDivider:  { borderTopWidth: 1, borderTopColor: "#1f2937", width: 220, marginVertical: 2 },
+  /* ── PO heading ── */
+  poHeading:   { fontSize: 22, fontFamily: "Helvetica-Bold", color: C.red, marginBottom: 8 },
 
-  terms:      { marginTop: 24 },
-  termsTitle: { fontSize: 8.5, fontWeight: 700, marginBottom: 5 },
-  termsItem:  { fontSize: 8, color: "#374151", marginBottom: 4, lineHeight: 1.4 },
+  /* ── meta row ── */
+  metaRow:     { flexDirection: "row", gap: 30, marginBottom: 12 },
+  metaLabel:   { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: C.lgray, textTransform: "uppercase" },
+  metaValue:   { fontSize: 8.5, marginTop: 2 },
 
-  footer: {
-    position: "absolute", bottom: 24, left: 40, right: 40,
-    borderTopWidth: 1, borderTopColor: "#d1d5db", paddingTop: 6,
-  },
-  footerLine: { fontSize: 7, color: "#6b7280", textAlign: "center" },
-  pageNum:    { fontSize: 7, color: "#6b7280", textAlign: "center", marginTop: 2 },
+  /* ── table ── */
+  table:         { marginTop: 4 },
+  tHeaderRow:    { flexDirection: "row", backgroundColor: C.headbg, borderTopWidth: 1, borderTopColor: C.border, borderBottomWidth: 1, borderBottomColor: C.border, paddingVertical: 5 },
+  tRow:          { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#e5e7eb", paddingVertical: 5 },
+  tRowAlt:       { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#e5e7eb", paddingVertical: 5, backgroundColor: C.rowalt },
+
+  cSr:    { width: "4%",  paddingHorizontal: 3 },
+  cDesc:  { width: "30%", paddingHorizontal: 3 },
+  cMake:  { width: "9%",  paddingHorizontal: 3 },
+  cTax:   { width: "8%",  paddingHorizontal: 3 },
+  cQty:   { width: "8%",  paddingHorizontal: 3 },
+  cUom:   { width: "6%",  paddingHorizontal: 3 },
+  cUnit:  { width: "17%", paddingHorizontal: 3 },
+  cAmt:   { width: "18%", paddingHorizontal: 3 },
+
+  th:     { fontSize: 7.5, fontFamily: "Helvetica-Bold" },
+  td:     { fontSize: 7.5 },
+  tdBold: { fontSize: 7.5, fontFamily: "Helvetica-Bold" },
+  tdR:    { fontSize: 7.5, textAlign: "right" },
+  tdBR:   { fontSize: 7.5, fontFamily: "Helvetica-Bold", textAlign: "right" },
+
+  /* ── totals ── */
+  totalsWrap: { marginTop: 10, alignItems: "flex-end" },
+  tRow2:      { flexDirection: "row", width: 240, justifyContent: "space-between", paddingVertical: 3 },
+  tLabel:     { fontSize: 8.5, color: C.red, fontFamily: "Helvetica-Bold" },
+  tValue:     { fontSize: 8.5 },
+  tValueBold: { fontSize: 9.5, fontFamily: "Helvetica-Bold", color: C.red },
+  tDiv:       { width: 240, borderTopWidth: 1, borderTopColor: C.gray, marginVertical: 2 },
+  taxNote:    { fontSize: 7, color: C.lgray, marginTop: 4 },
+
+  /* ── terms ── */
+  termsWrap: { marginTop: 16 },
+  termItem:  { fontSize: 8, color: C.gray, marginBottom: 4, lineHeight: 1.4 },
+  termBold:  { fontSize: 8, fontFamily: "Helvetica-Bold" },
+
+  /* ── footer ── */
+  footer:      { position: "absolute", bottom: 18, left: 36, right: 36, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 6 },
+  footLine1:   { fontSize: 7, color: C.lgray, textAlign: "center" },
+  footLine2:   { fontSize: 6.5, color: C.lgray, textAlign: "center", marginTop: 2 },
+  footPage:    { fontSize: 7, color: C.lgray, textAlign: "center", marginTop: 2 },
 });
 
-function formatDate(d) {
+/* ── helpers ── */
+function fDate(d) {
   const dt = d instanceof Date ? d : new Date(d);
-  const mm = String(dt.getMonth() + 1).padStart(2, "0");
   const dd = String(dt.getDate()).padStart(2, "0");
-  return `${dd}/${mm}/${dt.getFullYear()}`;
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${dt.getFullYear()} ${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
 }
 
-function formatMoney(value, currency) {
-  const code = (currency || "INR").toUpperCase();
-  return `${code} ${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fMoney(v, cur) {
+  const code = (cur || "INR").toUpperCase();
+  const sym = code === "INR" ? "₹ " : code + " ";
+  return `${sym}${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-const PO_TERMS = [
-  "This Purchase Order is issued by Fidus India Automation Pvt. Ltd. and constitutes a binding offer subject to vendor acceptance.",
-  "Vendor must confirm receipt of this PO and provide delivery schedule within 2 business days.",
-  "All goods must be supplied exactly as per the specifications mentioned above. Substitutions require prior written approval.",
-  "Prices are fixed as quoted. No additional charges will be accepted without prior written approval.",
-  "Delivery must be as per the lead time stated above. Delays must be communicated in advance.",
-  "All items must be packed securely. FIAPL is not liable for damage due to inadequate packaging.",
-  "Payment will be processed as per agreed payment terms after receipt and inspection of goods.",
-  "Jurisdiction: All disputes are subject to the jurisdiction of Gurugram, Haryana, India.",
+function taxLabel(gstType, gstRate) {
+  if (!gstType || gstType === "NONE") return "";
+  if (gstType === "IGST")      return `IGST ${gstRate || 18}%`;
+  if (gstType === "CGST_SGST") return `CGST+SGST ${gstRate || 18}%`;
+  if (gstType === "EXPORT")    return "Export / LUT";
+  return gstType;
+}
+
+const FIXED_TERMS = [
+  ["Payment Terms",     "20% advance with the purchase order, and the remaining 80% prior to shipment."],
+  ["Dispatch Schedule", "As per Quotation"],
+  ["Warranty",         "One year"],
+  ["",                 "Warranty from the date arrive to us"],
+  ["Remarks",          "Delivery at Shipping address"],
+  ["Note",             "Goods should be Original & Genuine"],
 ];
 
 export default function PurchaseOrderDocument({
@@ -104,119 +127,185 @@ export default function PurchaseOrderDocument({
   vendorEmail,
   vendorPhone,
   vendorAddress,
-  items,
-  currency,
-  subtotal,
-  grandTotal,
+  items = [],
+  currency = "INR",
+  subtotal  = 0,
+  grandTotal = 0,
+  taxAmount  = 0,
+  gstType    = "NONE",
+  gstRate    = 0,
   notes,
 }) {
   const cur = (currency || "INR").toUpperCase();
+  const taxTag = taxLabel(gstType, gstRate);
 
   return (
     <Document>
-      <Page size="A4" style={styles.page}>
-        <View style={styles.logoWrap}>
-          <Image src={LOGO_PATH} style={styles.logo} />
-        </View>
+      <Page size="A4" style={s.page}>
 
-        <View style={styles.companyBlock}>
-          <Text style={styles.companyName}>FIDUS INDIA AUTOMATION PVT LTD</Text>
-          <Text style={styles.companyAddress}>39SP, HSIIDC, Udyog Vihar Phase VI,</Text>
-          <Text style={styles.companyAddress}>Pace City II, Sector 37, Gurugram - 122001, Haryana, India</Text>
-          <Text style={styles.companyAddress}>GST: 06AADCF6467E1ZN  |  IEC: AADCF6467E</Text>
-        </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.poHeaderRow}>
-          <View style={styles.poBlock}>
-            <Text style={styles.poNumber}>Purchase Order # {poNumber}</Text>
-            <Text style={[styles.poSubLabel, { marginTop: 6 }]}>PO Date</Text>
-            <Text style={styles.poSubValue}>{formatDate(poDate || new Date())}</Text>
-            {inquiryCode ? <>
-              <Text style={[styles.poSubLabel, { marginTop: 5 }]}>RFQ Reference</Text>
-              <Text style={styles.poSubValue}>{inquiryCode}</Text>
-            </> : null}
-            {quotationNumber ? <>
-              <Text style={[styles.poSubLabel, { marginTop: 5 }]}>Quotation Ref</Text>
-              <Text style={styles.poSubValue}>{quotationNumber}</Text>
-            </> : null}
-          </View>
-
-          <View style={styles.vendorBlock}>
-            <Text style={styles.vendorLabel}>Vendor / Supplier</Text>
-            <Text style={styles.vendorName}>{vendorName || "—"}</Text>
-            {vendorEmail   ? <Text style={styles.vendorLine}>{vendorEmail}</Text>   : null}
-            {vendorPhone   ? <Text style={styles.vendorLine}>{vendorPhone}</Text>   : null}
-            {vendorAddress ? <Text style={styles.vendorLine}>{vendorAddress}</Text> : null}
+        {/* ── Top bar: logo left, tagline + CIN right ── */}
+        <View style={s.topRow}>
+          <Image src={LOGO_PATH} style={s.logo} />
+          <View style={s.topRight}>
+            <Text style={s.tagline}>Think &amp; Get</Text>
+            <Text style={s.cin}>CIN : U74999HR2019PTC078487</Text>
           </View>
         </View>
 
-        {/* Items table */}
-        <View style={styles.table}>
-          <View style={styles.tableHeaderRow}>
-            <View style={styles.colSr}>  <Text style={styles.th}>Sr</Text></View>
-            <View style={styles.colPart}><Text style={styles.th}>Part Number</Text></View>
-            <View style={styles.colDesc}><Text style={styles.th}>Description</Text></View>
-            <View style={styles.colMake}><Text style={styles.th}>Make</Text></View>
-            <View style={styles.colQty}> <Text style={[styles.th, { textAlign: "right" }]}>Qty</Text></View>
-            <View style={styles.colUom}> <Text style={styles.th}>UOM</Text></View>
-            <View style={styles.colUnit}><Text style={[styles.th, { textAlign: "right" }]}>Unit Price</Text></View>
-            <View style={styles.colLead}><Text style={styles.th}>Lead Time</Text></View>
-            <View style={styles.colAvail}><Text style={styles.th}>Availability</Text></View>
+        {/* ── FIAPL company info ── */}
+        <View style={s.compBlock}>
+          <Text style={s.compName}>FIDUS INDIA AUTOMATION PVT LTD</Text>
+          <Text style={s.compLine}>39SP, HSIIDC, Udyog Vihar Phase VI, Pace City II, Sector 37, Gurugram -122001 Haryana India</Text>
+        </View>
+
+        <View style={s.divider} />
+
+        {/* ── Address row: FIAPL shipping address (left) + Vendor (right) ── */}
+        <View style={s.addrRow}>
+          <View style={s.addrBlock}>
+            <Text style={s.addrLabel}>Shipping address:</Text>
+            <Text style={s.addrLine}>FIDUSINDIAAUTOMATIONPVTLTD</Text>
+            <Text style={s.addrLine}>39SP, HSIIDC, Udyog Vihar Phase VI, Pace City II,</Text>
+            <Text style={s.addrLine}>Sector 37,</Text>
+            <Text style={s.addrLine}>Gurugram 122001</Text>
+            <Text style={s.addrLine}>Haryana HR</Text>
+            <Text style={s.addrLine}>India</Text>
+            <Text style={s.addrLine}>☎ 0124-2972224</Text>
           </View>
-          {(items || []).map((item, idx) => (
-            <View key={idx} style={styles.tableRow}>
-              <View style={styles.colSr}>  <Text style={styles.td}>{String(idx + 1).padStart(2, "0")}</Text></View>
-              <View style={styles.colPart}><Text style={styles.tdBold}>{item.part_number || "—"}</Text></View>
-              <View style={styles.colDesc}><Text style={styles.td}>{item.description   || "—"}</Text></View>
-              <View style={styles.colMake}><Text style={styles.td}>{item.brand         || "—"}</Text></View>
-              <View style={styles.colQty}> <Text style={styles.tdRight}>{item.quantity || "—"}</Text></View>
-              <View style={styles.colUom}> <Text style={styles.td}>{item.uom           || "—"}</Text></View>
-              <View style={styles.colUnit}><Text style={styles.tdRight}>{item.unit_price != null ? formatMoney(item.unit_price, item.currency || cur) : "—"}</Text></View>
-              <View style={styles.colLead}><Text style={styles.td}>{item.lead_time     || "—"}</Text></View>
-              <View style={styles.colAvail}><Text style={styles.td}>{item.availability || "—"}</Text></View>
+          <View style={[s.addrBlock, { alignItems: "flex-start" }]}>
+            <Text style={s.addrLine}>{vendorName || "—"}</Text>
+            {vendorAddress ? <Text style={s.addrLine}>{vendorAddress}</Text> : null}
+            {vendorEmail   ? <Text style={s.addrLine}>{vendorEmail}</Text>   : null}
+            {vendorPhone   ? <Text style={s.addrLine}>{vendorPhone}</Text>   : null}
+          </View>
+        </View>
+
+        {/* ── PO heading ── */}
+        <Text style={s.poHeading}>Purchase Order # {poNumber}</Text>
+
+        {/* ── Meta: Purchase Rep + Order Date ── */}
+        <View style={s.metaRow}>
+          <View>
+            <Text style={s.metaLabel}>Purchase Representative</Text>
+            <Text style={s.metaValue}>SCM</Text>
+          </View>
+          <View>
+            <Text style={s.metaLabel}>Order Date</Text>
+            <Text style={s.metaValue}>{fDate(poDate || new Date())}</Text>
+          </View>
+          {inquiryCode ? (
+            <View>
+              <Text style={s.metaLabel}>RFQ Reference</Text>
+              <Text style={s.metaValue}>{inquiryCode}</Text>
+            </View>
+          ) : null}
+          {quotationNumber ? (
+            <View>
+              <Text style={s.metaLabel}>Quotation Ref</Text>
+              <Text style={s.metaValue}>{quotationNumber}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* ── Items table ── */}
+        <View style={s.table}>
+          <View style={s.tHeaderRow}>
+            <View style={s.cSr}>  <Text style={s.th}>Sr{"\n"}No.</Text></View>
+            <View style={s.cDesc}><Text style={s.th}>Description</Text></View>
+            <View style={s.cMake}><Text style={s.th}>Make</Text></View>
+            <View style={s.cTax}> <Text style={s.th}>Taxes</Text></View>
+            <View style={s.cQty}> <Text style={[s.th, { textAlign: "right" }]}>Qty</Text></View>
+            <View style={s.cUom}> <Text style={s.th}>UOM</Text></View>
+            <View style={s.cUnit}><Text style={[s.th, { textAlign: "right" }]}>Unit Price</Text></View>
+            <View style={s.cAmt}> <Text style={[s.th, { textAlign: "right" }]}>Amount</Text></View>
+          </View>
+
+          {items.map((item, idx) => (
+            <View key={idx} style={idx % 2 === 0 ? s.tRow : s.tRowAlt}>
+              <View style={s.cSr}>  <Text style={s.td}>{String(idx + 1).padStart(2, "0")}</Text></View>
+              <View style={s.cDesc}>
+                <Text style={s.tdBold}>{item.part_number || "—"}</Text>
+                {item.description ? <Text style={[s.td, { marginTop: 2, color: C.lgray }]}>{item.description}</Text> : null}
+              </View>
+              <View style={s.cMake}><Text style={s.td}>{item.brand || "—"}</Text></View>
+              <View style={s.cTax}> <Text style={s.td}>{taxTag || "—"}</Text></View>
+              <View style={s.cQty}> <Text style={s.tdR}>{item.quantity || "—"}</Text></View>
+              <View style={s.cUom}> <Text style={s.td}>{item.uom || "Units"}</Text></View>
+              <View style={s.cUnit}><Text style={s.tdR}>{item.unit_price != null ? fMoney(item.unit_price, item.currency || cur) : "—"}</Text></View>
+              <View style={s.cAmt}> <Text style={s.tdR}>{item.amount != null ? fMoney(item.amount, item.currency || cur) : "—"}</Text></View>
             </View>
           ))}
         </View>
 
-        {/* Totals */}
-        <View style={styles.totalsBlock}>
-          <View style={styles.totalsRow}>
-            <Text style={styles.totalsLabelRed}>Subtotal</Text>
-            <Text style={styles.totalsValue}>{formatMoney(subtotal || grandTotal, cur)}</Text>
+        {/* ── Totals ── */}
+        <View style={s.totalsWrap}>
+          <View style={s.tRow2}>
+            <Text style={s.tLabel}>Untaxed Amount</Text>
+            <Text style={s.tValue}>{fMoney(subtotal, cur)}</Text>
           </View>
-          <View style={styles.totalsDivider} />
-          <View style={styles.totalsRow}>
-            <Text style={styles.totalsLabelRed}>Grand Total</Text>
-            <Text style={styles.totalsValueBold}>{formatMoney(grandTotal, cur)}</Text>
+          {gstType === "IGST" && (
+            <View style={s.tRow2}>
+              <Text style={s.tLabel}>IGST ({gstRate}%)</Text>
+              <Text style={s.tValue}>{fMoney(taxAmount, cur)}</Text>
+            </View>
+          )}
+          {gstType === "CGST_SGST" && (
+            <>
+              <View style={s.tRow2}>
+                <Text style={s.tLabel}>CGST ({Number(gstRate) / 2}%)</Text>
+                <Text style={s.tValue}>{fMoney(taxAmount / 2, cur)}</Text>
+              </View>
+              <View style={s.tRow2}>
+                <Text style={s.tLabel}>SGST ({Number(gstRate) / 2}%)</Text>
+                <Text style={s.tValue}>{fMoney(taxAmount / 2, cur)}</Text>
+              </View>
+            </>
+          )}
+          {gstType === "EXPORT" && (
+            <View style={s.tRow2}>
+              <Text style={[s.tLabel, { color: C.lgray }]}>Export / LUT (0%)</Text>
+              <Text style={s.tValue}>—</Text>
+            </View>
+          )}
+          <View style={s.tDiv} />
+          <View style={s.tRow2}>
+            <Text style={s.tLabel}>Total</Text>
+            <Text style={s.tValueBold}>{fMoney(grandTotal, cur)}</Text>
           </View>
-          <Text style={{ fontSize: 7.5, color: "#6b7280", marginTop: 4 }}>
-            * Taxes & duties as applicable at billing. Contact vendor for GST/VAT details.
-          </Text>
         </View>
 
+        {/* ── Notes ── */}
         {notes ? (
-          <View style={{ marginTop: 16, padding: 8, backgroundColor: "#FFF9C4", borderRadius: 4 }}>
-            <Text style={{ fontSize: 8, fontWeight: 700, marginBottom: 3 }}>Notes / Special Instructions</Text>
-            <Text style={{ fontSize: 8, color: "#374151" }}>{notes}</Text>
+          <View style={{ marginTop: 12, padding: 7, backgroundColor: "#FFF9C4", borderRadius: 3 }}>
+            <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", marginBottom: 2 }}>Notes / Special Instructions</Text>
+            <Text style={{ fontSize: 8, color: C.gray }}>{notes}</Text>
           </View>
         ) : null}
 
-        {/* Terms */}
-        <View style={styles.terms}>
-          <Text style={styles.termsTitle}>Terms &amp; Conditions</Text>
-          {PO_TERMS.map((t, i) => (
-            <Text key={i} style={styles.termsItem}>{i + 1}. {t}</Text>
+        {/* ── Fixed terms (bullet list) ── */}
+        <View style={s.termsWrap}>
+          {FIXED_TERMS.map(([label, val], i) => (
+            <View key={i} style={{ flexDirection: "row", marginBottom: 3 }}>
+              <Text style={[s.termItem, { marginRight: 4 }]}>•</Text>
+              <Text style={s.termItem}>
+                {label ? <Text style={s.termBold}>{label}:{"  "}</Text> : null}
+                {val}
+              </Text>
+            </View>
           ))}
         </View>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerLine}>
-            fidusindia@gmail.com  |  https://www.fidusindia.com/  |  Ph: 91-0124-2979669, 9811348738
+        {/* ── Footer ── */}
+        <View style={s.footer}>
+          <Text style={s.footLine1}>
+            fidusindia@gmail.com  ·  https://www.fidusindia.com/  ·  https://industrialneeds.co/
           </Text>
-          <Text style={styles.pageNum}>Page 1 / 1  —  Authorised Purchase Order</Text>
+          <Text style={s.footLine2}>
+            Phone : 91-0124-2979669, 9811348738   GST : 06AADCF6467E1ZN   IEC : AADCF6467E   MSME : HR05A0012061
+          </Text>
+          <Text style={s.footPage}>Page: 1 / 1</Text>
         </View>
+
       </Page>
     </Document>
   );

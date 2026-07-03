@@ -3,8 +3,9 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Award, Ban, Bot, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCopy, FileText, Globe,
-  History, Loader2, Mail, MapPin, Phone, RefreshCw, Search, Send, Store, Tag, Trash2, UserPlus, X,
+  History, Loader2, Mail, MapPin, Phone, RefreshCw, Search, Send, ShoppingCart, Store, Tag, Trash2, UserPlus, X,
 } from "lucide-react";
+import PurchaseOrdersTab from "./PurchaseOrdersTab";
 
 /* ─────────────────────────────────────────────
    Shared helpers
@@ -1467,14 +1468,22 @@ function QuotesTab({ inquiry }) {
           const pn = item.partNumber;
           const q  = (matchedByItem[pn] || []).find((x) => String(x.id) === String(selected[pn]));
           return {
-            part_number:   pn,
-            description:   item.itemNotes || null,
-            brand:         item.brand     || null,
-            quantity:      item.quantity  || null,
-            uom:           item.uom       || null,
-            currency:      quoteCurrency,
-            selling_price: sellingPrices[pn],
-            lead_time:     leadTimes[pn] || q?.lead_time || "",
+            part_number:        pn,
+            description:        item.itemNotes || null,
+            brand:              item.brand     || null,
+            quantity:           item.quantity  || null,
+            uom:                item.uom       || null,
+            currency:           quoteCurrency,
+            selling_price:      sellingPrices[pn],
+            lead_time:          leadTimes[pn] || q?.lead_time || "",
+            // Vendor fields — persisted in quotations.lines JSONB for PO generation.
+            // The PDF renderer ignores unknown keys so these are non-breaking.
+            vendor_quote_id:    q?.id                || null,
+            vendor_name:        q?.vendor_name       || null,
+            vendor_email:       q?.vendor_email      || null,
+            vendor_unit_price:  q?.unit_price        || null,
+            vendor_currency:    q?.currency          || null,
+            vendor_availability: q?.availability     || null,
           };
         });
     }
@@ -1483,14 +1492,20 @@ function QuotesTab({ inquiry }) {
       .map((pn) => {
         const q = byPart[pn]?.find((x) => String(x.id) === String(selected[pn]));
         return {
-          part_number:   pn,
-          description:   itemByPart[pn]?.itemNotes || null,
-          brand:         itemByPart[pn]?.brand     || null,
-          quantity:      itemByPart[pn]?.quantity  || null,
-          uom:           itemByPart[pn]?.uom       || null,
-          currency:      quoteCurrency,
-          selling_price: sellingPrices[pn],
-          lead_time:     leadTimes[pn] || q?.lead_time || "",
+          part_number:        pn,
+          description:        itemByPart[pn]?.itemNotes || null,
+          brand:              itemByPart[pn]?.brand     || null,
+          quantity:           itemByPart[pn]?.quantity  || null,
+          uom:                itemByPart[pn]?.uom       || null,
+          currency:           quoteCurrency,
+          selling_price:      sellingPrices[pn],
+          lead_time:          leadTimes[pn] || q?.lead_time || "",
+          vendor_quote_id:    q?.id                || null,
+          vendor_name:        q?.vendor_name       || null,
+          vendor_email:       q?.vendor_email      || null,
+          vendor_unit_price:  q?.unit_price        || null,
+          vendor_currency:    q?.currency          || null,
+          vendor_availability: q?.availability     || null,
         };
       });
   }, [inquiry.items, selected, sellingPrices, leadTimes, matchedByItem, quoteCurrency, partNumbers, byPart, itemByPart]);
@@ -2509,10 +2524,11 @@ export default function InquiryDetailModal({ inquiry, onClose, onBlockClient, on
   };
 
   const TABS = [
-    { id: "details", label: "Details",         Icon: FileText },
-    { id: "vendors", label: "Vendors",          Icon: Store    },
-    { id: "drafts",  label: "Drafts",           Icon: Mail     },
-    { id: "quotes",  label: "Reply to Client",  Icon: Tag      },
+    { id: "details", label: "Details",         Icon: FileText      },
+    { id: "vendors", label: "Vendors",          Icon: Store         },
+    { id: "drafts",  label: "Drafts",           Icon: Mail          },
+    { id: "quotes",  label: "Reply to Client",  Icon: Tag           },
+    { id: "po",      label: "Purchase Orders",  Icon: ShoppingCart  },
   ];
 
   return (
@@ -2583,6 +2599,9 @@ export default function InquiryDetailModal({ inquiry, onClose, onBlockClient, on
           )}
           {activeTab === "quotes" && (
             <QuotesTab inquiry={inquiry} />
+          )}
+          {activeTab === "po" && (
+            <PurchaseOrdersTab inquiry={inquiry} />
           )}
         </div>
 

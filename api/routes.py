@@ -441,6 +441,50 @@ def send_client_quote_endpoint(payload: SendClientQuoteRequest):
     return {"status": "sent", "message_id": result["message_id"], "thread_id": result["thread_id"]}
 
 
+class SendVendorPoRequest(BaseModel):
+    po_id: int
+    vendor_email: str
+    subject: str
+    body: str
+    pdf_base64: str | None = None
+    filename: str | None = None
+
+
+@router.post("/send-vendor-po")
+def send_vendor_po_endpoint(payload: SendVendorPoRequest):
+    """
+    Sends a Purchase Order PDF to the vendor via the dedicated vendor-outreach
+    mailbox. Accepts the pre-rendered PDF as base64 from the Next.js layer.
+    """
+    attachment_bytes = base64.b64decode(payload.pdf_base64) if payload.pdf_base64 else None
+    try:
+        from vendor_outreach.sender import _vendor_service
+        service = _vendor_service()
+        from gmail_service import send_message, get_rfc_message_id
+        sent = send_message(
+            service,
+            to=payload.vendor_email,
+            subject=payload.subject,
+            html_body=payload.body,
+            attachment_filename=payload.filename or f"PO-{payload.po_id}.pdf",
+            attachment_bytes=attachment_bytes,
+        )
+        rfc_message_id = get_rfc_message_id(service, sent["id"])
+    except VendorMailboxNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        logger.error("send_vendor_po failed | po_id=%s: %s", payload.po_id, exc)
+        raise HTTPException(status_code=502, detail=f"Gmail send failed: {exc}")
+
+    logger.info("Vendor PO sent | po_id=%s | to=%s | message_id=%s", payload.po_id, payload.vendor_email, sent["id"])
+    return {
+        "status": "sent",
+        "message_id": sent["id"],
+        "thread_id": sent["thread_id"],
+        "rfc_message_id": rfc_message_id,
+    }
+
+
 @router.get("/debug/vendors")
 def debug_vendors(brand: str = "SERO", part_number: str = "SOHB113WG2V10"):
     """

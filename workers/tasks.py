@@ -281,13 +281,17 @@ def process_email_message(self, user_id: str, message_id: str) -> dict:
             line_items = extract_rfq_data(parsed, attachment_text)
 
             if not line_items:
-                # Extractor found nothing — if this email looks like a reminder
-                # (e.g. portal notification with a link but no inline items),
-                # route to Reminders panel so the admin can act on it.
-                if is_client_reminder(parsed):
-                    _route_to_reminder(msg_id, parsed, [])
-                    stats["reminder_routed"] += 1
-                logger.warning("No items extracted for %s", msg_id)
+                # Extractor found nothing. This email passed both Layer 1 and Layer 2
+                # (the LLM confirmed it IS an RFQ), so dropping it silently would hide
+                # legitimate inquiries — common when the client pasted part numbers as
+                # an image/screenshot inside the email body rather than plain text.
+                # Route to Reminders so an admin can manually create the inquiry.
+                _route_to_reminder(msg_id, parsed, [])
+                stats["reminder_routed"] += 1
+                logger.warning(
+                    "No items extracted for confirmed RFQ %s — routed to Reminders | %s | %s",
+                    msg_id, parsed.get("sender", ""), parsed.get("subject", ""),
+                )
                 continue
 
             buyer_name, buyer_email = get_buyer_identity(parsed)

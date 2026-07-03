@@ -142,7 +142,8 @@ SELLER_BODY_SIGNALS = [
     "if interested, pls",
     "if interested, please",
     "pls send us email",
-    "please send us your",
+    # "please send us your" was too broad — genuine buyers write "please send us your
+    # best offer", matching this incorrectly. Kept the unambiguous seller variant below.
     "send us your requirement",
 
     # ── Price promotion ───────────────────────────────────────────────────

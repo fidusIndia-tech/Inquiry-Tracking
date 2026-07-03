@@ -1240,7 +1240,7 @@ function QuotesTab({ inquiry }) {
   const [sentInfo,            setSentInfo]            = useState(null);
   const [priorQuotationCount, setPriorQuotationCount] = useState(0);
   const [showAddManual,       setShowAddManual]       = useState(null);
-  const [manualForm,          setManualForm]          = useState({ vendor_name: "", unit_price: "", lead_time: "", availability: "", remarks: "" });
+  const [manualForm,          setManualForm]          = useState({ vendor_name: "", unit_price: "", currency: "INR", lead_time: "", availability: "", remarks: "" });
   const [addingManual,        setAddingManual]        = useState(false);
   const [expandedItems,       setExpandedItems]       = useState({});
   const [unmatchedAssign,     setUnmatchedAssign]     = useState({});
@@ -1414,6 +1414,7 @@ function QuotesTab({ inquiry }) {
           quotes: [{
             part_number:  partNumber,
             unit_price:   parseFloat(manualForm.unit_price),
+            currency:     manualForm.currency || quoteCurrency,
             lead_time:    manualForm.lead_time    || null,
             availability: manualForm.availability || null,
             remarks:      manualForm.remarks      || null,
@@ -1424,7 +1425,7 @@ function QuotesTab({ inquiry }) {
       const d = await fetch(`/api/quotes?unique_code=${encodeURIComponent(inquiry.unique_code)}`).then((r) => r.json());
       setQuotes(Array.isArray(d.quotes) ? d.quotes : []);
       setShowAddManual(null);
-      setManualForm({ vendor_name: "", unit_price: "", lead_time: "", availability: "", remarks: "" });
+      setManualForm({ vendor_name: "", unit_price: "", currency: quoteCurrency, lead_time: "", availability: "", remarks: "" });
     } catch (e) { alert(e.message); }
     finally     { setAddingManual(false); }
   };
@@ -1510,11 +1511,22 @@ function QuotesTab({ inquiry }) {
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Unit Price *</label>
-                  <input type="number" min="0" step="0.01" value={manualForm.unit_price}
-                    onChange={(e) => setManualForm((f) => ({ ...f, unit_price: e.target.value }))}
-                    placeholder="0.00"
-                    className="w-full rounded-lg border border-[#E4E8EE] px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
-                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={manualForm.currency}
+                      onChange={(e) => setManualForm((f) => ({ ...f, currency: e.target.value }))}
+                      className="h-[38px] rounded-lg border border-[#E4E8EE] bg-white px-2 text-[12px] font-semibold text-slate-700 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                    >
+                      {["INR", "USD", "EUR", "AED", "GBP"].map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    <input type="number" min="0" step="0.01" value={manualForm.unit_price}
+                      onChange={(e) => setManualForm((f) => ({ ...f, unit_price: e.target.value }))}
+                      placeholder="0.00"
+                      className="flex-1 rounded-lg border border-[#E4E8EE] px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                    />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -1759,7 +1771,7 @@ function QuotesTab({ inquiry }) {
 
                           <button
                             onClick={() => {
-                              setManualForm({ vendor_name: "", unit_price: "", lead_time: "", availability: "", remarks: "" });
+                              setManualForm({ vendor_name: "", unit_price: "", currency: quoteCurrency, lead_time: "", availability: "", remarks: "" });
                               setShowAddManual(pn);
                             }}
                             className="self-start flex items-center gap-1 rounded-lg border border-dashed border-[#C7D9F8] bg-[#F5F8FF] px-2.5 py-2 text-[10px] font-semibold text-[#4451E8] hover:bg-[#EEF4FF] transition whitespace-nowrap"

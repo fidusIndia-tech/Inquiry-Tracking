@@ -285,7 +285,6 @@ export default function PurchaseOrdersTab({ inquiry }) {
                   : "This inquiry has been converted."}
                 {" "}One Purchase Order will be created per vendor.
               </p>
-              {error && <p className="mt-2 text-[11px] text-red-600">{error}</p>}
               <button onClick={handleGenerate} disabled={generating || !acceptedQuotation}
                 className="mt-3 flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-[12px] font-semibold text-white hover:bg-green-700 transition disabled:opacity-60">
                 <ShoppingCart size={13} /> {generating ? "Generating…" : "Generate Purchase Orders"}

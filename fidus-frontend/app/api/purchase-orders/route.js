@@ -83,14 +83,23 @@ export async function POST(request) {
       return Response.json({ error: "inquiry_unique_code and quotation_id are required" }, { status: 400 });
     }
 
-    // Fetch the confirmed quotation
+    // Fetch the confirmed quotation — also join inquiry status so that an
+    // already-converted inquiry (status set externally) passes validation even
+    // if the quotation row itself still reads 'sent'.
     const qtRes = await query(
-      `SELECT id, status, lines, currency FROM quotations WHERE id = $1`,
+      `SELECT q.id, q.status, q.lines, q.currency, i.status AS inquiry_status
+       FROM quotations q
+       LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code
+       WHERE q.id = $1`,
       [quotation_id]
     );
     const qt = qtRes.rows[0];
     if (!qt) return Response.json({ error: "Quotation not found" }, { status: 404 });
-    if (qt.status !== "accepted" && qt.status !== "downloaded") {
+    const isConfirmed = qt.status === "accepted"
+                     || qt.status === "downloaded"
+                     || qt.status === "sent"      // allow when inquiry is already converted
+                        && qt.inquiry_status === "converted";
+    if (!isConfirmed) {
       return Response.json({ error: "Quotation must be confirmed (accepted) before generating POs" }, { status: 400 });
     }
 

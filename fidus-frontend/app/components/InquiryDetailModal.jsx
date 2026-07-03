@@ -1273,6 +1273,20 @@ function calcGst(readyLines, gstOpt, customTax = {}) {
   return { taxable, cgst, sgst, igst, customAmount, totalGst, grandTotal: taxable + totalGst };
 }
 
+const DEFAULT_TERMS = [
+  "Prices: All prices are quoted in INR and are valid for 30 days from the date of this quotation. Prices are exclusive of applicable taxes, duties, and freight unless otherwise mentioned.",
+  "Payment Terms: 100% advance payment against confirmed purchase order, unless agreed otherwise in writing. Payment should be made via bank transfer to the account details mentioned in the invoice.",
+  "Delivery: Standard delivery lead time is stated above in days from the receipt of advance payment and confirmed PO.",
+  "Warranty: Warranty is applicable only for manufacturing defects and excludes misuse, mishandling, or damages during transit.",
+  "Validity: Quotation is valid for a period of 30 days unless extended in writing.",
+  "Order Cancellation: Once the order is confirmed and payment is received, cancellation or change requests will not be entertained.",
+  "Taxes & Duties: All applicable GST and local taxes will be charged extra as applicable at the time of billing.",
+  "Packaging & Forwarding: Standard packaging is included. Special packaging (if any) will be charged extra.",
+  "Limitation of Liability: Our liability is limited only to the extent of replacing defective products as per warranty policy.",
+  "Jurisdiction: All disputes are subject to the jurisdiction of Gurgram",
+  "Transit Insurance: Goods are deemed delivered once they leave our warehouse. Transit insurance is to be arranged by the buyer unless explicitly included in the quotation. We are not liable for any loss, damage, or delay caused during transportation.",
+].join("\n");
+
 // Custom tax name must be non-empty and rate must be a finite number >= 0.
 function isCustomTaxValid(customTax) {
   const name = String(customTax?.name || "").trim();
@@ -1322,6 +1336,8 @@ function QuotesTab({ inquiry }) {
   const [unmatchedAssign,     setUnmatchedAssign]     = useState({});
   const [savingAssign,        setSavingAssign]        = useState(null);
   const [rawReplyQuote,       setRawReplyQuote]       = useState(null);
+  const [termsText,           setTermsText]           = useState(DEFAULT_TERMS);
+  const [showPreview,         setShowPreview]         = useState(false);
 
   /* ── Data fetch ── */
   useEffect(() => {
@@ -1555,10 +1571,12 @@ function QuotesTab({ inquiry }) {
           customTax:      gstOption.type === "CUSTOM" ? customTax : null,
           employee_id:    localStorage.getItem("userId") || null,
           quote_currency: quoteCurrency,
+          terms_text:     termsText.trim() || null,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send quote");
+      setShowPreview(false);
       setSentOk(true);
       setSentInfo({ quotation_number: data.quotation_number, amendment_code: data.amendment_code });
     } catch (e) {
@@ -2011,6 +2029,30 @@ function QuotesTab({ inquiry }) {
           );
         })}
 
+        {/* ── Terms & Conditions ── */}
+        <div className="rounded-2xl border border-[#E4E8EE] bg-white overflow-hidden">
+          <div className="flex items-center justify-between border-b border-[#EEF2F6] px-4 py-2.5"
+               style={{ background: "linear-gradient(90deg,#F8FAFF,#F3F6FF)" }}>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Terms &amp; Conditions</p>
+            <button
+              onClick={() => setTermsText(DEFAULT_TERMS)}
+              className="text-[10px] font-semibold text-slate-400 hover:text-[#4451E8] transition"
+            >
+              Reset to default
+            </button>
+          </div>
+          <textarea
+            value={termsText}
+            onChange={(e) => setTermsText(e.target.value)}
+            rows={8}
+            placeholder="Enter terms and conditions (one per line)…"
+            className="w-full resize-y px-4 py-3 text-[11px] leading-relaxed text-slate-700 outline-none placeholder:text-slate-300"
+          />
+          <p className="border-t border-[#EEF2F6] px-4 py-1.5 text-[10px] text-slate-400">
+            Each line becomes a numbered term in the PDF. Edits are included when the quotation is sent.
+          </p>
+        </div>
+
         {/* ── Unmatched vendor quotes (prices whose part# didn't match any item) ── */}
         {hasItems && unmatchedQuotes.length > 0 && (
           <div>
@@ -2187,8 +2229,9 @@ function QuotesTab({ inquiry }) {
             {sendError && <p className="text-[11px] text-rose-500 mt-0.5">{sendError}</p>}
           </div>
           {!sentOk && (
-            <button onClick={sendQuote}
-              disabled={readyLines.length === 0 || sending || !salesperson.trim() || (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax))}
+            <button
+              onClick={() => setShowPreview(true)}
+              disabled={readyLines.length === 0 || !salesperson.trim() || (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax))}
               title={
                 !salesperson.trim() ? "Enter the salesperson name first"
                 : (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax)) ? "Enter a valid custom tax name and percentage first"
@@ -2197,13 +2240,135 @@ function QuotesTab({ inquiry }) {
               className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
             >
-              {sending
-                ? <><RefreshCw size={13} className="animate-spin" />Sending…</>
-                : <><Send size={13} />{priorQuotationCount > 0 ? `Send Revision R${priorQuotationCount}` : "Send Quote to Client"}</>}
+              <Send size={13} />{priorQuotationCount > 0 ? `Preview Revision R${priorQuotationCount}` : "Preview & Send Quote"}
             </button>
           )}
         </div>
       </div>
+
+      {/* ── Quotation Preview Modal ── */}
+      {showPreview && (() => {
+        const g = calcGst(readyLines, gstOption, customTax);
+        const fmtAmt = (v) => `${quoteCurrency} ${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const termLines = termsText.split("\n").map((t) => t.trim()).filter(Boolean);
+        return (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={() => !sending && setShowPreview(false)} />
+            <div className="relative z-10 w-full max-w-2xl bg-white rounded-2xl overflow-hidden max-h-[92vh] flex flex-col"
+                 style={{ boxShadow: "0 8px 48px rgba(0,0,0,0.22)" }}>
+
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-[#EEF2F6] px-5 py-4"
+                   style={{ background: "linear-gradient(90deg,#F5F8FF,#F0F6FF)" }}>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Review before sending</p>
+                  <h3 className="text-[15px] font-bold text-slate-900 mt-0.5">Quotation Preview</h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    To: <span className="font-semibold text-slate-600">{inquiry.client_name || inquiry.sender_name || "Client"}</span>
+                    {inquiry.sender_email ? <span className="ml-1 text-slate-400">({inquiry.sender_email})</span> : null}
+                  </p>
+                </div>
+                <button onClick={() => setShowPreview(false)} className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-[#F3F5F7] transition">
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+
+                {/* Line items */}
+                <div>
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Line Items</p>
+                  <table className="w-full border-collapse text-[12px]">
+                    <thead>
+                      <tr style={{ background: "#EEF4FF" }}>
+                        {["#", "Part Number", "Description", "Qty", "Lead Time", "Unit Price", "Amount"].map((h) => (
+                          <th key={h} className="border border-[#D0DCF4] px-2.5 py-2 text-left text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {readyLines.map((l, i) => {
+                        const amt = (Number(l.quantity) || 1) * Number(l.selling_price || 0);
+                        return (
+                          <tr key={i} className="border-b border-[#EEF2F6]">
+                            <td className="border border-[#E4E8EE] px-2.5 py-2 text-slate-500">{i + 1}</td>
+                            <td className="border border-[#E4E8EE] px-2.5 py-2 font-semibold text-slate-900">{l.part_number || "—"}</td>
+                            <td className="border border-[#E4E8EE] px-2.5 py-2 text-slate-600">{l.description || "—"}</td>
+                            <td className="border border-[#E4E8EE] px-2.5 py-2 text-slate-700">{l.quantity || "—"}</td>
+                            <td className="border border-[#E4E8EE] px-2.5 py-2 text-slate-600">{l.lead_time || "—"}</td>
+                            <td className="border border-[#E4E8EE] px-2.5 py-2 text-right font-medium text-slate-800">
+                              {quoteCurrency} {Number(l.selling_price || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="border border-[#E4E8EE] px-2.5 py-2 text-right font-semibold text-slate-900">
+                              {fmtAmt(amt)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Totals */}
+                <div className="flex justify-end">
+                  <div className="w-64 space-y-1 rounded-xl border border-[#E4E8EE] bg-[#FAFBFF] px-4 py-3 text-[12px]">
+                    <div className="flex justify-between text-slate-500">
+                      <span>Taxable Amount</span><span className="font-medium text-slate-700">{fmtAmt(g.taxable)}</span>
+                    </div>
+                    {gstOption.type === "CGST_SGST" && <>
+                      <div className="flex justify-between text-slate-500"><span>CGST @ {gstOption.rate/2}%</span><span>{fmtAmt(g.cgst)}</span></div>
+                      <div className="flex justify-between text-slate-500"><span>SGST @ {gstOption.rate/2}%</span><span>{fmtAmt(g.sgst)}</span></div>
+                    </>}
+                    {gstOption.type === "IGST" && <div className="flex justify-between text-slate-500"><span>IGST @ {gstOption.rate}%</span><span>{fmtAmt(g.igst)}</span></div>}
+                    {gstOption.type === "CUSTOM" && <div className="flex justify-between text-slate-500"><span>{customTax?.name || "Tax"} @ {customTax?.rate || 0}%</span><span>{fmtAmt(g.customAmount)}</span></div>}
+                    {(gstOption.type === "NONE" || gstOption.type === "EXPORT") && <div className="flex justify-between text-slate-500"><span>GST</span><span>0.00</span></div>}
+                    <div className="flex justify-between border-t border-[#E4E8EE] pt-1.5 font-bold text-slate-900">
+                      <span>Grand Total</span><span className="text-[#B45309]">{fmtAmt(g.grandTotal)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* T&C preview */}
+                {termLines.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Terms &amp; Conditions</p>
+                    <ol className="space-y-1 rounded-xl border border-[#E4E8EE] bg-[#FAFBFF] px-5 py-3 text-[11px] leading-relaxed text-slate-600 list-decimal">
+                      {termLines.map((t, i) => <li key={i}>{t}</li>)}
+                    </ol>
+                  </div>
+                )}
+
+                {sendError && (
+                  <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-[12px] font-medium text-rose-700">{sendError}</p>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between gap-3 border-t border-[#EEF2F6] px-5 py-4">
+                <p className="text-[11px] text-slate-400">
+                  {priorQuotationCount > 0
+                    ? <><span className="font-semibold text-amber-600">Revision R{priorQuotationCount}</span> will be created.</>
+                    : "This will send the quotation email and attach a PDF."}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setShowPreview(false); setSendError(""); }}
+                    disabled={sending}
+                    className="h-9 rounded-xl border border-[#E4E8EE] bg-white px-4 text-[12px] font-medium text-slate-700 transition hover:bg-[#F3F5F7] disabled:opacity-50">
+                    Go Back
+                  </button>
+                  <button onClick={sendQuote} disabled={sending}
+                    className="flex h-9 items-center gap-2 rounded-xl px-5 text-[13px] font-semibold text-white transition disabled:opacity-50"
+                    style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}>
+                    {sending
+                      ? <><RefreshCw size={13} className="animate-spin" />Sending…</>
+                      : <><Send size={13} />Confirm &amp; Send</>}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

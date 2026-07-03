@@ -69,6 +69,7 @@ async function ensureQuotationsSchema() {
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS custom_tax_name TEXT`);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS custom_tax_rate NUMERIC`);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS terms_and_conditions TEXT`);
   _schemaReady = true;
 }
 
@@ -167,7 +168,7 @@ function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperso
 export async function POST(request) {
   try {
     await ensureQuotationsSchema();
-    const { unique_code, lines, salesperson, gstOption, customTax, employee_id, quote_currency } = await request.json();
+    const { unique_code, lines, salesperson, gstOption, customTax, employee_id, quote_currency, terms_text } = await request.json();
     const currency = (quote_currency || "INR").toUpperCase();
     const gstData = computeGstData(lines, gstOption, customTax);
     if (!unique_code || !lines?.length) {
@@ -217,6 +218,10 @@ export async function POST(request) {
     const amendmentDate = isRevision ? quotedAt.toISOString().slice(0, 10) : null;
     const parentQuotationId = isRevision ? priorRes.rows[0].id : null;
 
+    const customTerms = terms_text
+      ? terms_text.split("\n").map((t) => t.trim()).filter(Boolean)
+      : null;
+
     const pdfBuffer = await renderToBuffer(
       React.createElement(QuotationDocument, {
         quotationNumber,
@@ -229,6 +234,7 @@ export async function POST(request) {
         lines,
         gstData,
         quoteCurrency: currency,
+        customTerms,
       })
     );
     const pdfBase64 = pdfBuffer.toString("base64");
@@ -262,8 +268,8 @@ export async function POST(request) {
           revision_number, amendment_code, amendment_date, is_revision, parent_quotation_id,
           status, client_name, client_email, currency,
           taxable_amount, tax_amount, grand_total, gst_type, gst_rate, custom_tax_name, custom_tax_rate,
-          sent_at)
-       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10,$11, $12,$13,$14,$15, $16,$17,$18,$19,$20,$21,$22, NOW())`,
+          terms_and_conditions, sent_at)
+       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10,$11, $12,$13,$14,$15, $16,$17,$18,$19,$20,$21,$22, $23, NOW())`,
       [
         quotationNumber, unique_code, salesperson || null, quotedAt,
         expirationDate.toISOString().slice(0, 10), JSON.stringify(lines),
@@ -271,6 +277,7 @@ export async function POST(request) {
         "sent", inquiry.client_name || null, inquiry.sender_email || null, currency,
         gstData.taxable, gstData.totalGst, gstData.grandTotal, gstData.type, gstData.rate,
         gstData.customName || null, gstData.customRate || null,
+        terms_text || null,
       ]
     );
 

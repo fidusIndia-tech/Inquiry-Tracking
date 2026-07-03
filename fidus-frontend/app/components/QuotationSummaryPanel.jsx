@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Award, Ban, CheckCircle, CheckCircle2, Download, Eye, ExternalLink,
+  Award, Ban, CheckCircle2, Download, Eye, ExternalLink,
   FileText, MessageSquare, Pencil, Plus, Receipt, RefreshCw,
-  Search, Send, TrendingUp, X, XCircle,
+  Search, Send, ThumbsDown, ThumbsUp, TrendingUp, X,
 } from "lucide-react";
 import ManualQuotationForm from "@/app/components/ManualQuotationForm";
 
@@ -427,14 +427,14 @@ export default function QuotationSummaryPanel({ onOpenInquiry, salespersonLock }
                               title="Mark as Converted"
                               className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#ECFDF5] hover:text-[#047857]"
                             >
-                              <CheckCircle size={13} />
+                              <ThumbsUp size={13} />
                             </button>
                             <button
                               onClick={() => handleSetOutcome(q.inquiry_unique_code, "lost")}
                               title="Mark as Lost"
                               className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#FEF2F2] hover:text-[#DC2626]"
                             >
-                              <XCircle size={13} />
+                              <ThumbsDown size={13} />
                             </button>
                           </>
                         )}

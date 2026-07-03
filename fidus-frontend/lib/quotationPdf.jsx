@@ -122,6 +122,7 @@ export default function QuotationDocument({
   lines,
   gstData,
   quoteCurrency,
+  customTerms,
 }) {
   const currency = (quoteCurrency || "INR").toUpperCase();
 
@@ -270,7 +271,7 @@ export default function QuotationDocument({
 
         {/* Terms and conditions */}
         <View style={styles.terms}>
-          {buildTerms(currency).map((t, i) => (
+          {(customTerms?.length > 0 ? customTerms : buildTerms(currency)).map((t, i) => (
             <Text key={i} style={styles.termsItem}>{i + 1}. {t}</Text>
           ))}
         </View>

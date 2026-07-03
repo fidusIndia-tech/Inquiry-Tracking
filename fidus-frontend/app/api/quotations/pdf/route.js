@@ -34,7 +34,8 @@ export async function GET(request) {
 
     const result = await query(
       `SELECT q.*,
-              COALESCE(i.location, q.billing_address) AS client_address
+              COALESCE(i.location, q.billing_address)   AS client_address,
+              COALESCE(q.sender_name, i.sender_name)    AS resolved_sender_name
        FROM quotations q
        LEFT JOIN inquiries i ON i.unique_code = q.inquiry_unique_code
        WHERE q.id = $1`,
@@ -51,15 +52,19 @@ export async function GET(request) {
     const pdfBuffer = await renderToBuffer(
       React.createElement(QuotationDocument, {
         quotationNumber: q.quotation_number,
-        quotedAt: q.quoted_at,
-        amendmentCode: q.amendment_code,
-        amendmentDate: q.amendment_date,
-        salesperson: q.salesperson,
-        clientName: q.client_name,
-        clientAddress: q.client_address,
-        lines: q.lines || [],
+        quotedAt:        q.quoted_at,
+        amendmentCode:   q.amendment_code,
+        amendmentDate:   q.amendment_date,
+        salesperson:     q.salesperson,
+        clientName:      q.client_name,
+        senderName:      q.resolved_sender_name,
+        clientAddress:   q.client_address,
+        lines:           q.lines || [],
         gstData,
-        quoteCurrency: q.currency || "INR",
+        quoteCurrency:   q.currency || "INR",
+        customTerms:     q.terms_and_conditions
+          ? q.terms_and_conditions.split("\n").map((t) => t.trim()).filter(Boolean)
+          : null,
       })
     );
 

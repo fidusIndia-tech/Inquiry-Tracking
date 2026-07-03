@@ -70,6 +70,7 @@ async function ensureQuotationsSchema() {
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS custom_tax_rate NUMERIC`);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS terms_and_conditions TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS sender_name TEXT`);
   _schemaReady = true;
 }
 
@@ -186,7 +187,7 @@ export async function POST(request) {
     }
 
     const inquiryRes = await query(
-      `SELECT i.client_name, i.location, i.sender_email, i.subject, r.thread_id, r.message_id
+      `SELECT i.client_name, i.sender_name, i.location, i.sender_email, i.subject, r.thread_id, r.message_id
        FROM inquiries i
        LEFT JOIN raw_email_items r ON r.id = i.raw_email_item_id
        WHERE i.unique_code = $1
@@ -229,7 +230,8 @@ export async function POST(request) {
         amendmentCode,
         amendmentDate,
         salesperson,
-        clientName: inquiry.client_name,
+        clientName:    inquiry.client_name,
+        senderName:    inquiry.sender_name,
         clientAddress: inquiry.location,
         lines,
         gstData,
@@ -266,15 +268,15 @@ export async function POST(request) {
       `INSERT INTO quotations
          (quotation_number, inquiry_unique_code, salesperson, quoted_at, expiration_date, lines,
           revision_number, amendment_code, amendment_date, is_revision, parent_quotation_id,
-          status, client_name, client_email, currency,
+          status, client_name, sender_name, client_email, currency,
           taxable_amount, tax_amount, grand_total, gst_type, gst_rate, custom_tax_name, custom_tax_rate,
           terms_and_conditions, sent_at)
-       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10,$11, $12,$13,$14,$15, $16,$17,$18,$19,$20,$21,$22, $23, NOW())`,
+       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10,$11, $12,$13,$14,$15,$16, $17,$18,$19,$20,$21,$22,$23, $24, NOW())`,
       [
         quotationNumber, unique_code, salesperson || null, quotedAt,
         expirationDate.toISOString().slice(0, 10), JSON.stringify(lines),
         revisionNumber, amendmentCode, amendmentDate, isRevision, parentQuotationId,
-        "sent", inquiry.client_name || null, inquiry.sender_email || null, currency,
+        "sent", inquiry.client_name || null, inquiry.sender_name || null, inquiry.sender_email || null, currency,
         gstData.taxable, gstData.totalGst, gstData.grandTotal, gstData.type, gstData.rate,
         gstData.customName || null, gstData.customRate || null,
         terms_text || null,

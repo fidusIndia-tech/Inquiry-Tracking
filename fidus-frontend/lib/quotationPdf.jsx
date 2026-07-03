@@ -123,6 +123,7 @@ export default function QuotationDocument({
   amendmentDate,
   salesperson,
   clientName,
+  senderName,
   clientAddress,
   lines,
   gstData,
@@ -175,6 +176,9 @@ export default function QuotationDocument({
           </View>
           <View style={styles.clientBlock}>
             <Text style={styles.clientName}>{clientName || ""}</Text>
+            {senderName ? (
+              <Text style={[styles.clientAddressLine, { marginTop: 3 }]}>Attn: {senderName}</Text>
+            ) : null}
             {(clientAddress || "").split(",").map((part, i) => (
               part.trim() ? <Text key={i} style={styles.clientAddressLine}>{part.trim()}</Text> : null
             ))}

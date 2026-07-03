@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import AddInquiryModal from "@/app/components/AddInquiryModal";
 import InquiryDetailModal from "@/app/components/InquiryDetailModal";
 import QuotationSummaryPanel from "@/app/components/QuotationSummaryPanel";
 import Image from "next/image";
@@ -13,6 +14,7 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
+  Plus,
   RefreshCw,
   Save,
   Search,
@@ -174,6 +176,7 @@ export default function EmployeeDashboard() {
   const [detailModalCode,       setDetailModalCode]       = useState(null);
   const [activeTab,             setActiveTab]             = useState("inquiries");
   const [expandedCodes,         setExpandedCodes]         = useState(new Set());
+  const [showAddInquiry,        setShowAddInquiry]        = useState(false);
   const knownAssignmentsRef  = useRef(new Map());
   const knownPriceCountsRef  = useRef(new Map());
   const firstLoadRef         = useRef(true);
@@ -544,15 +547,23 @@ export default function EmployeeDashboard() {
                   </p>
                 </div>
 
-                <button
-                  onClick={saveStatuses}
-                  disabled={saving || changedStatuses.length === 0}
-                  className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-60"
-                  style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
-                >
-                  {saving ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
-                  {saving ? "Saving…" : `Save${changedStatuses.length > 0 ? ` (${changedStatuses.length})` : ""}`}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowAddInquiry(true)}
+                    className="flex h-9 items-center gap-1.5 rounded-xl border border-[#D0DCF4] bg-white px-4 text-[12px] font-semibold text-[#1D6FD8] transition hover:bg-[#EFF6FF]"
+                  >
+                    <Plus size={13} />New Inquiry
+                  </button>
+                  <button
+                    onClick={saveStatuses}
+                    disabled={saving || changedStatuses.length === 0}
+                    className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-60"
+                    style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
+                  >
+                    {saving ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+                    {saving ? "Saving…" : `Save${changedStatuses.length > 0 ? ` (${changedStatuses.length})` : ""}`}
+                  </button>
+                </div>
               </div>
 
               {/* Notices */}
@@ -584,6 +595,18 @@ export default function EmployeeDashboard() {
           inquiry={detailModal}
           onClose={() => setDetailModalCode(null)}
           onPricesSeen={() => handlePricesSeen(detailModal.unique_code)}
+        />
+      )}
+
+      {showAddInquiry && (
+        <AddInquiryModal
+          hideAssignTo
+          defaultAssignedTo={employeeId}
+          onClose={() => setShowAddInquiry(false)}
+          onSuccess={() => {
+            setShowAddInquiry(false);
+            if (employeeId) loadInquiries(employeeId);
+          }}
         />
       )}
     </div>

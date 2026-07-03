@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Award, Ban, Bot, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCopy, FileText, Globe,
   History, Loader2, Mail, MapPin, Phone, RefreshCw, Search, Send, Store, Tag, Trash2, UserPlus, X,
@@ -884,6 +884,19 @@ const DraftCard = memo(function DraftCard({ draft, onChange }) {
   const [sendError, setSendError] = useState("");
   const [editingHtml, setEditingHtml] = useState(false);
   const debounceRef = useRef(null);
+  const bodyRef     = useRef(null);
+
+  // Sync body state into the contentEditable div whenever edit mode is entered.
+  // We can't use dangerouslySetInnerHTML on a contentEditable element (React
+  // would reset the cursor on every keystroke), so we write innerHTML once via
+  // ref immediately after the DOM node appears.
+  useLayoutEffect(() => {
+    if (editingHtml && bodyRef.current) {
+      bodyRef.current.innerHTML = body;
+      bodyRef.current.focus();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingHtml]); // deliberately omit `body` — only re-init on mode change
 
   const isSent = status === "sent" || status === "replied";
 
@@ -992,20 +1005,34 @@ const DraftCard = memo(function DraftCard({ draft, onChange }) {
           <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Email Body</label>
           {!isSent && (
             <button
-              onClick={() => setEditingHtml((v) => !v)}
+              onClick={() => {
+                if (editingHtml && bodyRef.current) {
+                  // Exiting edit mode — capture whatever the employee typed
+                  handleBodyChange(bodyRef.current.innerHTML);
+                }
+                setEditingHtml((v) => !v);
+              }}
               className="text-[10px] font-semibold text-[#4451E8] hover:underline"
             >
-              {editingHtml ? "Preview" : "Edit HTML"}
+              {editingHtml ? "Preview" : "Edit"}
             </button>
           )}
         </div>
         {editingHtml ? (
-          <textarea
-            value={body}
-            onChange={(e) => handleBodyChange(e.target.value)}
-            rows={14}
-            disabled={isSent}
-            className="w-full resize-none rounded-xl border border-[#E4E8EE] bg-[#FAFBFF] px-3 py-2.5 text-[11px] leading-relaxed text-slate-700 outline-none transition focus:border-[#5BA7FF] focus:bg-white focus:ring-2 focus:ring-[#5BA7FF]/10 font-mono disabled:text-slate-400"
+          // contentEditable lets employees click directly into table cells to
+          // correct part numbers, quantities, or any other text in the draft.
+          // innerHTML is initialised once via bodyRef + useLayoutEffect above.
+          <div
+            ref={bodyRef}
+            contentEditable
+            suppressContentEditableWarning
+            onBlur={() => {
+              if (bodyRef.current) handleBodyChange(bodyRef.current.innerHTML);
+            }}
+            className="min-h-[180px] overflow-x-auto rounded-xl border border-[#5BA7FF] bg-white px-3 py-2.5 text-[12px] leading-relaxed text-slate-700 outline-none ring-2 ring-[#5BA7FF]/10 cursor-text
+              [&_table]:w-full [&_table]:border-collapse
+              [&_td]:border [&_td]:border-[#D0DCF4] [&_td]:px-2 [&_td]:py-1.5 [&_td]:min-w-[60px]
+              [&_th]:border [&_th]:border-[#D0DCF4] [&_th]:px-2 [&_th]:py-1.5 [&_th]:bg-[#EEF4FF] [&_th]:font-semibold"
           />
         ) : (
           // This renders exactly what the vendor will see in their inbox — the

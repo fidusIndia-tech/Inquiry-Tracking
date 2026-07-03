@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import AddInquiryModal from "@/app/components/AddInquiryModal";
 import InquiryDetailModal from "@/app/components/InquiryDetailModal";
 import ManualQuotationForm from "@/app/components/ManualQuotationForm";
 import QuotationSummaryPanel from "@/app/components/QuotationSummaryPanel";
@@ -3012,10 +3013,7 @@ function RemindersPage({ reminders, isLoading, onAddInquiry }) {
   );
 }
 
-/* ──────────────────────────────────────────────
-   ADD INQUIRY MODAL
-─────────────────────────────────────────────── */
-function AddInquiryModal({ reminder, employees = [], onClose, onSuccess }) {
+function _DEAD_AddInquiryModal_REMOVE_ME({ reminder, employees = [], onClose, onSuccess }) {
   const extractedItems = (reminder?.line_items || [])
     .filter((i) => i && (i.brand || i.part_number))
     .map((i) => ({

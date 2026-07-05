@@ -1373,7 +1373,10 @@ function QuotesTab({ inquiry }) {
   const [sentInfo,            setSentInfo]            = useState(null);
   const [priorQuotationCount, setPriorQuotationCount] = useState(0);
   const [showAddManual,       setShowAddManual]       = useState(null);
-  const [manualForm,          setManualForm]          = useState({ vendor_name: "", unit_price: "", currency: "INR", lead_time: "", availability: "", remarks: "" });
+  const [manualForm,          setManualForm]          = useState({ vendor_name: "", vendor_email: "", unit_price: "", currency: "INR", lead_time: "", availability: "", remarks: "" });
+  const [poCreating,          setPoCreating]          = useState({});
+  const [quickPOMap,          setQuickPOMap]          = useState({}); // pn → po_number
+  const [lockedParts,         setLockedParts]         = useState(new Set()); // parts locked because PO is sent
   const [addingManual,        setAddingManual]        = useState(false);
   const [expandedItems,       setExpandedItems]       = useState({});
   const [unmatchedAssign,     setUnmatchedAssign]     = useState({});
@@ -1398,6 +1401,26 @@ function QuotesTab({ inquiry }) {
         setPriorQuotationCount(rows.filter((q) => q.status === "sent").length);
       })
       .catch(() => setPriorQuotationCount(0));
+
+    // Fetch existing POs to populate quick-PO indicators and lock sent items
+    fetch(`/api/purchase-orders?unique_code=${encodeURIComponent(inquiry.unique_code)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const pos = Array.isArray(d.purchase_orders) ? d.purchase_orders : [];
+        const poMap = {};
+        const locked = new Set();
+        for (const po of pos) {
+          for (const item of (po.items || [])) {
+            const pn = item.part_number;
+            if (!pn) continue;
+            if (!poMap[pn]) poMap[pn] = po.po_number;
+            if (po.status === "sent") locked.add(pn);
+          }
+        }
+        setQuickPOMap(poMap);
+        setLockedParts(locked);
+      })
+      .catch(() => {});
   }, [inquiry.unique_code]);
 
   /* ── Normalise part number for matching ── */
@@ -1550,9 +1573,9 @@ function QuotesTab({ inquiry }) {
       // Use a synthetic email derived from vendor name so the dedup index
       // (inquiry_code, vendor_email, part_number) creates a NEW row instead
       // of colliding with existing extracted quotes that have a null email.
-      const manualEmail =
-        manualForm.vendor_name.trim().toLowerCase().replace(/[^a-z0-9]+/g, ".") +
-        "@manual.fiapl";
+      // Use real email if provided; otherwise synthesise one for dedup-index uniqueness
+      const manualEmail = manualForm.vendor_email.trim()
+        || manualForm.vendor_name.trim().toLowerCase().replace(/[^a-z0-9]+/g, ".") + "@manual.fiapl";
       const res = await fetch("/api/quotes", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
@@ -1587,9 +1610,30 @@ function QuotesTab({ inquiry }) {
         }
       }
       setShowAddManual(null);
-      setManualForm({ vendor_name: "", unit_price: "", currency: quoteCurrency, lead_time: "", availability: "", remarks: "" });
+      setManualForm({ vendor_name: "", vendor_email: "", unit_price: "", currency: quoteCurrency, lead_time: "", availability: "", remarks: "" });
     } catch (e) { alert(e.message); }
     finally     { setAddingManual(false); }
+  };
+
+  /* ── Quick-create PO from a selected vendor quote ── */
+  const handleQuickPO = async (partNumber, quoteId) => {
+    setPoCreating((prev) => ({ ...prev, [partNumber]: true }));
+    try {
+      const res = await fetch("/api/purchase-orders/quick-create", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          inquiry_unique_code: inquiry.unique_code,
+          vendor_quote_id:     quoteId,
+          gst_type:            "NONE",
+          gst_rate:            0,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "PO creation failed");
+      setQuickPOMap((prev) => ({ ...prev, [partNumber]: data.purchase_order.po_number }));
+    } catch (e) { alert(e.message); }
+    finally { setPoCreating((prev) => ({ ...prev, [partNumber]: false })); }
   };
 
   /* ── Assign unmatched quote to an inquiry item ── */
@@ -1710,13 +1754,23 @@ function QuotesTab({ inquiry }) {
                 Part: <span className="font-semibold text-slate-800">{showAddManual}</span>
               </p>
               <div className="space-y-3">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Vendor Name *</label>
-                  <input type="text" value={manualForm.vendor_name}
-                    onChange={(e) => setManualForm((f) => ({ ...f, vendor_name: e.target.value }))}
-                    placeholder="e.g. ABC Traders"
-                    className="w-full rounded-lg border border-[#E4E8EE] px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
-                  />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Vendor Name *</label>
+                    <input type="text" value={manualForm.vendor_name}
+                      onChange={(e) => setManualForm((f) => ({ ...f, vendor_name: e.target.value }))}
+                      placeholder="e.g. ABC Traders"
+                      className="w-full rounded-lg border border-[#E4E8EE] px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Vendor Email</label>
+                    <input type="email" value={manualForm.vendor_email}
+                      onChange={(e) => setManualForm((f) => ({ ...f, vendor_email: e.target.value }))}
+                      placeholder="vendor@email.com"
+                      className="w-full rounded-lg border border-[#E4E8EE] px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Unit Price *</label>
@@ -1884,7 +1938,8 @@ function QuotesTab({ inquiry }) {
                   const visible     = isExp ? rowQuotes : rowQuotes.slice(0, MAX_V);
                   const hiddenCount = rowQuotes.length - MAX_V;
                   const isSel       = !!selected[pn];
-                  const bg          = isSel ? "#FFFBEB" : (rowIdx % 2 === 0 ? "white" : "#FAFBFF");
+                  const isLocked    = lockedParts.has(pn);
+                  const bg          = isLocked ? "#F0FDF4" : isSel ? "#FFFBEB" : (rowIdx % 2 === 0 ? "white" : "#FAFBFF");
 
                   return (
                     <tr key={pn} style={{ background: bg }}
@@ -1903,35 +1958,37 @@ function QuotesTab({ inquiry }) {
                       <td className="px-3 py-2" style={{ minWidth: "380px" }}>
                         <div className="flex flex-wrap gap-2">
                           {visible.map((q) => {
-                            const isCurrent = String(selected[pn]) === String(q.id);
+                            const isCurrent  = String(selected[pn]) === String(q.id);
+                            const hasQPO     = isCurrent && quickPOMap[pn];
+                            const isCreating = isCurrent && poCreating[pn];
                             return (
-                              <label key={q.id}
-                                className={`flex flex-col gap-0.5 rounded-lg border cursor-pointer px-2.5 py-2 transition select-none ${
-                                  isCurrent
-                                    ? "border-[#5BA7FF] bg-[#EFF6FF]"
-                                    : "border-[#E4E8EE] bg-white hover:border-[#C7D9F8] hover:bg-[#F5F8FF]"
+                              <div key={q.id}
+                                onClick={() => {
+                                  if (isLocked) return;
+                                  setSelected((prev) => ({ ...prev, [pn]: q.id }));
+                                  setLeadTimes((prev) => prev[pn] ? prev : { ...prev, [pn]: q.lead_time || "" });
+                                }}
+                                className={`flex flex-col gap-0.5 rounded-lg border px-2.5 py-2 transition select-none ${
+                                  isLocked
+                                    ? "border-green-300 bg-[#F0FDF4] cursor-default"
+                                    : isCurrent
+                                      ? "border-[#5BA7FF] bg-[#EFF6FF] cursor-pointer"
+                                      : "border-[#E4E8EE] bg-white hover:border-[#C7D9F8] hover:bg-[#F5F8FF] cursor-pointer"
                                 }`}
                                 style={{ minWidth: "110px" }}
                               >
                                 <div className="flex items-center gap-1.5">
-                                  <input
-                                    type="radio"
-                                    name={`quote-${pn}`}
-                                    checked={isCurrent}
-                                    onChange={() => {
-                                      setSelected((prev) => ({ ...prev, [pn]: q.id }));
-                                      setLeadTimes((prev) => prev[pn] ? prev : { ...prev, [pn]: q.lead_time || "" });
-                                    }}
-                                    className="h-3 w-3 accent-[#4451E8] shrink-0 cursor-pointer"
-                                  />
+                                  {/* Visual radio indicator */}
+                                  <span className={`h-3 w-3 shrink-0 rounded-full border-2 flex items-center justify-center ${isCurrent ? "border-[#4451E8]" : "border-[#D1D5DB]"}`}>
+                                    {isCurrent && <span className="h-1.5 w-1.5 rounded-full bg-[#4451E8]" />}
+                                  </span>
                                   <span
                                     className="text-[10px] font-semibold text-slate-800 truncate"
                                     style={{ maxWidth: "80px" }}
                                     title={q.raw_reply ? `${q.vendor_name || ""} — double-click to view reply` : (q.vendor_name || "")}
                                     onDoubleClick={(e) => {
                                       if (!q.raw_reply) return;
-                                      e.preventDefault();
-                                      e.stopPropagation();
+                                      e.preventDefault(); e.stopPropagation();
                                       setRawReplyQuote(q);
                                     }}
                                   >
@@ -1957,7 +2014,30 @@ function QuotesTab({ inquiry }) {
                                 {q.lead_time && (
                                   <span className="text-[9px] text-slate-400 pl-4 truncate">{q.lead_time}</span>
                                 )}
-                              </label>
+                                {/* PO create button — only on selected card */}
+                                {isCurrent && !isLocked && (
+                                  <div className="mt-1 pl-4" onClick={(e) => e.stopPropagation()}>
+                                    {hasQPO ? (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[8px] font-bold text-green-700">
+                                        ✓ {quickPOMap[pn]}
+                                      </span>
+                                    ) : (
+                                      <button
+                                        onClick={() => handleQuickPO(pn, q.id)}
+                                        disabled={isCreating}
+                                        title="Create Purchase Order for this vendor"
+                                        className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[8px] font-bold text-amber-700 hover:bg-amber-100 transition disabled:opacity-50"
+                                      >
+                                        <ShoppingCart size={8} />
+                                        {isCreating ? "Creating…" : "Create PO"}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                                {isLocked && isCurrent && (
+                                  <span className="mt-1 pl-4 text-[8px] font-semibold text-green-600">PO Sent ✓</span>
+                                )}
+                              </div>
                             );
                           })}
 
@@ -1980,7 +2060,7 @@ function QuotesTab({ inquiry }) {
 
                           <button
                             onClick={() => {
-                              setManualForm({ vendor_name: "", unit_price: "", currency: quoteCurrency, lead_time: "", availability: "", remarks: "" });
+                              setManualForm({ vendor_name: "", vendor_email: "", unit_price: "", currency: quoteCurrency, lead_time: "", availability: "", remarks: "" });
                               setShowAddManual(pn);
                             }}
                             className="self-start flex items-center gap-1 rounded-lg border border-dashed border-[#C7D9F8] bg-[#F5F8FF] px-2.5 py-2 text-[10px] font-semibold text-[#4451E8] hover:bg-[#EEF4FF] transition whitespace-nowrap"
@@ -1992,28 +2072,42 @@ function QuotesTab({ inquiry }) {
 
                       {/* Selling Price */}
                       <td className="px-3 py-2.5">
-                        <input
-                          type="number"
-                          value={sellingPrices[pn] || ""}
-                          onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
-                          placeholder="0.00"
-                          disabled={!isSel}
-                          className="w-24 rounded-lg border px-2 py-1.5 text-[12px] font-medium text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
-                          style={{ borderColor: isSel ? "#FDE68A" : "#E4E8EE" }}
-                        />
+                        {isLocked ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[12px] font-semibold text-slate-700">{sellingPrices[pn] || "—"}</span>
+                            <span title="Locked — PO already sent" className="text-[10px] text-green-600">🔒</span>
+                          </div>
+                        ) : (
+                          <input
+                            type="number"
+                            value={sellingPrices[pn] || ""}
+                            onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
+                            placeholder="0.00"
+                            disabled={!isSel}
+                            className="w-24 rounded-lg border px-2 py-1.5 text-[12px] font-medium text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
+                            style={{ borderColor: isSel ? "#FDE68A" : "#E4E8EE" }}
+                          />
+                        )}
                       </td>
 
                       {/* Lead Time */}
                       <td className="px-3 py-2.5">
-                        <input
-                          type="text"
-                          value={leadTimes[pn] || ""}
-                          onChange={(e) => setLeadTimes((prev) => ({ ...prev, [pn]: e.target.value }))}
-                          placeholder="e.g. 2 weeks"
-                          disabled={!isSel}
-                          className="w-28 rounded-lg border px-2 py-1.5 text-[12px] font-medium text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
-                          style={{ borderColor: isSel ? "#FDE68A" : "#E4E8EE" }}
-                        />
+                        {isLocked ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[12px] text-slate-700">{leadTimes[pn] || "—"}</span>
+                            <span title="Locked — PO already sent" className="text-[10px] text-green-600">🔒</span>
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            value={leadTimes[pn] || ""}
+                            onChange={(e) => setLeadTimes((prev) => ({ ...prev, [pn]: e.target.value }))}
+                            placeholder="e.g. 2 weeks"
+                            disabled={!isSel}
+                            className="w-28 rounded-lg border px-2 py-1.5 text-[12px] font-medium text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
+                            style={{ borderColor: isSel ? "#FDE68A" : "#E4E8EE" }}
+                          />
+                        )}
                       </td>
                     </tr>
                   );

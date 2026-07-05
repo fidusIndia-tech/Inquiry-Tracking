@@ -19,7 +19,7 @@ const s = StyleSheet.create({
 
   /* ── top bar ── */
   topRow:       { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  logo:         { width: 100, height: 30, objectFit: "contain", objectPositionX: 0 },
+  logo:         { width: 140, height: 44, objectFit: "contain", objectPositionX: 0 },
   topRight:     { alignItems: "flex-end" },
   tagline:      { fontSize: 9, fontFamily: "Helvetica-Bold", color: C.blue },
   cin:          { fontSize: 7.5, color: C.lgray, marginTop: 3 },

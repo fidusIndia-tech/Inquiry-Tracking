@@ -24,7 +24,7 @@ const styles = StyleSheet.create({
 
   // Logo sits flush top-left; no flex-space-between that can shift it right
   logoWrap: { alignItems: "flex-start" },
-  logo: { width: 110, height: 36, objectFit: "contain", objectPositionX: 0 },
+  logo: { width: 150, height: 48, objectFit: "contain", objectPositionX: 0 },
 
   companyBlock: { marginTop: 14 },
   companyName: { fontSize: 10, fontWeight: 700 },

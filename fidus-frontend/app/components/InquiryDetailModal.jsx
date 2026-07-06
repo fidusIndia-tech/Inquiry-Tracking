@@ -1275,12 +1275,16 @@ function DraftsTab({ inquiry, initialDrafts }) {
    Reply to Client Tab — vendor quotes received, pick the best
    per part, add margin, send the final quotation.
 ───────────────────────────────────────────── */
-const QUOTE_CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£" };
+const QUOTE_CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£", JPY: "¥", AED: "AED ", CNY: "¥" };
+
+const ZERO_DECIMAL_CURRENCIES = new Set(["JPY", "KRW", "VND", "IDR"]);
 
 function formatQuotePrice(value, currency) {
   if (value === null || value === undefined || value === "") return "—";
-  const symbol = QUOTE_CURRENCY_SYMBOLS[currency] || (currency ? `${currency} ` : "");
-  return `${symbol}${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  const code = (currency || "").toUpperCase();
+  const symbol = QUOTE_CURRENCY_SYMBOLS[code] || (code ? `${code} ` : "");
+  const decimals = ZERO_DECIMAL_CURRENCIES.has(code) ? 0 : 2;
+  return `${symbol}${Number(value).toLocaleString("en-IN", { maximumFractionDigits: decimals })}`;
 }
 
 const INR = (v) =>
@@ -1823,7 +1827,7 @@ function QuotesTab({ inquiry }) {
                       onChange={(e) => setManualForm((f) => ({ ...f, currency: e.target.value }))}
                       className="h-[38px] rounded-lg border border-[#E4E8EE] bg-white px-2 text-[12px] font-semibold text-slate-700 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10"
                     >
-                      {["INR", "USD", "EUR", "AED", "GBP"].map((c) => (
+                      {["INR", "USD", "EUR", "AED", "GBP", "JPY"].map((c) => (
                         <option key={c} value={c}>{c}</option>
                       ))}
                     </select>
@@ -2370,7 +2374,7 @@ function QuotesTab({ inquiry }) {
               <label className="text-[11px] font-semibold text-slate-500">Quote Currency</label>
               <select value={quoteCurrency} onChange={(e) => setQuoteCurrency(e.target.value)}
                 className="h-7 rounded-lg border border-[#E4E8EE] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none focus:border-[#5BA7FF] focus:ring-2 focus:ring-[#5BA7FF]/10 cursor-pointer">
-                {["INR", "USD", "EUR", "AED", "GBP"].map((c) => <option key={c} value={c}>{c}</option>)}
+                {["INR", "USD", "EUR", "AED", "GBP", "JPY"].map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-2">
@@ -2557,7 +2561,7 @@ function QuotesTab({ inquiry }) {
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">PO Currency</label>
                     <select value={batchPOForm.currency} onChange={(e) => setBF("currency", e.target.value)}
                       className="w-full rounded-lg border border-[#E4E9F5] px-2.5 py-1.5 text-[12px] focus:border-[#F59E0B] focus:outline-none bg-white">
-                      {["INR", "USD", "EUR", "AED", "GBP"].map((c) => <option key={c} value={c}>{c}</option>)}
+                      {["INR", "USD", "EUR", "AED", "GBP", "JPY"].map((c) => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                   <div>

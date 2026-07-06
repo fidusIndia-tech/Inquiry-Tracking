@@ -19,7 +19,7 @@ const GST_OPTIONS = [
   { value: "EXPORT",    label: "Export / LUT (0%)",         rate: 0  },
 ];
 
-const CURRENCY_OPTIONS = ["INR", "USD", "EUR", "AED", "GBP"];
+const CURRENCY_OPTIONS = ["INR", "USD", "EUR", "AED", "GBP", "JPY"];
 
 const DEFAULT_PO_TERMS = `Payment Terms: 20% advance with the purchase order, and the remaining 80% prior to shipment.
 Dispatch Schedule: As per Quotation
@@ -37,10 +37,14 @@ function badge(status) {
   );
 }
 
+const ZERO_DEC = new Set(["JPY", "KRW", "VND", "IDR"]);
+const CUR_SYM  = { INR: "₹", USD: "$", EUR: "€", GBP: "£", JPY: "¥", AED: "AED " };
+
 function fmtMoney(value, currency) {
   const code = (currency || "INR").toUpperCase();
-  const sym  = code === "INR" ? "₹" : code + " ";
-  return `${sym}${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const sym  = CUR_SYM[code] ?? `${code} `;
+  const dec  = ZERO_DEC.has(code) ? 0 : 2;
+  return `${sym}${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: dec, maximumFractionDigits: dec })}`;
 }
 
 function gstLabel(gstType, gstRate) {

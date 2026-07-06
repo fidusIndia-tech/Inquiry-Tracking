@@ -99,11 +99,13 @@ function formatDate(d) {
   return `${mm}/${dd}/${dt.getFullYear()}`;
 }
 
-// Use currency code (e.g. "INR 1,23,456.00") instead of symbol to avoid
-// Helvetica not supporting ₹ — renders as ¹ in react-pdf.
+// Use currency code prefix (e.g. "INR 1,23,456.00") — ₹ not in Helvetica; ¥ is safe.
+const ZERO_DEC_QT = new Set(["JPY", "KRW", "VND", "IDR"]);
 function formatMoney(value, currency) {
   const code = (currency || "INR").toUpperCase();
-  return `${code} ${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const sym  = code === "JPY" ? "¥" : `${code} `;
+  const dec  = ZERO_DEC_QT.has(code) ? 0 : 2;
+  return `${sym}${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: dec, maximumFractionDigits: dec })}`;
 }
 
 /**

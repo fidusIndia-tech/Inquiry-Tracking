@@ -95,11 +95,15 @@ function fDate(d) {
   return `${dd}/${mm}/${dt.getFullYear()} ${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
 }
 
+const ZERO_DEC_PDF = new Set(["JPY", "KRW", "VND", "IDR"]);
+
 function fMoney(v, cur) {
   const code = (cur || "INR").toUpperCase();
-  // Avoid ₹ (U+20B9) — not in Helvetica; renders as garbled glyph in react-pdf
-  const sym = code === "INR" ? "Rs. " : code + " ";
-  return `${sym}${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // ₹ (U+20B9) is NOT in Helvetica — renders as garbled glyph in react-pdf; use "Rs."
+  // ¥ (U+00A5) IS in Helvetica — safe to use
+  const sym = code === "INR" ? "Rs. " : code === "JPY" ? "¥" : code + " ";
+  const dec = ZERO_DEC_PDF.has(code) ? 0 : 2;
+  return `${sym}${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: dec, maximumFractionDigits: dec })}`;
 }
 
 function taxLabel(gstType, gstRate) {

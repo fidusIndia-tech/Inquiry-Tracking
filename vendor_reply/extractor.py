@@ -70,7 +70,7 @@ Return ONLY valid JSON in this exact format:
   {
     "part_number": "exact part number",
     "unit_price": 123.45,
-    "currency": "INR or USD or EUR etc, null if not stated",
+    "currency": "ISO 4217 currency code: INR, USD, EUR, JPY, GBP, AED, CNY, etc. null if not stated",
     "moq": "minimum order quantity if stated, else null",
     "lead_time": "delivery/lead time as stated, e.g. '2-3 weeks', 'Ready Stock'",
     "availability": "stock status if stated, else null",
@@ -79,7 +79,9 @@ Return ONLY valid JSON in this exact format:
 ]}
 
 Rules:
-- unit_price must be a plain number (no currency symbols, no thousands separators). Use null if no price was given.
+- unit_price must be a plain number with NO currency symbols and NO thousands separators. Use null if no price was given.
+- For Japanese prices: ¥1,000 → unit_price: 1000, currency: "JPY". JPY prices never have decimal places.
+- For Indian prices: ₹1,500 or Rs.1500 → unit_price: 1500, currency: "INR".
 - If the vendor did not quote anything (e.g. asked a clarifying question, said out of stock with no price), return {"quotes": []}
 - Never invent a part number that isn't in the "parts we asked about" list.
 - When matching the vendor's quoted part number to our list, treat hyphens, spaces, dots, slashes, and underscores as insignificant. For example 'FRN-075E2S-2J' should match 'FRN075E2S2J'. Always return the part number exactly as it appears in our "parts we asked about" list, not as the vendor wrote it."""

@@ -65,6 +65,7 @@ export async function GET(request) {
         customTerms:     q.terms_and_conditions
           ? q.terms_and_conditions.split("\n").map((t) => t.trim()).filter(Boolean)
           : null,
+        clientNote:      q.client_note || null,
       })
     );
 

@@ -71,6 +71,7 @@ async function ensureQuotationsSchema() {
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS terms_and_conditions TEXT`);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS sender_name TEXT`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS client_note TEXT`);
   _schemaReady = true;
 }
 
@@ -117,7 +118,7 @@ function buildGstRows(gstData, currency) {
   return rows.join("\n");
 }
 
-function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperson, employeePhone, currency) {
+function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperson, employeePhone, currency, clientNote) {
   const rows = lines
     .map((l, idx) => `
       <tr>
@@ -126,8 +127,16 @@ function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperso
         <td style="border:1px solid #D0DCF4;padding:8px;color:#475569;">${escapeHtml(l.description || "")}</td>
         <td style="border:1px solid #D0DCF4;padding:8px;">${escapeHtml(l.quantity ?? "—")}</td>
         <td style="border:1px solid #D0DCF4;padding:8px;text-align:right;">${escapeHtml(formatPrice(l.selling_price, currency || l.currency))}</td>
+        ${l.remark ? `<td style="border:1px solid #D0DCF4;padding:8px;color:#78716c;font-size:12px;">${escapeHtml(l.remark)}</td>` : `<td style="border:1px solid #D0DCF4;padding:8px;"></td>`}
       </tr>`)
     .join("");
+
+  const noteHtml = clientNote
+    ? `<div style="margin:16px 0;padding:12px 16px;background:#FFF7ED;border-left:4px solid #F59E0B;border-radius:4px;">
+         <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#92400E;">Note from FIDUS INDIA:</p>
+         <p style="margin:0;font-size:13px;color:#374151;white-space:pre-wrap;">${escapeHtml(clientNote)}</p>
+       </div>`
+    : "";
 
   return `
 <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.5;">
@@ -142,6 +151,7 @@ function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperso
         <th style="border:1px solid #D0DCF4;padding:8px;text-align:left;background:#EEF4FF;color:#4461A8;font-size:11px;text-transform:uppercase;">Description</th>
         <th style="border:1px solid #D0DCF4;padding:8px;text-align:left;background:#EEF4FF;color:#4461A8;font-size:11px;text-transform:uppercase;">Qty</th>
         <th style="border:1px solid #D0DCF4;padding:8px;text-align:right;background:#EEF4FF;color:#4461A8;font-size:11px;text-transform:uppercase;">Unit Price</th>
+        <th style="border:1px solid #D0DCF4;padding:8px;text-align:left;background:#EEF4FF;color:#4461A8;font-size:11px;text-transform:uppercase;">Remarks</th>
       </tr>
     </thead>
     <tbody>
@@ -151,6 +161,7 @@ function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperso
   </table>
 
   ${gstData.type === "EXPORT" ? '<p style="font-size:12px;color:#6b7280;"><i>Note: Export / LUT / Zero Rated supply. GST not applicable as per LUT/bond, if applicable.</i></p>' : ""}
+  ${noteHtml}
   <p>Prices are subject to our standard terms and conditions. Please let us know if you'd like to proceed or need any clarification.${employeePhone ? ` You can also reach us at <b>${escapeHtml(employeePhone)}</b>.` : ""}</p>
 
   <p>Warm regards,<br/>
@@ -169,7 +180,7 @@ function buildQuoteEmail(clientName, quotationNumber, lines, gstData, salesperso
 export async function POST(request) {
   try {
     await ensureQuotationsSchema();
-    const { unique_code, lines, salesperson, gstOption, customTax, employee_id, quote_currency, terms_text } = await request.json();
+    const { unique_code, lines, salesperson, gstOption, customTax, employee_id, quote_currency, terms_text, client_note } = await request.json();
     const currency = (quote_currency || "INR").toUpperCase();
     const gstData = computeGstData(lines, gstOption, customTax);
     if (!unique_code || !lines?.length) {
@@ -237,11 +248,12 @@ export async function POST(request) {
         gstData,
         quoteCurrency: currency,
         customTerms,
+        clientNote:    client_note || null,
       })
     );
     const pdfBase64 = pdfBuffer.toString("base64");
 
-    const body = buildQuoteEmail(inquiry.client_name, quotationNumber, lines, gstData, salesperson, employeePhone, currency);
+    const body = buildQuoteEmail(inquiry.client_name, quotationNumber, lines, gstData, salesperson, employeePhone, currency, client_note || null);
 
     const sendRes = await fetch(`${PYTHON_BACKEND_URL}/send-client-quote`, {
       method: "POST",
@@ -270,8 +282,8 @@ export async function POST(request) {
           revision_number, amendment_code, amendment_date, is_revision, parent_quotation_id,
           status, client_name, sender_name, client_email, currency,
           taxable_amount, tax_amount, grand_total, gst_type, gst_rate, custom_tax_name, custom_tax_rate,
-          terms_and_conditions, sent_at)
-       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10,$11, $12,$13,$14,$15,$16, $17,$18,$19,$20,$21,$22,$23, $24, NOW())`,
+          terms_and_conditions, client_note, sent_at)
+       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10,$11, $12,$13,$14,$15,$16, $17,$18,$19,$20,$21,$22,$23, $24,$25, NOW())`,
       [
         quotationNumber, unique_code, salesperson || null, quotedAt,
         expirationDate.toISOString().slice(0, 10), JSON.stringify(lines),
@@ -279,7 +291,7 @@ export async function POST(request) {
         "sent", inquiry.client_name || null, inquiry.sender_name || null, inquiry.sender_email || null, currency,
         gstData.taxable, gstData.totalGst, gstData.grandTotal, gstData.type, gstData.rate,
         gstData.customName || null, gstData.customRate || null,
-        terms_text || null,
+        terms_text || null, client_note || null,
       ]
     );
 

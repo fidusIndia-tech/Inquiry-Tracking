@@ -131,6 +131,7 @@ export default function QuotationDocument({
   gstData,
   quoteCurrency,
   customTerms,
+  clientNote,
 }) {
   const currency = (quoteCurrency || "INR").toUpperCase();
 
@@ -221,16 +222,23 @@ export default function QuotationDocument({
             <View style={styles.colAmt}><Text style={[styles.th, { textAlign: "right" }]}>Amount</Text></View>
           </View>
           {computed.map((l, idx) => (
-            <View key={idx} style={styles.tableRow}>
-              <View style={styles.colSr}><Text style={styles.td}>{String(idx + 1).padStart(2, "0")}</Text></View>
-              <View style={styles.colPart}><Text style={styles.tdBold}>{l.part_number || "—"}</Text></View>
-              <View style={styles.colDesc}><Text style={styles.td}>{l.description || "—"}</Text></View>
-              <View style={styles.colMake}><Text style={styles.td}>{l.brand || "-"}</Text></View>
-              <View style={styles.colLead}><Text style={styles.td}>{l.lead_time || "—"}</Text></View>
-              <View style={styles.colQty}><Text style={styles.tdRight}>{l.quantity} {l.uom || ""}</Text></View>
-              <View style={styles.colUnit}><Text style={styles.tdRight}>{formatMoney(l.selling_price, currency)}</Text></View>
-              <View style={styles.colTax}><Text style={styles.td}>{taxLabel}</Text></View>
-              <View style={styles.colAmt}><Text style={styles.tdBoldRight}>{formatMoney(l.amount, currency)}</Text></View>
+            <View key={idx}>
+              <View style={styles.tableRow}>
+                <View style={styles.colSr}><Text style={styles.td}>{String(idx + 1).padStart(2, "0")}</Text></View>
+                <View style={styles.colPart}><Text style={styles.tdBold}>{l.part_number || "—"}</Text></View>
+                <View style={styles.colDesc}><Text style={styles.td}>{l.description || "—"}</Text></View>
+                <View style={styles.colMake}><Text style={styles.td}>{l.brand || "-"}</Text></View>
+                <View style={styles.colLead}><Text style={styles.td}>{l.lead_time || "—"}</Text></View>
+                <View style={styles.colQty}><Text style={styles.tdRight}>{l.quantity} {l.uom || ""}</Text></View>
+                <View style={styles.colUnit}><Text style={styles.tdRight}>{formatMoney(l.selling_price, currency)}</Text></View>
+                <View style={styles.colTax}><Text style={styles.td}>{taxLabel}</Text></View>
+                <View style={styles.colAmt}><Text style={styles.tdBoldRight}>{formatMoney(l.amount, currency)}</Text></View>
+              </View>
+              {l.remark ? (
+                <View style={{ flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#e5e7eb", paddingHorizontal: 6, paddingBottom: 5 }}>
+                  <Text style={{ fontSize: 7, color: "#78716c" }}>Remark: {l.remark}</Text>
+                </View>
+              ) : null}
             </View>
           ))}
         </View>
@@ -282,6 +290,14 @@ export default function QuotationDocument({
             </View>
           )}
         </View>
+
+        {/* Client note (from employee) */}
+        {clientNote ? (
+          <View style={{ marginTop: 14, padding: 10, backgroundColor: "#FFF7ED", borderRadius: 4, borderLeftWidth: 3, borderLeftColor: "#F59E0B" }}>
+            <Text style={{ fontSize: 7.5, fontWeight: 700, color: "#92400E", marginBottom: 4 }}>Note from FIDUS INDIA:</Text>
+            <Text style={{ fontSize: 8, color: "#374151" }}>{clientNote}</Text>
+          </View>
+        ) : null}
 
         {/* Terms and conditions */}
         <View style={styles.terms}>

@@ -47,6 +47,7 @@ async function ensureSchema() {
     `terms_and_conditions TEXT`,
     `sender_name TEXT`,
     `billing_address TEXT`,
+    `client_note TEXT`,
   ];
   for (const col of cols) {
     await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS ${col}`);
@@ -77,7 +78,7 @@ function computeGstData(lines, gstOpt, customTax) {
 export async function POST(request) {
   try {
     await ensureSchema();
-    const { unique_code, lines, salesperson, gstOption, customTax, quote_currency, terms_text } = await request.json();
+    const { unique_code, lines, salesperson, gstOption, customTax, quote_currency, terms_text, client_note } = await request.json();
     if (!unique_code || !lines?.length) {
       return Response.json({ error: "unique_code and lines are required" }, { status: 400 });
     }
@@ -115,8 +116,8 @@ export async function POST(request) {
           revision_number, amendment_code, amendment_date, is_revision, parent_quotation_id,
           status, client_name, sender_name, client_email, currency,
           taxable_amount, tax_amount, grand_total, gst_type, gst_rate, custom_tax_name, custom_tax_rate,
-          terms_and_conditions, sent_at, billing_address)
-       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10,$11, $12,$13,$14,$15,$16, $17,$18,$19,$20,$21,$22,$23, $24, NOW(), $25)
+          terms_and_conditions, client_note, sent_at, billing_address)
+       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10,$11, $12,$13,$14,$15,$16, $17,$18,$19,$20,$21,$22,$23, $24,$25, NOW(), $26)
        RETURNING id`,
       [
         quotationNumber, unique_code, salesperson || null, quotedAt,
@@ -128,7 +129,7 @@ export async function POST(request) {
         gstData.taxable, gstData.totalGst, gstData.grandTotal,
         gstData.type, gstData.rate,
         gstData.customName || null, gstData.customRate || null,
-        terms_text || null,
+        terms_text || null, client_note || null,
         inquiry.location || null,
       ]
     );

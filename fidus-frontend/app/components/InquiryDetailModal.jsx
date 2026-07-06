@@ -1539,6 +1539,8 @@ function QuotesTab({ inquiry }) {
   const [savingAssign,        setSavingAssign]        = useState(null);
   const [rawReplyQuote,       setRawReplyQuote]       = useState(null);
   const [termsText,           setTermsText]           = useState(DEFAULT_TERMS);
+  const [clientNote,          setClientNote]          = useState("");
+  const [lineRemarks,         setLineRemarks]         = useState({});
   const [showPreview,         setShowPreview]         = useState(false);
   const [downloading,         setDownloading]         = useState(false);
 
@@ -1653,6 +1655,7 @@ function QuotesTab({ inquiry }) {
             currency:           quoteCurrency,
             selling_price:      sellingPrices[pn],
             lead_time:          leadTimes[pn] || q?.lead_time || "",
+            remark:             lineRemarks[pn] || null,
             // Vendor fields — persisted in quotations.lines JSONB for PO generation.
             // The PDF renderer ignores unknown keys so these are non-breaking.
             vendor_quote_id:    q?.id                || null,
@@ -1677,6 +1680,7 @@ function QuotesTab({ inquiry }) {
           currency:           quoteCurrency,
           selling_price:      sellingPrices[pn],
           lead_time:          leadTimes[pn] || q?.lead_time || "",
+          remark:             lineRemarks[pn] || null,
           vendor_quote_id:    q?.id                || null,
           vendor_name:        q?.vendor_name       || null,
           vendor_email:       q?.vendor_email      || null,
@@ -1685,7 +1689,7 @@ function QuotesTab({ inquiry }) {
           vendor_availability: q?.availability     || null,
         };
       });
-  }, [inquiry.items, selected, sellingPrices, leadTimes, matchedByItem, quoteCurrency, partNumbers, byPart, itemByPart]);
+  }, [inquiry.items, selected, sellingPrices, leadTimes, lineRemarks, matchedByItem, quoteCurrency, partNumbers, byPart, itemByPart]);
 
   /* ── Loading state ── */
   if (loading) {
@@ -1863,6 +1867,7 @@ function QuotesTab({ inquiry }) {
           employee_id:    localStorage.getItem("userId") || null,
           quote_currency: quoteCurrency,
           terms_text:     termsText.trim() || null,
+          client_note:    clientNote.trim() || null,
         }),
       });
       const data = await res.json();
@@ -1896,6 +1901,7 @@ function QuotesTab({ inquiry }) {
           customTax:      gstOption.type === "CUSTOM" ? customTax : null,
           quote_currency: quoteCurrency,
           terms_text:     termsText.trim() || null,
+          client_note:    clientNote.trim() || null,
         }),
       });
       const saveData = await saveRes.json();
@@ -2116,6 +2122,9 @@ function QuotesTab({ inquiry }) {
                   <th className="border-b border-[#D0DCF4] px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-widest text-[#B45309] whitespace-nowrap">
                     Lead Time
                   </th>
+                  <th className="border-b border-[#D0DCF4] px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-widest text-[#B45309] whitespace-nowrap">
+                    Remarks
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -2202,6 +2211,9 @@ function QuotesTab({ inquiry }) {
                                 </div>
                                 {q.lead_time && (
                                   <span className="text-[9px] text-slate-400 pl-4 truncate">{q.lead_time}</span>
+                                )}
+                                {q.remarks && (
+                                  <span className="text-[8px] text-amber-600 pl-4 leading-tight" style={{ maxWidth: "110px", whiteSpace: "normal" }} title={q.remarks}>{q.remarks}</span>
                                 )}
                                 {/* PO created indicator — shown on this vendor's card specifically */}
                                 {hasQPO && !isLocked && (
@@ -2292,6 +2304,19 @@ function QuotesTab({ inquiry }) {
                             style={{ borderColor: isSel ? "#FDE68A" : "#E4E8EE" }}
                           />
                         )}
+                      </td>
+
+                      {/* Remarks */}
+                      <td className="px-3 py-2.5">
+                        <textarea
+                          rows={2}
+                          value={lineRemarks[pn] || ""}
+                          onChange={(e) => setLineRemarks((prev) => ({ ...prev, [pn]: e.target.value }))}
+                          placeholder="Add remark…"
+                          disabled={!isSel}
+                          className="w-32 resize-none rounded-lg border px-2 py-1.5 text-[11px] leading-snug text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
+                          style={{ borderColor: isSel ? "#FDE68A" : "#E4E8EE" }}
+                        />
                       </td>
                     </tr>
                   );
@@ -2386,22 +2411,34 @@ function QuotesTab({ inquiry }) {
                 </table>
               </div>
               {selected[pn] && (
-                <div className="flex items-center gap-4 rounded-xl border border-[#FDE68A] bg-[#FFFDF5] px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <Tag size={12} className="text-[#B45309]" />
-                    <label className="text-[11px] font-semibold text-[#B45309]">Your Selling Price ({quoteCurrency})</label>
-                    <input type="number" value={sellingPrices[pn] || ""}
-                      onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
-                      placeholder="0.00"
-                      className="w-28 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
-                    />
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-4 rounded-xl border border-[#FDE68A] bg-[#FFFDF5] px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <Tag size={12} className="text-[#B45309]" />
+                      <label className="text-[11px] font-semibold text-[#B45309]">Your Selling Price ({quoteCurrency})</label>
+                      <input type="number" value={sellingPrices[pn] || ""}
+                        onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
+                        placeholder="0.00"
+                        className="w-28 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-semibold text-[#B45309]">Lead Time</label>
+                      <input type="text" value={leadTimes[pn] || ""}
+                        onChange={(e) => setLeadTimes((prev) => ({ ...prev, [pn]: e.target.value }))}
+                        placeholder="e.g. 15-20 days"
+                        className="w-36 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
+                      />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-[11px] font-semibold text-[#B45309]">Lead Time</label>
-                    <input type="text" value={leadTimes[pn] || ""}
-                      onChange={(e) => setLeadTimes((prev) => ({ ...prev, [pn]: e.target.value }))}
-                      placeholder="e.g. 15-20 days"
-                      className="w-36 rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] font-medium text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
+                  <div className="flex items-start gap-2 rounded-xl border border-[#FDE68A] bg-[#FFFDF5] px-3 py-2">
+                    <label className="mt-1 text-[11px] font-semibold text-[#B45309] whitespace-nowrap">Remarks</label>
+                    <textarea
+                      rows={2}
+                      value={lineRemarks[pn] || ""}
+                      onChange={(e) => setLineRemarks((prev) => ({ ...prev, [pn]: e.target.value }))}
+                      placeholder="Add any remark for this part (appears in the quote)…"
+                      className="flex-1 resize-none rounded-lg border border-[#FDE68A] bg-white px-2 py-1 text-[12px] text-slate-800 outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/15"
                     />
                   </div>
                 </div>
@@ -2409,6 +2446,30 @@ function QuotesTab({ inquiry }) {
             </div>
           );
         })}
+
+        {/* ── Add Note to Client ── */}
+        <div className="rounded-2xl border border-[#E4E8EE] bg-white overflow-hidden">
+          <div className="flex items-center justify-between border-b border-[#EEF2F6] px-4 py-2.5"
+               style={{ background: "linear-gradient(90deg,#F8FAFF,#F3F6FF)" }}>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Add Note to Client</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Optional — appears in the email and PDF sent to client</p>
+            </div>
+            {clientNote && (
+              <button onClick={() => setClientNote("")}
+                className="text-[10px] font-semibold text-slate-400 hover:text-red-400 transition">
+                Clear
+              </button>
+            )}
+          </div>
+          <textarea
+            value={clientNote}
+            onChange={(e) => setClientNote(e.target.value)}
+            rows={3}
+            placeholder="Add any clarifications, special instructions, or notes for the client…"
+            className="w-full resize-y px-4 py-3 text-[11px] leading-relaxed text-slate-700 outline-none placeholder:text-slate-300"
+          />
+        </div>
 
         {/* ── Terms & Conditions ── */}
         <div className="rounded-2xl border border-[#E4E8EE] bg-white overflow-hidden">

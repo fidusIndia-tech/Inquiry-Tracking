@@ -1934,7 +1934,7 @@ function QuotesTab({ inquiry }) {
       <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
         {/* Manual Add Price modal */}
-        {showAddManual && (
+        {showAddManual !== null && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30"
                onClick={() => setShowAddManual(null)}>
             <div className="w-full max-w-sm rounded-2xl border border-[#E4E8EE] bg-white shadow-xl p-5"

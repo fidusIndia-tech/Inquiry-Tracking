@@ -353,6 +353,19 @@ function PoCard({ po: initialPo, onRefresh }) {
         />
       )}
 
+      {/* ── Sent banner ── */}
+      {po.status === "sent" && po.vendor_email && (
+        <div className="border-t border-[#D1FAE5] bg-[#F0FDF4] px-4 py-2 flex items-center gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-green-600">Sent to</span>
+          <span className="text-[12px] font-semibold text-green-800">{po.vendor_email}</span>
+          {po.sent_at && (
+            <span className="ml-auto text-[10px] text-green-600">
+              {new Date(po.sent_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* ── Actions ── */}
       {!isCancelled && (
         <div className="flex items-center gap-2 border-t border-[#EEF2F6] px-4 py-2.5 flex-wrap">

@@ -20,13 +20,17 @@ class VendorMailboxNotConfigured(Exception):
 
 
 def _vendor_service():
-    if not settings.VENDOR_MAILBOX_USER_ID:
+    # Prefer the dedicated vendor outreach mailbox (rfq@fidusindia.com).
+    # Fall back to the client mailbox if vendor mailbox is not yet configured,
+    # so PO sends work even before rfq@fidusindia.com is authorized.
+    user_id = settings.VENDOR_MAILBOX_USER_ID or settings.CLIENT_MAILBOX_USER_ID
+    if not user_id:
         raise VendorMailboxNotConfigured(
-            "VENDOR_MAILBOX_USER_ID is not set. Authorize the vendor mailbox "
-            "via /login?mailbox=vendor first, then set its email as "
-            "VENDOR_MAILBOX_USER_ID."
+            "No mailbox configured for sending vendor emails. "
+            "Set VENDOR_MAILBOX_USER_ID=rfq@fidusindia.com in Railway env vars "
+            "and authorize it via /login?mailbox=vendor first."
         )
-    return get_gmail_service_for_user(settings.VENDOR_MAILBOX_USER_ID)
+    return get_gmail_service_for_user(user_id)
 
 
 def send_vendor_rfq(unique_code: str, vendor_email: str, subject: str, body: str) -> dict:

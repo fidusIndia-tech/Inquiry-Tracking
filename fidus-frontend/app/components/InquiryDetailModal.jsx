@@ -1412,19 +1412,17 @@ function QuotesTab({ inquiry }) {
       })
       .catch(() => setPriorQuotationCount(0));
 
-    // Fetch existing POs to populate quick-PO indicators and lock sent items
+    // Fetch existing POs to populate quick-PO indicators (keyed by vendor_quote_id) and lock sent items
     fetch(`/api/purchase-orders?unique_code=${encodeURIComponent(inquiry.unique_code)}`)
       .then((r) => r.json())
       .then((d) => {
         const pos = Array.isArray(d.purchase_orders) ? d.purchase_orders : [];
-        const poMap = {};
+        const poMap = {};   // vendor_quote_id → po_number
         const locked = new Set();
         for (const po of pos) {
           for (const item of (po.items || [])) {
-            const pn = item.part_number;
-            if (!pn) continue;
-            if (!poMap[pn]) poMap[pn] = po.po_number;
-            if (po.status === "sent") locked.add(pn);
+            if (item.vendor_quote_id) poMap[item.vendor_quote_id] = po.po_number;
+            if (po.status === "sent" && item.part_number) locked.add(item.part_number);
           }
         }
         setQuickPOMap(poMap);
@@ -1649,7 +1647,8 @@ function QuotesTab({ inquiry }) {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "PO creation failed");
-        newMap[pn] = data.purchase_order.po_number;
+        // key by vendor_quote_id so only THIS vendor card shows the badge
+        newMap[quoteId] = data.purchase_order.po_number;
       } catch (e) { anyError = e.message; }
       finally { setPoCreating((prev) => ({ ...prev, [pn]: false })); }
     }
@@ -2003,8 +2002,8 @@ function QuotesTab({ inquiry }) {
                         <div className="flex flex-wrap gap-2">
                           {visible.map((q) => {
                             const isCurrent  = String(selected[pn]) === String(q.id);
-                            const hasQPO     = isCurrent && quickPOMap[pn];
-                            const isCreating = isCurrent && poCreating[pn];
+                            const hasQPO     = !!quickPOMap[q.id];  // keyed by vendor_quote_id
+                            const isCreating = poCreating[pn] && isCurrent;
                             return (
                               <div key={q.id}
                                 onClick={() => {
@@ -2058,11 +2057,11 @@ function QuotesTab({ inquiry }) {
                                 {q.lead_time && (
                                   <span className="text-[9px] text-slate-400 pl-4 truncate">{q.lead_time}</span>
                                 )}
-                                {/* PO created indicator — shown on selected card after batch create */}
-                                {isCurrent && hasQPO && !isLocked && (
+                                {/* PO created indicator — shown on this vendor's card specifically */}
+                                {hasQPO && !isLocked && (
                                   <div className="mt-1 pl-4">
                                     <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[8px] font-bold text-green-700">
-                                      ✓ {quickPOMap[pn]}
+                                      ✓ {quickPOMap[q.id]}
                                     </span>
                                   </div>
                                 )}

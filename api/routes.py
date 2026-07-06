@@ -368,12 +368,67 @@ def discover_vendors(payload: DiscoverVendorsRequest):
     return {"status": "queued", "task_id": task.id}
 
 
+@router.get("/list-email-attachments")
+def list_email_attachments(message_id: str, user_id: str):
+    """
+    Return the attachment metadata (id, filename, mime_type, size) for a
+    Gmail message in the given user's mailbox. Used by the vendor-RFQ UI so
+    employees can forward client-supplied images / drawings to vendors.
+    """
+    try:
+        service = get_gmail_service_for_user(user_id)
+        msg = service.users().messages().get(
+            userId="me", id=message_id, format="full"
+        ).execute()
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+    except Exception as exc:
+        logger.error("list_email_attachments | message_id=%s user_id=%s: %s", message_id, user_id, exc)
+        raise HTTPException(status_code=502, detail=f"Gmail fetch failed: {exc}")
+
+    payload = msg.get("payload", {})
+    found: list[dict] = []
+
+    def walk(part: dict) -> None:
+        filename = part.get("filename", "")
+        body = part.get("body", {})
+        attachment_id = body.get("attachmentId")
+        if filename and attachment_id:
+            found.append({
+                "attachment_id": attachment_id,
+                "filename": filename,
+                "mime_type": part.get("mimeType", "application/octet-stream"),
+                "size": body.get("size", 0),
+            })
+        for sub in part.get("parts", []):
+            walk(sub)
+
+    walk(payload)
+    return {"attachments": found, "message_id": message_id}
+
+
+class ClientAttachment(BaseModel):
+    attachment_id: str
+    filename: str
+    mime_type: str
+    message_id: str
+    user_id: str
+
+
+class UploadedAttachment(BaseModel):
+    filename: str
+    data_base64: str
+    mime_type: str
+
+
 class SendVendorRfqRequest(BaseModel):
     draft_id: int
     unique_code: str
     vendor_email: str
     subject: str
     body: str
+    client_attachments: list[ClientAttachment] = []
+    uploaded_attachments: list[UploadedAttachment] = []
 
 
 @router.post("/send-vendor-rfq")
@@ -382,13 +437,57 @@ def send_vendor_rfq_endpoint(payload: SendVendorRfqRequest):
     Sends one vendor RFQ draft via the single dedicated vendor-outreach
     mailbox. Runs synchronously (one Gmail API call, ~1-2s) so the employee
     gets an immediate one-click send/fail result instead of polling a task.
+    Optionally attaches files — either forwarded from the original client
+    email (fetched via the client mailbox) or uploaded by the employee.
     """
+    # Build a normalised attachment list: [{filename, bytes, mime_type}]
+    attachments: list[dict] = []
+
+    for att in payload.client_attachments:
+        try:
+            svc = get_gmail_service_for_user(att.user_id)
+            result_att = (
+                svc.users().messages().attachments()
+                .get(userId="me", messageId=att.message_id, id=att.attachment_id)
+                .execute()
+            )
+            raw_bytes = base64.urlsafe_b64decode(result_att.get("data", "") + "==")
+            attachments.append({
+                "filename": att.filename,
+                "bytes": raw_bytes,
+                "mime_type": att.mime_type,
+            })
+            logger.info(
+                "send_vendor_rfq | fetched client attachment %s (%d bytes)",
+                att.filename, len(raw_bytes),
+            )
+        except Exception as exc:
+            logger.warning(
+                "send_vendor_rfq | could not fetch client attachment %s: %s",
+                att.filename, exc,
+            )
+
+    for att in payload.uploaded_attachments:
+        try:
+            raw_bytes = base64.b64decode(att.data_base64)
+            attachments.append({
+                "filename": att.filename,
+                "bytes": raw_bytes,
+                "mime_type": att.mime_type,
+            })
+        except Exception as exc:
+            logger.warning(
+                "send_vendor_rfq | could not decode uploaded attachment %s: %s",
+                att.filename, exc,
+            )
+
     try:
         result = send_vendor_rfq(
             unique_code=payload.unique_code,
             vendor_email=payload.vendor_email,
             subject=payload.subject,
             body=payload.body,
+            attachments=attachments or None,
         )
     except VendorMailboxNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc))

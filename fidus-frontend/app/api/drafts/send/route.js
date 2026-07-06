@@ -10,7 +10,11 @@ const PYTHON_BACKEND_URL = (process.env.PYTHON_BACKEND_URL || "http://localhost:
  */
 export async function POST(request) {
   try {
-    const { draft_id } = await request.json();
+    const {
+      draft_id,
+      client_attachments = [],    // [{attachment_id, filename, mime_type}] — from original client email
+      uploaded_attachments = [],  // [{filename, data_base64, mime_type}]   — uploaded by employee
+    } = await request.json();
     if (!draft_id) return Response.json({ error: "draft_id is required" }, { status: 400 });
 
     const draftRes = await query(`SELECT * FROM vendor_drafts WHERE id = $1`, [draft_id]);
@@ -21,6 +25,35 @@ export async function POST(request) {
       return Response.json({ error: "Draft was already sent" }, { status: 409 });
     }
 
+    // Look up original client email's message_id + user_id so Python can
+    // fetch the attachment bytes from the client Gmail mailbox.
+    let clientMessageId = null;
+    let clientUserId = null;
+    if (client_attachments.length > 0) {
+      const inquiryRes = await query(
+        `SELECT r.message_id, r.source_user_id
+         FROM vendor_drafts vd
+         JOIN inquiries i ON i.unique_code = vd.inquiry_unique_code
+         JOIN raw_email_items r ON r.id = i.raw_email_item_id
+         WHERE vd.id = $1
+         LIMIT 1`,
+        [draft_id]
+      );
+      clientMessageId = inquiryRes.rows[0]?.message_id || null;
+      clientUserId = inquiryRes.rows[0]?.source_user_id || process.env.CLIENT_MAILBOX_USER_ID || null;
+    }
+
+    // Enrich each client attachment with the source message_id + user_id
+    const enrichedClientAttachments = client_attachments
+      .filter((a) => a.attachment_id && clientMessageId && clientUserId)
+      .map((a) => ({
+        attachment_id: a.attachment_id,
+        filename: a.filename,
+        mime_type: a.mime_type || "application/octet-stream",
+        message_id: clientMessageId,
+        user_id: clientUserId,
+      }));
+
     const sendRes = await fetch(`${PYTHON_BACKEND_URL}/send-vendor-rfq`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -30,6 +63,8 @@ export async function POST(request) {
         vendor_email: draft.vendor_email,
         subject: draft.subject,
         body: draft.body,
+        client_attachments: enrichedClientAttachments,
+        uploaded_attachments,
       }),
     });
     const sendData = await sendRes.json();

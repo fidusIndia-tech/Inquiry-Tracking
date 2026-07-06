@@ -33,18 +33,32 @@ def _vendor_service():
     return get_gmail_service_for_user(user_id)
 
 
-def send_vendor_rfq(unique_code: str, vendor_email: str, subject: str, body: str) -> dict:
+def send_vendor_rfq(
+    unique_code: str,
+    vendor_email: str,
+    subject: str,
+    body: str,
+    attachments: list[dict] | None = None,
+) -> dict:
     """
-    Send a fresh RFQ to a vendor. Returns the ids needed to later match a
-    reply (thread_id) and thread a reminder correctly (rfc_message_id).
+    Send a fresh RFQ to a vendor, optionally with file attachments.
+    `attachments` is [{filename, bytes, mime_type}].
+    Returns the ids needed to later match a reply (thread_id) and thread
+    a reminder correctly (rfc_message_id).
     """
     service = _vendor_service()
-    sent = send_message(service, to=vendor_email, subject=subject, html_body=body)
+    sent = send_message(
+        service,
+        to=vendor_email,
+        subject=subject,
+        html_body=body,
+        attachments=attachments,
+    )
     rfc_message_id = get_rfc_message_id(service, sent["id"])
 
     logger.info(
-        "Vendor RFQ sent | unique_code=%s | to=%s | message_id=%s | thread_id=%s",
-        unique_code, vendor_email, sent["id"], sent["thread_id"],
+        "Vendor RFQ sent | unique_code=%s | to=%s | message_id=%s | thread_id=%s | attachments=%d",
+        unique_code, vendor_email, sent["id"], sent["thread_id"], len(attachments or []),
     )
     return {
         "message_id": sent["id"],

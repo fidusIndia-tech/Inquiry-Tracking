@@ -929,6 +929,65 @@ const DraftCard = memo(function DraftCard({ draft, onChange }) {
   const debounceRef = useRef(null);
   const bodyRef     = useRef(null);
 
+  // ── Attachments ──────────────────────────────────────────────────────────
+  const [showAttach,     setShowAttach]     = useState(false);
+  const [clientAtts,     setClientAtts]     = useState(null);   // null = not loaded yet
+  const [attsLoading,    setAttsLoading]    = useState(false);
+  const [selAtts,        setSelAtts]        = useState(new Set()); // selected attachment_ids
+  const [uploadedFiles,  setUploadedFiles]  = useState([]);         // [{filename, data_base64, mime_type}]
+  const fileInputRef     = useRef(null);
+
+  const toggleAttachPanel = () => {
+    setShowAttach((v) => {
+      if (!v && clientAtts === null) {
+        setAttsLoading(true);
+        fetch(`/api/inquiries/attachments?unique_code=${encodeURIComponent(draft.inquiry_unique_code)}`)
+          .then((r) => r.json())
+          .then((d) => {
+            const list = d.attachments || [];
+            setClientAtts(list);
+            // Pre-select all attachments that look like images or drawings
+            const preSelect = new Set(
+              list
+                .filter((a) => /\.(jpg|jpeg|png|gif|bmp|webp|pdf|dwg|dxf)$/i.test(a.filename))
+                .map((a) => a.attachment_id)
+            );
+            setSelAtts(preSelect);
+          })
+          .catch(() => setClientAtts([]))
+          .finally(() => setAttsLoading(false));
+      }
+      return !v;
+    });
+  };
+
+  const toggleAtt = (id) => setSelAtts((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const handleFileUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target.result;
+        const base64 = dataUrl.split(",")[1];
+        setUploadedFiles((prev) => [
+          ...prev,
+          { filename: file.name, data_base64: base64, mime_type: file.type || "application/octet-stream" },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  };
+
+  const removeUploaded = (idx) => setUploadedFiles((prev) => prev.filter((_, i) => i !== idx));
+
+  const totalAttachments = (selAtts.size) + uploadedFiles.length;
+
   // Sync body state into the contentEditable div whenever edit mode is entered.
   // We can't use dangerouslySetInnerHTML on a contentEditable element (React
   // would reset the cursor on every keystroke), so we write innerHTML once via
@@ -946,10 +1005,18 @@ const DraftCard = memo(function DraftCard({ draft, onChange }) {
   const handleSend = async () => {
     setSending(true); setSendError("");
     try {
-      const res  = await fetch("/api/drafts/send", {
+      const selectedClientAtts = (clientAtts || [])
+        .filter((a) => selAtts.has(a.attachment_id))
+        .map((a) => ({ attachment_id: a.attachment_id, filename: a.filename, mime_type: a.mime_type }));
+
+      const res = await fetch("/api/drafts/send", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ draft_id: draft.id }),
+        body: JSON.stringify({
+          draft_id: draft.id,
+          client_attachments: selectedClientAtts,
+          uploaded_attachments: uploadedFiles,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send");
@@ -1089,6 +1156,79 @@ const DraftCard = memo(function DraftCard({ draft, onChange }) {
         )}
       </div>
 
+      {/* Attachments panel — collapsed by default */}
+      {!isSent && (
+        <div className="border-t border-[#EEF2F6]">
+          <button
+            onClick={toggleAttachPanel}
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-[11px] font-semibold text-slate-500 hover:bg-[#F8FAFC] transition"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+            </svg>
+            Attachments
+            {totalAttachments > 0 && (
+              <span className="ml-1 rounded-full bg-[#4461A8] px-1.5 py-0.5 text-[9px] font-bold text-white">{totalAttachments}</span>
+            )}
+            <span className="ml-auto">{showAttach ? "▲" : "▼"}</span>
+          </button>
+
+          {showAttach && (
+            <div className="border-t border-[#EEF2F6] bg-[#F8FAFC] px-4 py-3 space-y-3">
+
+              {/* Client email attachments */}
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">From client email</p>
+                {attsLoading && <p className="text-[11px] text-slate-400">Loading…</p>}
+                {!attsLoading && clientAtts !== null && clientAtts.length === 0 && (
+                  <p className="text-[11px] text-slate-400 italic">No attachments in the original client email.</p>
+                )}
+                {!attsLoading && (clientAtts || []).map((att) => (
+                  <label key={att.attachment_id} className="flex items-center gap-2 mb-1 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={selAtts.has(att.attachment_id)}
+                      onChange={() => toggleAtt(att.attachment_id)}
+                      className="accent-[#4461A8] h-3.5 w-3.5 flex-shrink-0"
+                    />
+                    <FileText size={11} className="text-slate-400 flex-shrink-0" />
+                    <span className="text-[11px] text-slate-700 truncate">{att.filename}</span>
+                    <span className="ml-auto text-[10px] text-slate-400 flex-shrink-0">
+                      {att.size > 0 ? (att.size < 1024 ? `${att.size} B` : att.size < 1048576 ? `${(att.size / 1024).toFixed(0)} KB` : `${(att.size / 1048576).toFixed(1)} MB`) : ""}
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              {/* Manual upload */}
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Upload files</p>
+                {uploadedFiles.map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 mb-1">
+                    <FileText size={11} className="text-[#4461A8] flex-shrink-0" />
+                    <span className="text-[11px] text-slate-700 truncate flex-1">{f.filename}</span>
+                    <button onClick={() => removeUploaded(i)} className="text-slate-400 hover:text-rose-500 transition flex-shrink-0">
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+                <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex h-7 items-center gap-1.5 rounded-lg border border-dashed border-[#C8D6F0] bg-white px-3 text-[11px] font-medium text-[#4461A8] transition hover:bg-[#EEF4FF]"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                  Upload file
+                </button>
+              </div>
+
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex items-center gap-2 border-t border-[#EEF2F6] px-4 py-3">
         <button
@@ -1117,7 +1257,9 @@ const DraftCard = memo(function DraftCard({ draft, onChange }) {
             className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)" }}
           >
-            {sending ? <><RefreshCw size={11} className="animate-spin" />Sending…</> : <><Send size={11} />Send to Vendor</>}
+            {sending
+              ? <><RefreshCw size={11} className="animate-spin" />Sending…</>
+              : <><Send size={11} />Send to Vendor{totalAttachments > 0 ? ` (+${totalAttachments})`  : ""}</>}
           </button>
         ) : (
           <span className="flex h-8 items-center gap-1.5 rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] px-3 text-[11px] font-semibold text-[#1D6FD8]">

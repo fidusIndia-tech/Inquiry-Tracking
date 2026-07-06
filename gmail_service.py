@@ -173,13 +173,17 @@ def send_message(
     html_body: str,
     thread_id: str | None = None,
     in_reply_to_rfc_message_id: str | None = None,
+    attachments: list[dict] | None = None,
+    # Legacy single-attachment params — kept for callers that pass a PDF
     attachment_filename: str | None = None,
     attachment_bytes: bytes | None = None,
     attachment_mime_type: str = "application/pdf",
 ) -> dict:
     """
-    Send an HTML email via the Gmail API, optionally with one file attached
-    (e.g. the generated quotation PDF).
+    Send an HTML email via the Gmail API, optionally with file(s) attached.
+
+    `attachments` is a list of dicts: [{filename, bytes, mime_type}].
+    The legacy single-attachment params are still accepted and merged in.
 
     Pass thread_id + in_reply_to_rfc_message_id when following up on a
     previously sent message (reminders) so the new mail threads correctly
@@ -189,25 +193,36 @@ def send_message(
     """
     clean_to = _normalize_to_addresses(to)
 
-    has_attachment = attachment_filename and attachment_bytes
-    msg = MIMEMultipart("mixed") if has_attachment else MIMEMultipart("alternative")
+    # Merge legacy single-attachment params into the list
+    all_attachments: list[dict] = list(attachments or [])
+    if attachment_filename and attachment_bytes:
+        all_attachments.insert(0, {
+            "filename": attachment_filename,
+            "bytes": attachment_bytes,
+            "mime_type": attachment_mime_type,
+        })
+
+    has_attachments = bool(all_attachments)
+    msg = MIMEMultipart("mixed") if has_attachments else MIMEMultipart("alternative")
     msg["To"] = clean_to
     msg["Subject"] = subject
     if in_reply_to_rfc_message_id:
         msg["In-Reply-To"] = in_reply_to_rfc_message_id
         msg["References"] = in_reply_to_rfc_message_id
 
-    if has_attachment:
+    if has_attachments:
         body_part = MIMEMultipart("alternative")
         body_part.attach(MIMEText(html_body, "html"))
         msg.attach(body_part)
 
-        main_type, _, sub_type = attachment_mime_type.partition("/")
-        part = MIMEBase(main_type, sub_type or "octet-stream")
-        part.set_payload(attachment_bytes)
-        encoders.encode_base64(part)
-        part.add_header("Content-Disposition", "attachment", filename=attachment_filename)
-        msg.attach(part)
+        for att in all_attachments:
+            mime_type = att.get("mime_type", "application/octet-stream")
+            main_type, _, sub_type = mime_type.partition("/")
+            part = MIMEBase(main_type, sub_type or "octet-stream")
+            part.set_payload(att["bytes"])
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", "attachment", filename=att["filename"])
+            msg.attach(part)
     else:
         msg.attach(MIMEText(html_body, "html"))
 

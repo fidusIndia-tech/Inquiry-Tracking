@@ -34,9 +34,11 @@ export async function GET(request, { params }) {
         subtotal:        Number(po.subtotal)    || 0,
         grandTotal:      Number(po.grand_total) || 0,
         taxAmount:       Number(po.tax_amount)  || 0,
-        gstType:         po.gst_type  || "NONE",
-        gstRate:         Number(po.gst_rate) || 0,
-        notes:           po.notes,
+        gstType:              po.gst_type  || "NONE",
+        gstRate:              Number(po.gst_rate) || 0,
+        notes:                po.notes,
+        salesRepresentative:  po.sales_representative || null,
+        termsText:            po.terms_text || null,
       })
     );
 

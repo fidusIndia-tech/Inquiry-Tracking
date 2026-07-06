@@ -49,6 +49,8 @@ async function ensurePoSchema() {
   await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS gst_type  TEXT    NOT NULL DEFAULT 'NONE'`);
   await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS gst_rate  NUMERIC NOT NULL DEFAULT 0`);
   await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS tax_amount NUMERIC NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS sales_representative TEXT`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS terms_text TEXT`);
   // Add converted_at to inquiries if missing (used by confirm endpoint)
   await pool.query(`ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS converted_at TIMESTAMPTZ`);
   _poSchemaReady = true;
@@ -82,7 +84,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensurePoSchema();
-    const { inquiry_unique_code, quotation_id, created_by, gst_type, gst_rate } = await request.json();
+    const { inquiry_unique_code, quotation_id, created_by, gst_type, gst_rate, sales_representative, terms_text } = await request.json();
     const resolvedGstType = (gst_type || "NONE").toUpperCase();
     const resolvedGstRate = Number(gst_rate) || 0;
     if (!inquiry_unique_code || !quotation_id) {
@@ -186,13 +188,15 @@ export async function POST(request) {
       const poRes = await query(
         `INSERT INTO purchase_orders
            (po_number, inquiry_unique_code, quotation_id, vendor_name, vendor_email,
-            currency, subtotal, tax_amount, grand_total, gst_type, gst_rate, status, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'generated', $12)
+            currency, subtotal, tax_amount, grand_total, gst_type, gst_rate, status, created_by,
+            sales_representative, terms_text)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'generated', $12, $13, $14)
          RETURNING *`,
         [poNumber, inquiry_unique_code, quotation_id,
          group.vendor_name, group.vendor_email,
          currency, subtotal, taxAmount, grandTotal,
-         resolvedGstType, resolvedGstRate, created_by || null]
+         resolvedGstType, resolvedGstRate, created_by || null,
+         sales_representative || null, terms_text || null]
       );
       const po = poRes.rows[0];
 

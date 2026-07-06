@@ -97,7 +97,8 @@ function fDate(d) {
 
 function fMoney(v, cur) {
   const code = (cur || "INR").toUpperCase();
-  const sym = code === "INR" ? "₹ " : code + " ";
+  // Avoid ₹ (U+20B9) — not in Helvetica; renders as garbled glyph in react-pdf
+  const sym = code === "INR" ? "Rs. " : code + " ";
   return `${sym}${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
@@ -135,6 +136,8 @@ export default function PurchaseOrderDocument({
   gstType    = "NONE",
   gstRate    = 0,
   notes,
+  salesRepresentative,
+  termsText,
 }) {
   const cur = (currency || "INR").toUpperCase();
   const taxTag = taxLabel(gstType, gstRate);
@@ -187,7 +190,7 @@ export default function PurchaseOrderDocument({
         <View style={s.metaRow}>
           <View>
             <Text style={s.metaLabel}>Purchase Representative</Text>
-            <Text style={s.metaValue}>SCM</Text>
+            <Text style={s.metaValue}>{salesRepresentative || "SCM"}</Text>
           </View>
           <View>
             <Text style={s.metaLabel}>Order Date</Text>
@@ -282,17 +285,25 @@ export default function PurchaseOrderDocument({
           </View>
         ) : null}
 
-        {/* ── Fixed terms (bullet list) ── */}
+        {/* ── Terms (custom if provided, otherwise fixed defaults) ── */}
         <View style={s.termsWrap}>
-          {FIXED_TERMS.map(([label, val], i) => (
-            <View key={i} style={{ flexDirection: "row", marginBottom: 3 }}>
-              <Text style={[s.termItem, { marginRight: 4 }]}>•</Text>
-              <Text style={s.termItem}>
-                {label ? <Text style={s.termBold}>{label}:{"  "}</Text> : null}
-                {val}
-              </Text>
-            </View>
-          ))}
+          {termsText
+            ? termsText.split("\n").filter((l) => l.trim()).map((line, i) => (
+                <View key={i} style={{ flexDirection: "row", marginBottom: 3 }}>
+                  <Text style={[s.termItem, { marginRight: 4 }]}>•</Text>
+                  <Text style={s.termItem}>{line.trim()}</Text>
+                </View>
+              ))
+            : FIXED_TERMS.map(([label, val], i) => (
+                <View key={i} style={{ flexDirection: "row", marginBottom: 3 }}>
+                  <Text style={[s.termItem, { marginRight: 4 }]}>•</Text>
+                  <Text style={s.termItem}>
+                    {label ? <Text style={s.termBold}>{label}:{"  "}</Text> : null}
+                    {val}
+                  </Text>
+                </View>
+              ))
+          }
         </View>
 
         {/* ── Footer ── */}

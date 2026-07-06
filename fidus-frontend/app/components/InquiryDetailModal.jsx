@@ -1377,6 +1377,16 @@ function QuotesTab({ inquiry }) {
   const [poCreating,          setPoCreating]          = useState({});
   const [quickPOMap,          setQuickPOMap]          = useState({}); // pn → po_number
   const [lockedParts,         setLockedParts]         = useState(new Set()); // parts locked because PO is sent
+  const [showBatchPOForm,     setShowBatchPOForm]     = useState(false);
+  const [batchPOForm,         setBatchPOForm]         = useState({
+    gst_type:             "NONE",
+    gst_rate:             "18",
+    currency:             "INR",
+    sales_representative: "SCM",
+    terms_text: `Payment Terms: 20% advance with the purchase order, and the remaining 80% prior to shipment.\nDispatch Schedule: As per Quotation\nWarranty: One year from the date the goods arrive to us.\nRemarks: Delivery at Shipping address\nNote: Goods should be Original & Genuine`,
+  });
+  const [batchPOCreating,     setBatchPOCreating]     = useState(false);
+  const [batchPOError,        setBatchPOError]        = useState("");
   const [addingManual,        setAddingManual]        = useState(false);
   const [expandedItems,       setExpandedItems]       = useState({});
   const [unmatchedAssign,     setUnmatchedAssign]     = useState({});
@@ -1613,6 +1623,40 @@ function QuotesTab({ inquiry }) {
       setManualForm({ vendor_name: "", vendor_email: "", unit_price: "", currency: quoteCurrency, lead_time: "", availability: "", remarks: "" });
     } catch (e) { alert(e.message); }
     finally     { setAddingManual(false); }
+  };
+
+  /* ── Batch-create POs for all selected vendors ── */
+  const handleBatchCreatePOs = async () => {
+    const entries = Object.entries(selected).filter(([, qId]) => qId);
+    if (entries.length === 0) return;
+    setBatchPOCreating(true); setBatchPOError("");
+    const newMap = { ...quickPOMap };
+    let anyError = "";
+    for (const [pn, quoteId] of entries) {
+      setPoCreating((prev) => ({ ...prev, [pn]: true }));
+      try {
+        const res = await fetch("/api/purchase-orders/quick-create", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            inquiry_unique_code:  inquiry.unique_code,
+            vendor_quote_id:      quoteId,
+            gst_type:             batchPOForm.gst_type,
+            gst_rate:             Number(batchPOForm.gst_rate) || 0,
+            sales_representative: batchPOForm.sales_representative,
+            terms_text:           batchPOForm.terms_text,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "PO creation failed");
+        newMap[pn] = data.purchase_order.po_number;
+      } catch (e) { anyError = e.message; }
+      finally { setPoCreating((prev) => ({ ...prev, [pn]: false })); }
+    }
+    setQuickPOMap(newMap);
+    if (anyError) setBatchPOError(anyError);
+    else setShowBatchPOForm(false);
+    setBatchPOCreating(false);
   };
 
   /* ── Quick-create PO from a selected vendor quote ── */
@@ -2014,24 +2058,19 @@ function QuotesTab({ inquiry }) {
                                 {q.lead_time && (
                                   <span className="text-[9px] text-slate-400 pl-4 truncate">{q.lead_time}</span>
                                 )}
-                                {/* PO create button — only on selected card */}
-                                {isCurrent && !isLocked && (
-                                  <div className="mt-1 pl-4" onClick={(e) => e.stopPropagation()}>
-                                    {hasQPO ? (
-                                      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[8px] font-bold text-green-700">
-                                        ✓ {quickPOMap[pn]}
-                                      </span>
-                                    ) : (
-                                      <button
-                                        onClick={() => handleQuickPO(pn, q.id)}
-                                        disabled={isCreating}
-                                        title="Create Purchase Order for this vendor"
-                                        className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[8px] font-bold text-amber-700 hover:bg-amber-100 transition disabled:opacity-50"
-                                      >
-                                        <ShoppingCart size={8} />
-                                        {isCreating ? "Creating…" : "Create PO"}
-                                      </button>
-                                    )}
+                                {/* PO created indicator — shown on selected card after batch create */}
+                                {isCurrent && hasQPO && !isLocked && (
+                                  <div className="mt-1 pl-4">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[8px] font-bold text-green-700">
+                                      ✓ {quickPOMap[pn]}
+                                    </span>
+                                  </div>
+                                )}
+                                {isCurrent && isCreating && (
+                                  <div className="mt-1 pl-4">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[8px] font-semibold text-amber-600">
+                                      Creating…
+                                    </span>
                                   </div>
                                 )}
                                 {isLocked && isCurrent && (
@@ -2425,26 +2464,175 @@ function QuotesTab({ inquiry }) {
             )}
             {sendError && <p className="text-[11px] text-rose-500 mt-0.5">{sendError}</p>}
           </div>
-          {!sentOk && (
-            <button
-              onClick={() => setShowPreview(true)}
-              disabled={readyLines.length === 0 || !salesperson.trim() || (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax))}
-              title={
-                !salesperson.trim() ? "Enter the salesperson name first"
-                : (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax)) ? "Enter a valid custom tax name and percentage first"
-                : ""
-              }
-              className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
-            >
-              <Send size={13} />
-              {priorQuotationCount > 0
-                ? (inquiry.sender_email ? `Preview Revision R${priorQuotationCount}` : `Preview & Download Revision R${priorQuotationCount}`)
-                : (inquiry.sender_email ? "Preview & Send Quote" : "Preview & Download Quote")}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Create Purchase Orders button — shown when at least one vendor is selected */}
+            {Object.values(selected).some(Boolean) && (
+              <button
+                onClick={() => setShowBatchPOForm(true)}
+                className="flex h-9 items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 text-[12px] font-semibold text-amber-800 hover:bg-amber-100 transition"
+              >
+                <ShoppingCart size={13} />
+                Create Purchase Orders ({Object.values(selected).filter(Boolean).length})
+              </button>
+            )}
+            {!sentOk && (
+              <button
+                onClick={() => setShowPreview(true)}
+                disabled={readyLines.length === 0 || !salesperson.trim() || (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax))}
+                title={
+                  !salesperson.trim() ? "Enter the salesperson name first"
+                  : (gstOption.type === "CUSTOM" && !isCustomTaxValid(customTax)) ? "Enter a valid custom tax name and percentage first"
+                  : ""
+                }
+                className="flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)", boxShadow: "0 2px 8px rgba(91,167,255,0.28)" }}
+              >
+                <Send size={13} />
+                {priorQuotationCount > 0
+                  ? (inquiry.sender_email ? `Preview Revision R${priorQuotationCount}` : `Preview & Download Revision R${priorQuotationCount}`)
+                  : (inquiry.sender_email ? "Preview & Send Quote" : "Preview & Download Quote")}
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* ── Batch Purchase Orders Form Modal ── */}
+      {showBatchPOForm && (() => {
+        const selectedEntries = Object.entries(selected).filter(([, qId]) => qId);
+        const vendorSummary = selectedEntries.map(([pn, qId]) => {
+          const q = quotes.find((q) => String(q.id) === String(qId));
+          return { pn, vendorName: q?.vendor_name || "Unknown", vendorEmail: q?.vendor_email || "" };
+        });
+        const showRate = batchPOForm.gst_type === "IGST" || batchPOForm.gst_type === "CGST_SGST";
+        const setBF = (k, v) => setBatchPOForm((f) => ({ ...f, [k]: v }));
+        return (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={() => !batchPOCreating && setShowBatchPOForm(false)} />
+            <div className="relative z-10 w-full max-w-xl bg-white rounded-2xl overflow-hidden max-h-[92vh] flex flex-col"
+                 style={{ boxShadow: "0 8px 48px rgba(0,0,0,0.22)" }}>
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-[#EEF2F6] px-5 py-4"
+                   style={{ background: "linear-gradient(90deg,#FFFBEB,#FFF7E6)" }}>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-600">Purchase Orders</p>
+                  <h3 className="text-[15px] font-bold text-slate-900 mt-0.5">Create Purchase Orders</h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {selectedEntries.length} vendor{selectedEntries.length !== 1 ? "s" : ""} · {inquiry.unique_code}
+                  </p>
+                </div>
+                <button onClick={() => setShowBatchPOForm(false)} disabled={batchPOCreating}
+                  className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-[#F3F5F7] transition">
+                  <X size={15} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+                {/* Vendor summary */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">POs will be created for</p>
+                  <div className="space-y-1.5">
+                    {vendorSummary.map(({ pn, vendorName, vendorEmail }) => (
+                      <div key={pn} className="flex items-center gap-2.5 rounded-lg border border-[#E4E9F5] bg-[#FAFBFF] px-3 py-2">
+                        <span className="text-[11px] font-semibold text-[#1D6FD8] min-w-[100px]">{pn}</span>
+                        <span className="text-[11px] text-slate-700">{vendorName}</span>
+                        {vendorEmail && <span className="text-[10px] text-slate-400 ml-auto">{vendorEmail}</span>}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5">
+                    If multiple parts share the same vendor, they will be grouped into one PO automatically.
+                  </p>
+                </div>
+
+                {/* PO Settings */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Sales Representative</label>
+                    <input value={batchPOForm.sales_representative} onChange={(e) => setBF("sales_representative", e.target.value)}
+                      className="w-full rounded-lg border border-[#E4E9F5] px-2.5 py-1.5 text-[12px] focus:border-[#F59E0B] focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/10"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">PO Currency</label>
+                    <select value={batchPOForm.currency} onChange={(e) => setBF("currency", e.target.value)}
+                      className="w-full rounded-lg border border-[#E4E9F5] px-2.5 py-1.5 text-[12px] focus:border-[#F59E0B] focus:outline-none bg-white">
+                      {["INR", "USD", "EUR", "AED", "GBP"].map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">GST / Tax</label>
+                    <select value={batchPOForm.gst_type} onChange={(e) => {
+                      const opt = GST_OPTIONS.find((o) => o.type === e.target.value);
+                      setBF("gst_type", e.target.value);
+                      if (opt?.rate) setBF("gst_rate", String(opt.rate));
+                      else setBF("gst_rate", "0");
+                    }}
+                      className="w-full rounded-lg border border-[#E4E9F5] px-2.5 py-1.5 text-[12px] focus:border-[#F59E0B] focus:outline-none bg-white">
+                      <option value="NONE">No GST / Exempt</option>
+                      <option value="IGST">IGST (Interstate)</option>
+                      <option value="CGST_SGST">CGST + SGST (Intrastate)</option>
+                      <option value="EXPORT">Export / LUT (0%)</option>
+                    </select>
+                  </div>
+                  {showRate && (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Rate (%)
+                        {batchPOForm.gst_type === "CGST_SGST" && (
+                          <span className="ml-1 font-normal text-slate-400">CGST {Number(batchPOForm.gst_rate)/2}% + SGST {Number(batchPOForm.gst_rate)/2}%</span>
+                        )}
+                      </label>
+                      <input type="number" value={batchPOForm.gst_rate} onChange={(e) => setBF("gst_rate", e.target.value)}
+                        min="0" max="100" step="0.5"
+                        className="w-full rounded-lg border border-[#E4E9F5] px-2.5 py-1.5 text-[12px] focus:border-[#F59E0B] focus:outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Terms & Conditions */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[11px] font-semibold text-slate-600">Terms &amp; Conditions</label>
+                    <button onClick={() => setBF("terms_text", `Payment Terms: 20% advance with the purchase order, and the remaining 80% prior to shipment.\nDispatch Schedule: As per Quotation\nWarranty: One year from the date the goods arrive to us.\nRemarks: Delivery at Shipping address\nNote: Goods should be Original & Genuine`)}
+                      className="text-[10px] text-slate-400 hover:text-amber-600 transition">Reset</button>
+                  </div>
+                  <textarea value={batchPOForm.terms_text} onChange={(e) => setBF("terms_text", e.target.value)}
+                    rows={5} placeholder="One term per line…"
+                    className="w-full rounded-lg border border-[#E4E9F5] px-3 py-2 text-[11px] leading-relaxed resize-y focus:border-[#F59E0B] focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Each line becomes a bullet point in the PDF.</p>
+                </div>
+
+                {batchPOError && (
+                  <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[11px] text-red-600">{batchPOError}</p>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between gap-3 border-t border-[#EEF2F6] px-5 py-4">
+                <p className="text-[11px] text-slate-400">
+                  POs will be saved as drafts. You can edit and send them from the <strong>Purchase Orders</strong> tab.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setShowBatchPOForm(false)} disabled={batchPOCreating}
+                    className="h-9 rounded-xl border border-[#E4E9F5] bg-white px-4 text-[12px] font-medium text-slate-700 hover:bg-[#F3F5F7] transition disabled:opacity-50">
+                    Cancel
+                  </button>
+                  <button onClick={handleBatchCreatePOs} disabled={batchPOCreating}
+                    className="flex h-9 items-center gap-2 rounded-xl px-5 text-[13px] font-semibold text-white transition disabled:opacity-60"
+                    style={{ background: "linear-gradient(135deg,#F59E0B,#FBBF24)", boxShadow: "0 2px 8px rgba(245,158,11,0.28)" }}>
+                    <ShoppingCart size={13} />
+                    {batchPOCreating ? "Creating…" : `Create ${selectedEntries.length} PO${selectedEntries.length !== 1 ? "s" : ""}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Quotation Preview Modal ── */}
       {showPreview && (() => {

@@ -9,7 +9,7 @@ import { query } from "@/lib/db";
  */
 export async function POST(request) {
   try {
-    const { inquiry_unique_code, vendor_quote_id, gst_type, gst_rate } =
+    const { inquiry_unique_code, vendor_quote_id, gst_type, gst_rate, sales_representative, terms_text } =
       await request.json();
 
     if (!inquiry_unique_code || !vendor_quote_id) {
@@ -122,12 +122,13 @@ export async function POST(request) {
       );
       const newSub = Number(totRes.rows[0].sub);
       const newTax = resolvedGstType !== "NONE" ? newSub * resolvedGstRate / 100 : 0;
-      await query(
-        `UPDATE purchase_orders
-         SET subtotal=$1, tax_amount=$2, grand_total=$3, gst_type=$4, gst_rate=$5
-         WHERE id=$6`,
-        [newSub, newTax, newSub + newTax, resolvedGstType, resolvedGstRate, poId]
-      );
+      const updateFields = [newSub, newTax, newSub + newTax, resolvedGstType, resolvedGstRate];
+      let updateSql = `UPDATE purchase_orders SET subtotal=$1, tax_amount=$2, grand_total=$3, gst_type=$4, gst_rate=$5`;
+      if (sales_representative) { updateSql += `, sales_representative=$${updateFields.length + 1}`; updateFields.push(sales_representative); }
+      if (terms_text)            { updateSql += `, terms_text=$${updateFields.length + 1}`;           updateFields.push(terms_text); }
+      updateSql += ` WHERE id=$${updateFields.length + 1}`;
+      updateFields.push(poId);
+      await query(updateSql, updateFields);
 
     } else {
       // Create fresh PO
@@ -144,13 +145,15 @@ export async function POST(request) {
       const poRes = await query(
         `INSERT INTO purchase_orders
            (po_number, inquiry_unique_code, vendor_name, vendor_email,
-            currency, subtotal, tax_amount, grand_total, gst_type, gst_rate, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'generated')
+            currency, subtotal, tax_amount, grand_total, gst_type, gst_rate, status,
+            sales_representative, terms_text)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'generated',$11,$12)
          RETURNING *`,
         [poNumber, inquiry_unique_code,
          vq.vendor_name || null, vq.vendor_email || null,
          vq.currency || "INR", sub, taxAmt, sub + taxAmt,
-         resolvedGstType, resolvedGstRate]
+         resolvedGstType, resolvedGstRate,
+         sales_representative || null, terms_text || null]
       );
       poId = poRes.rows[0].id;
 

@@ -23,7 +23,14 @@ export async function GET(request) {
          AND NOT EXISTS (
            SELECT 1 FROM vendor_quotes vq
            WHERE vq.inquiry_unique_code = vd.inquiry_unique_code
-             AND LOWER(TRIM(vq.vendor_email)) = LOWER(TRIM(vd.vendor_email))
+             AND (
+               vq.draft_id = vd.id
+               OR (
+                 vq.vendor_email IS NOT NULL
+                 AND vd.vendor_email IS NOT NULL
+                 AND LOWER(TRIM(vq.vendor_email)) = LOWER(TRIM(vd.vendor_email))
+               )
+             )
          )
        ORDER BY vd.sent_at ASC`
     );

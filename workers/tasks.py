@@ -15,6 +15,7 @@ from workers.celery_app import celery_app
 from gmail_auth import get_gmail_service_for_user
 from gmail_service import (
     get_full_message,
+    get_rfc_message_id,
     is_processable_inbox_message,
     fetch_new_message_ids_from_history,
     mark_as_spam,
@@ -39,6 +40,7 @@ from next_api_client import (
 from vendor_discovery import discover_and_store_vendors
 from vendor_discovery.brand_lookup import identify_brand
 from vendor_outreach import send_vendor_reminder
+from vendor_outreach.sender import _vendor_service as _get_vendor_service
 from vendor_reply import match_inquiry_code, extract_quote
 from attachment_handler import extract_attachment_text
 from config import get_settings
@@ -845,16 +847,50 @@ def send_vendor_reminders(self) -> dict:
 
     stale = get_stale_drafts(settings.VENDOR_REMINDER_AFTER_HOURS)
     sent = 0
+    skipped = 0
     for draft in stale:
         if not draft.get("thread_id") or not draft.get("vendor_email"):
             continue
+
+        # Belt-and-suspenders: the stale query already checks replied_at IS NULL
+        # and no vendor_quotes exist — skip here too so a stale-query race window
+        # can never send a reminder to a vendor who has already replied.
+        if draft.get("replied_at"):
+            skipped += 1
+            logger.info(
+                "send_vendor_reminders | skip replied draft | draft_id=%s | vendor=%s",
+                draft.get("id"), draft.get("vendor_email"),
+            )
+            continue
+
         reminder_number = (draft.get("reminder_count") or 0) + 1
+
+        # If rfc_message_id was not captured at send-time (older drafts or a
+        # transient fetch failure), look it up now so the reminder arrives as a
+        # proper reply in the vendor's inbox, not a new unrelated email.
+        rfc_message_id = draft.get("rfc_message_id")
+        if not rfc_message_id and draft.get("message_id"):
+            try:
+                svc = _get_vendor_service()
+                rfc_message_id = get_rfc_message_id(svc, draft["message_id"])
+                if rfc_message_id:
+                    patch_draft(draft["id"], rfc_message_id=rfc_message_id)
+                    logger.info(
+                        "send_vendor_reminders | fetched rfc_message_id | draft_id=%s",
+                        draft.get("id"),
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "send_vendor_reminders | could not fetch rfc_message_id | draft_id=%s: %s",
+                    draft.get("id"), exc,
+                )
+
         try:
             send_vendor_reminder(
                 vendor_email=draft["vendor_email"],
                 subject=draft["subject"],
                 thread_id=draft["thread_id"],
-                rfc_message_id=draft.get("rfc_message_id"),
+                rfc_message_id=rfc_message_id,
                 reminder_number=reminder_number,
             )
             now_iso = datetime.now(timezone.utc).isoformat()
@@ -871,5 +907,8 @@ def send_vendor_reminders(self) -> dict:
                 reminder_number, draft.get("id"), exc,
             )
 
-    logger.info("send_vendor_reminders | candidates=%d sent=%d", len(stale), sent)
-    return {"status": "ok", "candidates": len(stale), "sent": sent}
+    logger.info(
+        "send_vendor_reminders | candidates=%d sent=%d skipped=%d",
+        len(stale), sent, skipped,
+    )
+    return {"status": "ok", "candidates": len(stale), "sent": sent, "skipped": skipped}

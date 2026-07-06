@@ -797,6 +797,7 @@ def extract_vendor_quote(self, message_id: str) -> dict:
             patch_draft(
                 _target_draft["id"],
                 replied_at=datetime.now(timezone.utc).isoformat(),
+                status="replied",
             )
             logger.info(
                 "extract_vendor_quote | marked draft replied | draft_id=%s | unique_code=%s",

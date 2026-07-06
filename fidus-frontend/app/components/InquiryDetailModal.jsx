@@ -3,7 +3,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Award, Ban, Bot, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCopy, FileText, Globe,
-  History, Loader2, Mail, MapPin, Phone, RefreshCw, Search, Send, ShoppingCart, Store, Tag, Trash2, UserPlus, X,
+  History, Loader2, Mail, MapPin, Phone, RefreshCw, Search, Send, ShoppingCart, Store, Tag, Trash2, UserPlus, X, XCircle,
 } from "lucide-react";
 import PurchaseOrdersTab from "./PurchaseOrdersTab";
 
@@ -923,9 +923,10 @@ const DraftCard = memo(function DraftCard({ draft, onChange }) {
   const [saving,   setSaving]   = useState(false);
   const [copied,   setCopied]   = useState(false);
   const [status,   setStatus]   = useState(draft.status  || "draft");
-  const [sending,  setSending]  = useState(false);
-  const [sendError, setSendError] = useState("");
-  const [editingHtml, setEditingHtml] = useState(false);
+  const [sending,        setSending]        = useState(false);
+  const [sendError,      setSendError]      = useState("");
+  const [markingReplied, setMarkingReplied] = useState(false);
+  const [editingHtml,    setEditingHtml]    = useState(false);
   const debounceRef = useRef(null);
   const bodyRef     = useRef(null);
 
@@ -999,6 +1000,25 @@ const DraftCard = memo(function DraftCard({ draft, onChange }) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingHtml]); // deliberately omit `body` — only re-init on mode change
+
+  const handleMarkReplied = async () => {
+    setMarkingReplied(true);
+    try {
+      const repliedAt = new Date().toISOString();
+      const res = await fetch("/api/drafts", {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ id: draft.id, status: "replied", replied_at: repliedAt }),
+      });
+      if (!res.ok) throw new Error("Failed to mark as replied");
+      setStatus("replied");
+      onChange({ ...draft, status: "replied", replied_at: repliedAt });
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setMarkingReplied(false);
+    }
+  };
 
   const isSent = status === "sent" || status === "replied";
 
@@ -1263,8 +1283,22 @@ const DraftCard = memo(function DraftCard({ draft, onChange }) {
           </button>
         ) : (
           <span className="flex h-8 items-center gap-1.5 rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] px-3 text-[11px] font-semibold text-[#1D6FD8]">
-            <CheckCircle2 size={11} />Sent{draft.sent_at ? ` · ${new Date(draft.sent_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}` : ""}
+            <CheckCircle2 size={11} />
+            {status === "replied" ? "Replied" : `Sent${draft.sent_at ? ` · ${new Date(draft.sent_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}` : ""}`}
           </span>
+        )}
+        {status === "sent" && (
+          <button
+            onClick={handleMarkReplied}
+            disabled={markingReplied}
+            title="Vendor replied with regret / no stock — stop reminders"
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-[#FED7AA] bg-[#FFF7ED] px-3 text-[11px] font-semibold text-[#C2410C] transition hover:bg-[#FFEDD5] disabled:opacity-40"
+          >
+            {markingReplied
+              ? <RefreshCw size={11} className="animate-spin" />
+              : <XCircle size={11} />}
+            Mark Replied
+          </button>
         )}
         <p className="ml-auto text-[10px] text-slate-300">
           {draft.source === "legacy" ? "From company history" : "From web discovery"} · Auto-saves

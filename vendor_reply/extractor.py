@@ -116,21 +116,44 @@ def _fuzzy_match_parts(quotes: list[dict], known_parts: list[str]) -> list[dict]
     return result
 
 
-def extract_quote(body_plain: str | None, body_html: str | None, part_numbers: list[str]) -> list[dict]:
+def extract_quote(
+    body_plain: str | None,
+    body_html: str | None,
+    part_numbers: list[str],
+    attachment_text: str = "",
+) -> list[dict]:
     """
     Returns a list of quote line-item dicts (possibly empty if the vendor
     didn't actually quote a price in this reply).
+
+    `attachment_text` is the extracted text from any PDF/Excel attachments.
+    It is kept separate from the email body so the thread-chain stripper
+    (which cuts at "From:", "On ... wrote:", etc.) never touches it —
+    vendor quotation PDFs often have "From: Vendor Co." in the letterhead.
     """
-    full_body = _plain_text(body_plain, body_html)
+    email_body = _plain_text(body_plain, body_html)
+
+    # Strip the quoted chain ONLY from the email body, not from the attachment.
+    if email_body:
+        latest = _latest_reply_text(email_body)
+        # Fall back to the full body when the latest text is very short —
+        # vendor wrote "please see attached" and the real content is in the file.
+        email_body = latest if len(latest) >= 100 else email_body
+
+    # Combine: clean email body + full attachment content.
+    # Attachment text is labelled so GPT knows it came from a file, not the
+    # email body, and the price table inside it is the vendor's actual offer.
+    parts = []
+    if email_body.strip():
+        parts.append(email_body.strip())
+    if attachment_text.strip():
+        parts.append("[ATTACHMENT CONTENT — vendor's quotation file]\n" + attachment_text.strip())
+
+    full_body = "\n\n".join(parts)
     if not full_body:
         return []
 
-    # Prefer the latest reply text (vendor's new content, above the quoted chain)
-    # so GPT isn't confused by price tables from the original RFQ or prior threads.
-    # Fall back to the full body when the latest text is very short — vendor wrote
-    # something like "please see attached" and the real content is elsewhere.
-    latest = _latest_reply_text(full_body)
-    body = (latest if len(latest) >= 100 else full_body)[:15000]
+    body = full_body[:15000]
 
     prompt = EXTRACTOR_USER.format(
         part_numbers=", ".join(part_numbers) or "(not specified)",
@@ -145,7 +168,7 @@ def extract_quote(body_plain: str | None, body_html: str | None, part_numbers: l
                 {"role": "user", "content": prompt},
             ],
             temperature=0,
-            max_tokens=2000,
+            max_tokens=4000,
             response_format={"type": "json_object"},
         )
         parsed = json.loads(response.choices[0].message.content)

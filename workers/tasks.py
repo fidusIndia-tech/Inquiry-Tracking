@@ -758,18 +758,20 @@ def extract_vendor_quote(self, message_id: str) -> dict:
                     seen_pns.add(pn.lower())
         part_numbers = fallback_pns
 
-    # If the vendor attached a PDF/DOCX quotation instead of writing prices in
-    # the email body, the body alone has no price data and extract_quote returns
-    # nothing. Extract text from any attachments and append it so GPT sees the
-    # full quotation content regardless of how the vendor chose to send it.
+    # Extract attachment text SEPARATELY from the email body so the
+    # thread-chain stripper inside extract_quote() never touches it.
+    # Vendor quotation PDFs often have "From: Vendor Co." in the letterhead
+    # which the old code (pre-appended text) would cut at, silently discarding
+    # the entire price table. Passing attachment_text as its own argument
+    # bypasses that logic and ensures GPT always sees the full file content.
     body_plain = parsed.get("body_plain") or ""
+    attachment_text = ""
     if parsed.get("has_attachment"):
         try:
             attachment_text = extract_attachment_text(service, message_id, raw.get("payload", {}))
             if attachment_text.strip():
-                body_plain = body_plain + "\n\n" + attachment_text
                 logger.info(
-                    "extract_vendor_quote | appended attachment text | unique_code=%s | chars=%d",
+                    "extract_vendor_quote | extracted attachment text | unique_code=%s | chars=%d",
                     unique_code, len(attachment_text),
                 )
         except Exception as exc:
@@ -777,7 +779,7 @@ def extract_vendor_quote(self, message_id: str) -> dict:
                 "extract_vendor_quote | attachment extraction failed for %s: %s", message_id, exc
             )
 
-    quotes = extract_quote(body_plain, parsed.get("body_html"), part_numbers)
+    quotes = extract_quote(body_plain, parsed.get("body_html"), part_numbers, attachment_text=attachment_text)
 
     # A vendor has replied to our RFQ — stop reminders regardless of whether
     # we could extract a structured price. Without this, a vendor who replies

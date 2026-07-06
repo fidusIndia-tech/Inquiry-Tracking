@@ -383,13 +383,25 @@ def extract_attachment_text(service, message_id: str, payload: dict) -> str:
         filename = part.get("filename", "")
         body     = part.get("body", {})
         attachment_id = body.get("attachmentId")
+        inline_data   = body.get("data")  # small files Gmail inlines in body.data
 
-        if filename and attachment_id:
+        if filename and (attachment_id or inline_data):
+            mime = part.get("mimeType", "")
+            # Skip text/multipart inline parts — those are the email body, not files
+            if not attachment_id and mime.startswith(("text/", "multipart/")):
+                for subpart in part.get("parts", []):
+                    walk(subpart)
+                return
+
             ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
             logger.info("  → extracting attachment: %s (%s)", filename, ext)
 
             try:
-                raw = _download_attachment(service, message_id, attachment_id)
+                if attachment_id:
+                    raw = _download_attachment(service, message_id, attachment_id)
+                else:
+                    import base64 as _b64
+                    raw = _b64.urlsafe_b64decode(inline_data + "==")
             except Exception as exc:
                 logger.warning("  → download failed for %s: %s", filename, exc)
                 return

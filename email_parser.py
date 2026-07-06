@@ -139,10 +139,17 @@ def _extract_body(payload: dict) -> tuple[Optional[str], Optional[str]]:
 
 
 def _has_attachment(payload: dict) -> bool:
-    """Return True if any part of the message is a non-inline attachment."""
+    """Return True if any part of the message is an attachment (inline or external)."""
     def walk(part: dict) -> bool:
-        # If it has a filename and an attachmentId it's a real attachment
-        if part.get("filename") and part.get("body", {}).get("attachmentId"):
+        filename = part.get("filename", "")
+        body = part.get("body", {})
+        # Standard case: large attachment stored externally (has attachmentId)
+        if filename and body.get("attachmentId"):
+            return True
+        # Small files Gmail inlines: the bytes are in body.data but filename is
+        # still set and the mimeType is not text/* or multipart/*
+        mime = part.get("mimeType", "")
+        if filename and body.get("data") and not mime.startswith(("text/", "multipart/")):
             return True
         return any(walk(p) for p in part.get("parts", []))
 

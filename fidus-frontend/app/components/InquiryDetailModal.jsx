@@ -1685,10 +1685,11 @@ function QuotesTab({ inquiry }) {
     const items = inquiry.items || [];
     if (items.length > 0) {
       return items
-        .filter((item) => selected[item.partNumber] && sellingPrices[item.partNumber])
+        .filter((item) => selected[item.id] && sellingPrices[item.id])
         .map((item) => {
-          const pn = item.partNumber;
-          const q  = (matchedByItem[pn] || []).find((x) => String(x.id) === String(selected[pn]));
+          const pn     = item.partNumber;
+          const itemId = item.id;
+          const q      = (matchedByItem[pn] || []).find((x) => String(x.id) === String(selected[itemId]));
           return {
             part_number:        pn,
             description:        item.itemNotes || null,
@@ -1696,9 +1697,9 @@ function QuotesTab({ inquiry }) {
             quantity:           item.quantity  || null,
             uom:                item.uom       || null,
             currency:           quoteCurrency,
-            selling_price:      sellingPrices[pn],
-            lead_time:          leadTimes[pn] || q?.lead_time || "",
-            remark:             lineRemarks[pn] || null,
+            selling_price:      sellingPrices[itemId],
+            lead_time:          leadTimes[itemId] || q?.lead_time || "",
+            remark:             lineRemarks[itemId] || null,
             // Vendor fields — persisted in quotations.lines JSONB for PO generation.
             // The PDF renderer ignores unknown keys so these are non-breaking.
             vendor_quote_id:    q?.id                || null,
@@ -1767,7 +1768,7 @@ function QuotesTab({ inquiry }) {
   const MAX_V     = 5;
 
   /* ── Manual price add ── */
-  const handleManualAdd = async (partNumber) => {
+  const handleManualAdd = async (itemId, partNumber) => {
     if (!manualForm.vendor_name.trim() || !manualForm.unit_price) return;
     setAddingManual(true);
     try {
@@ -1805,9 +1806,9 @@ function QuotesTab({ inquiry }) {
         (q) => q.vendor_email === manualEmail && norm(q.part_number) === norm(partNumber)
       );
       if (saved) {
-        setSelected((prev) => ({ ...prev, [partNumber]: saved.id }));
+        setSelected((prev) => ({ ...prev, [itemId]: saved.id }));
         if (manualForm.lead_time) {
-          setLeadTimes((prev) => ({ ...prev, [partNumber]: manualForm.lead_time }));
+          setLeadTimes((prev) => ({ ...prev, [itemId]: manualForm.lead_time }));
         }
       }
       setShowAddManual(null);
@@ -1989,7 +1990,7 @@ function QuotesTab({ inquiry }) {
                 </button>
               </div>
               <p className="text-[11px] font-medium text-slate-500 mb-3">
-                Part: <span className="font-semibold text-slate-800">{showAddManual}</span>
+                Part: <span className="font-semibold text-slate-800">{showAddManual?.partNumber}</span>
               </p>
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
@@ -2062,7 +2063,7 @@ function QuotesTab({ inquiry }) {
                   Cancel
                 </button>
                 <button
-                  onClick={() => handleManualAdd(showAddManual)}
+                  onClick={() => handleManualAdd(showAddManual.itemId, showAddManual.partNumber)}
                   disabled={!manualForm.vendor_name.trim() || !manualForm.unit_price || addingManual}
                   className="flex h-8 items-center gap-1.5 rounded-lg px-4 text-[12px] font-semibold text-white disabled:opacity-40"
                   style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)" }}
@@ -2173,17 +2174,18 @@ function QuotesTab({ inquiry }) {
               <tbody>
                 {inquiryItems.map((item, rowIdx) => {
                   const pn          = item.partNumber;
+                  const itemId      = item.id ?? rowIdx;
                   const rowQuotes   = matchedByItem[pn] || [];
                   const bestId      = rowQuotes.find((q) => Number.isFinite(Number(q.unit_price)) && Number(q.unit_price) > 0)?.id;
-                  const isExp       = expandedItems[pn];
+                  const isExp       = expandedItems[itemId];
                   const visible     = isExp ? rowQuotes : rowQuotes.slice(0, MAX_V);
                   const hiddenCount = rowQuotes.length - MAX_V;
-                  const isSel       = !!selected[pn];
+                  const isSel       = !!selected[itemId];
                   const isLocked    = lockedParts.has(pn);
                   const bg          = isLocked ? "#F0FDF4" : isSel ? "#FFFBEB" : (rowIdx % 2 === 0 ? "white" : "#FAFBFF");
 
                   return (
-                    <tr key={pn} style={{ background: bg }}
+                    <tr key={itemId} style={{ background: bg }}
                         className="border-b border-[#EEF2F6] last:border-b-0 align-top">
                       <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{item.brand || "—"}</td>
                       <td className="px-3 py-2.5">
@@ -2199,15 +2201,15 @@ function QuotesTab({ inquiry }) {
                       <td className="px-3 py-2" style={{ minWidth: "380px" }}>
                         <div className="flex flex-wrap gap-2">
                           {visible.map((q) => {
-                            const isCurrent  = String(selected[pn]) === String(q.id);
+                            const isCurrent  = String(selected[itemId]) === String(q.id);
                             const hasQPO     = !!quickPOMap[q.id];  // keyed by vendor_quote_id
                             const isCreating = poCreating[pn] && isCurrent;
                             return (
                               <div key={q.id}
                                 onClick={() => {
                                   if (isLocked) return;
-                                  setSelected((prev) => ({ ...prev, [pn]: q.id }));
-                                  setLeadTimes((prev) => prev[pn] ? prev : { ...prev, [pn]: q.lead_time || "" });
+                                  setSelected((prev) => ({ ...prev, [itemId]: q.id }));
+                                  setLeadTimes((prev) => prev[itemId] ? prev : { ...prev, [itemId]: q.lead_time || "" });
                                 }}
                                 className={`flex flex-col gap-0.5 rounded-lg border px-2.5 py-2 transition select-none ${
                                   isLocked
@@ -2282,7 +2284,7 @@ function QuotesTab({ inquiry }) {
 
                           {!isExp && hiddenCount > 0 && (
                             <button
-                              onClick={() => setExpandedItems((prev) => ({ ...prev, [pn]: true }))}
+                              onClick={() => setExpandedItems((prev) => ({ ...prev, [itemId]: true }))}
                               className="self-start mt-1 text-[10px] font-semibold text-[#4451E8] hover:underline"
                             >
                               +{hiddenCount} more
@@ -2290,7 +2292,7 @@ function QuotesTab({ inquiry }) {
                           )}
                           {isExp && rowQuotes.length > MAX_V && (
                             <button
-                              onClick={() => setExpandedItems((prev) => ({ ...prev, [pn]: false }))}
+                              onClick={() => setExpandedItems((prev) => ({ ...prev, [itemId]: false }))}
                               className="self-start mt-1 text-[10px] font-semibold text-slate-400 hover:underline"
                             >
                               Show less
@@ -2300,7 +2302,7 @@ function QuotesTab({ inquiry }) {
                           <button
                             onClick={() => {
                               setManualForm({ vendor_name: "", vendor_email: "", unit_price: "", currency: quoteCurrency, lead_time: "", availability: "", remarks: "" });
-                              setShowAddManual(pn);
+                              setShowAddManual({ itemId, partNumber: pn });
                             }}
                             className="self-start flex items-center gap-1 rounded-lg border border-dashed border-[#C7D9F8] bg-[#F5F8FF] px-2.5 py-2 text-[10px] font-semibold text-[#4451E8] hover:bg-[#EEF4FF] transition whitespace-nowrap"
                           >
@@ -2313,14 +2315,14 @@ function QuotesTab({ inquiry }) {
                       <td className="px-3 py-2.5">
                         {isLocked ? (
                           <div className="flex items-center gap-1">
-                            <span className="text-[12px] font-semibold text-slate-700">{sellingPrices[pn] || "—"}</span>
+                            <span className="text-[12px] font-semibold text-slate-700">{sellingPrices[itemId] || "—"}</span>
                             <span title="Locked — PO already sent" className="text-[10px] text-green-600">🔒</span>
                           </div>
                         ) : (
                           <input
                             type="number"
-                            value={sellingPrices[pn] || ""}
-                            onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
+                            value={sellingPrices[itemId] || ""}
+                            onChange={(e) => setSellingPrices((prev) => ({ ...prev, [itemId]: e.target.value }))}
                             placeholder="0.00"
                             disabled={!isSel}
                             className="w-24 rounded-lg border px-2 py-1.5 text-[12px] font-medium text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
@@ -2333,14 +2335,14 @@ function QuotesTab({ inquiry }) {
                       <td className="px-3 py-2.5">
                         {isLocked ? (
                           <div className="flex items-center gap-1">
-                            <span className="text-[12px] text-slate-700">{leadTimes[pn] || "—"}</span>
+                            <span className="text-[12px] text-slate-700">{leadTimes[itemId] || "—"}</span>
                             <span title="Locked — PO already sent" className="text-[10px] text-green-600">🔒</span>
                           </div>
                         ) : (
                           <input
                             type="text"
-                            value={leadTimes[pn] || ""}
-                            onChange={(e) => setLeadTimes((prev) => ({ ...prev, [pn]: e.target.value }))}
+                            value={leadTimes[itemId] || ""}
+                            onChange={(e) => setLeadTimes((prev) => ({ ...prev, [itemId]: e.target.value }))}
                             placeholder="e.g. 2 weeks"
                             disabled={!isSel}
                             className="w-28 rounded-lg border px-2 py-1.5 text-[12px] font-medium text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
@@ -2353,8 +2355,8 @@ function QuotesTab({ inquiry }) {
                       <td className="px-3 py-2.5">
                         <textarea
                           rows={2}
-                          value={lineRemarks[pn] || ""}
-                          onChange={(e) => setLineRemarks((prev) => ({ ...prev, [pn]: e.target.value }))}
+                          value={lineRemarks[itemId] || ""}
+                          onChange={(e) => setLineRemarks((prev) => ({ ...prev, [itemId]: e.target.value }))}
                           placeholder="Add remark…"
                           disabled={!isSel}
                           className="w-32 resize-none rounded-lg border px-2 py-1.5 text-[11px] leading-snug text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"

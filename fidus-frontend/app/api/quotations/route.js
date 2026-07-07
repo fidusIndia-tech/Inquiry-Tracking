@@ -49,6 +49,7 @@ async function ensureSchema() {
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS client_phone    TEXT`);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS billing_address TEXT`);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS updated_at      TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS remark          TEXT`);
   await pool.query(`CREATE SEQUENCE IF NOT EXISTS manual_quotation_seq START 1`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quotation_notes (
@@ -153,7 +154,7 @@ export async function GET(request) {
          q.amendment_date, q.is_revision, q.parent_quotation_id, q.status,
          q.client_name, q.client_email, q.currency, q.taxable_amount,
          q.tax_amount, q.grand_total, q.gst_type, q.gst_rate,
-         q.custom_tax_name, q.custom_tax_rate, q.sent_at, q.lines,
+         q.custom_tax_name, q.custom_tax_rate, q.sent_at, q.lines, q.remark,
          (${DISPLAY_STATUS_CASE}) AS display_status,
          COALESCE((
            SELECT COUNT(*) FROM inquiry_items ii WHERE ii.inquiry_id = i.id

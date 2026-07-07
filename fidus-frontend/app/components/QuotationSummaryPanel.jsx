@@ -147,9 +147,11 @@ export default function QuotationSummaryPanel({ onOpenInquiry, salespersonLock }
   const [editId,         setEditId]         = useState(null);
   const [refreshKey,     setRefreshKey]     = useState(0);
 
-  const [notes,      setNotes]      = useState([]);
-  const [noteText,   setNoteText]   = useState("");
-  const [noteSaving, setNoteSaving] = useState(false);
+  const [notes,        setNotes]        = useState([]);
+  const [noteText,     setNoteText]     = useState("");
+  const [noteSaving,   setNoteSaving]   = useState(false);
+  const [remarkMap,    setRemarkMap]    = useState({});
+  const [savingRemark, setSavingRemark] = useState(null);
 
   // When salespersonLock changes (e.g. employee name loads async), sync filter
   useEffect(() => {
@@ -180,13 +182,32 @@ export default function QuotationSummaryPanel({ onOpenInquiry, salespersonLock }
         .then((r) => r.json())
         .then((d) => {
           if (d.error) throw new Error(d.error);
-          setQuotations(d.quotations || []);
+          const qs = d.quotations || [];
+          setQuotations(qs);
+          setRemarkMap((prev) => {
+            const next = { ...prev };
+            qs.forEach((q) => { if (!(q.id in next)) next[q.id] = q.remark || ""; });
+            return next;
+          });
         })
         .catch((e) => setError(e.message || "Failed to load quotations"))
         .finally(() => setLoading(false));
     }, 300);
     return () => clearTimeout(timer);
   }, [search, statusFilter, salespersonFilter, dateFrom, dateTo, revisionFilter, refreshKey]);
+
+  const saveRemark = async (id, value) => {
+    setSavingRemark(id);
+    try {
+      await fetch(`/api/quotations/${id}`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ remark: value || null }),
+      });
+    } finally {
+      setSavingRemark(null);
+    }
+  };
 
   const openView = (id) => {
     setViewId(id); setViewLoading(true); setViewData(null); setNotes([]);
@@ -342,7 +363,7 @@ export default function QuotationSummaryPanel({ onOpenInquiry, salespersonLock }
           <table className="w-full border-collapse text-[11px]" style={{ minWidth: 1100 }}>
             <thead>
               <tr style={{ background: "linear-gradient(180deg,#EEF4FF 0%,#E6EDFC 100%)" }}>
-                {["Quotation No", "FIAPL Code", "Client", "Salesperson", "Date", "Amend Code", "Amend Date", "Status", "Taxable", "Tax", "Grand Total", "Actions"].map((h) => (
+                {["Quotation No", "FIAPL Code", "Client", "Salesperson", "Date", "Amend Code", "Amend Date", "Status", "Taxable", "Tax", "Grand Total", "Remarks", "Actions"].map((h) => (
                   <th key={h} className="whitespace-nowrap border-b-2 border-r border-b-[#BFCFEE] border-r-[#D0DCF4] px-3 py-2 text-left text-[9px] font-bold uppercase tracking-widest text-[#4461A8] last:border-r-0">
                     {h}
                   </th>
@@ -352,7 +373,7 @@ export default function QuotationSummaryPanel({ onOpenInquiry, salespersonLock }
             <tbody>
               {loading && Array.from({ length: 5 }, (_, r) => (
                 <tr key={r}>
-                  {Array.from({ length: 12 }, (_, c) => (
+                  {Array.from({ length: 13 }, (_, c) => (
                     <td key={c} className="border-b border-r border-[#DCE6F7] px-3 py-2.5 last:border-r-0">
                       <div className="skeleton h-3" style={{ width: "60%" }} />
                     </td>
@@ -360,11 +381,11 @@ export default function QuotationSummaryPanel({ onOpenInquiry, salespersonLock }
                 </tr>
               ))}
               {!loading && error && (
-                <tr><td colSpan={12} className="px-4 py-8 text-[12px] text-rose-600">{error}</td></tr>
+                <tr><td colSpan={13} className="px-4 py-8 text-[12px] text-rose-600">{error}</td></tr>
               )}
               {!loading && !error && quotations.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="px-4 py-14 text-center">
+                  <td colSpan={13} className="px-4 py-14 text-center">
                     <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)" }}>
                       <FileText size={20} className="text-[#1D6FD8]" />
                     </div>
@@ -404,6 +425,21 @@ export default function QuotationSummaryPanel({ onOpenInquiry, salespersonLock }
                     <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2 text-right">{fmtQuoteINR(q.taxable_amount)}</td>
                     <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2 text-right">{fmtQuoteINR(q.tax_amount)}</td>
                     <td className="whitespace-nowrap border-r border-[#DCE6F7] px-3 py-2 text-right font-semibold">{fmtQuoteINR(q.grand_total)}</td>
+                    <td className="border-r border-[#DCE6F7] px-2 py-1.5" style={{ minWidth: "160px", maxWidth: "220px" }}>
+                      <div className="relative flex items-center">
+                        <input
+                          type="text"
+                          value={remarkMap[q.id] ?? ""}
+                          onChange={(e) => setRemarkMap((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                          onBlur={() => saveRemark(q.id, remarkMap[q.id] ?? "")}
+                          placeholder="Add remark…"
+                          className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[11px] text-slate-700 outline-none transition hover:border-[#E4E8EE] focus:border-[#5BA7FF] focus:bg-white focus:ring-1 focus:ring-[#5BA7FF]/20 placeholder:text-slate-300"
+                        />
+                        {savingRemark === q.id && (
+                          <RefreshCw size={9} className="absolute right-1.5 shrink-0 animate-spin text-slate-300" />
+                        )}
+                      </div>
+                    </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1">
                         <button onClick={() => openView(q.id)} title="View / Notes" className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-[#EEF2FF] hover:text-[#4451E8]">

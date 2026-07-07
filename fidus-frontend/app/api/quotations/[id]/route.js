@@ -32,6 +32,20 @@ export async function GET(request, { params }) {
   }
 }
 
+export async function PATCH(request, { params }) {
+  try {
+    const { id } = await params;
+    const { remark } = await request.json();
+    await query(
+      `UPDATE quotations SET remark = $1 WHERE id = $2`,
+      [remark ?? null, id]
+    );
+    return Response.json({ ok: true });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function PUT(request, { params }) {
   try {
     const { id } = await params;

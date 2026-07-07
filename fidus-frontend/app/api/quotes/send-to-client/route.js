@@ -263,8 +263,10 @@ export async function POST(request) {
         client_email: inquiry.sender_email,
         subject: inquiry.subject || `Quotation – ${unique_code}`,
         body,
-        thread_id: inquiry.thread_id || null,
-        in_reply_to_message_id: inquiry.message_id || null,
+        // Manual inquiries have a fake MANUAL_... message_id — passing it to
+        // the Gmail API causes "Invalid id value". Send as a fresh email instead.
+        thread_id: (inquiry.thread_id && !String(inquiry.thread_id).startsWith("MANUAL_")) ? inquiry.thread_id : null,
+        in_reply_to_message_id: (inquiry.message_id && !String(inquiry.message_id).startsWith("MANUAL_")) ? inquiry.message_id : null,
         attachment_filename: `${quotationNumber}.pdf`,
         attachment_base64: pdfBase64,
       }),

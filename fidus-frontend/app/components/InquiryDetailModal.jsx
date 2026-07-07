@@ -1584,6 +1584,7 @@ function QuotesTab({ inquiry }) {
   const [termsText,           setTermsText]           = useState(DEFAULT_TERMS);
   const [clientNote,          setClientNote]          = useState("");
   const [lineRemarks,         setLineRemarks]         = useState({});
+  const [lineDescriptions,    setLineDescriptions]    = useState({});
   const [showPreview,         setShowPreview]         = useState(false);
   const [downloading,         setDownloading]         = useState(false);
 
@@ -1691,8 +1692,9 @@ function QuotesTab({ inquiry }) {
           const itemId = item.id;
           const q      = (matchedByItem[pn] || []).find((x) => String(x.id) === String(selected[itemId]));
           return {
+            item_id:            itemId,
             part_number:        pn,
-            description:        item.itemNotes || null,
+            description:        lineDescriptions[itemId] !== undefined ? lineDescriptions[itemId] : (item.itemNotes || null),
             brand:              item.brand     || null,
             quantity:           item.quantity  || null,
             uom:                item.uom       || null,
@@ -1733,7 +1735,7 @@ function QuotesTab({ inquiry }) {
           vendor_availability: q?.availability     || null,
         };
       });
-  }, [inquiry.items, selected, sellingPrices, leadTimes, lineRemarks, matchedByItem, quoteCurrency, partNumbers, byPart, itemByPart]);
+  }, [inquiry.items, selected, sellingPrices, leadTimes, lineRemarks, lineDescriptions, matchedByItem, quoteCurrency, partNumbers, byPart, itemByPart]);
 
   /* ── Loading state ── */
   if (loading) {
@@ -2924,7 +2926,7 @@ function QuotesTab({ inquiry }) {
                   <table className="w-full border-collapse text-[12px]">
                     <thead>
                       <tr style={{ background: "#EEF4FF" }}>
-                        {["#", "Part Number", "Description", "Qty", "Lead Time", "Unit Price", "Amount"].map((h) => (
+                        {["#", "Part Number", "Description (editable)", "Qty", "Lead Time", "Unit Price", "Amount"].map((h) => (
                           <th key={h} className="border border-[#D0DCF4] px-2.5 py-2 text-left text-[9px] font-bold uppercase tracking-widest text-[#4461A8]">{h}</th>
                         ))}
                       </tr>
@@ -2936,7 +2938,15 @@ function QuotesTab({ inquiry }) {
                           <tr key={i} className="border-b border-[#EEF2F6]">
                             <td className="border border-[#E4E8EE] px-2.5 py-2 text-slate-500">{i + 1}</td>
                             <td className="border border-[#E4E8EE] px-2.5 py-2 font-semibold text-slate-900">{l.part_number || "—"}</td>
-                            <td className="border border-[#E4E8EE] px-2.5 py-2 text-slate-600">{l.description || "—"}</td>
+                            <td className="border border-[#E4E8EE] px-1.5 py-1.5">
+                              <input
+                                type="text"
+                                value={l.description ?? ""}
+                                onChange={(e) => setLineDescriptions((prev) => ({ ...prev, [l.item_id]: e.target.value }))}
+                                placeholder="Enter description…"
+                                className="w-full min-w-[140px] rounded border border-transparent bg-transparent px-1.5 py-1 text-[11px] text-slate-700 outline-none hover:border-[#D0DCF4] focus:border-[#5BA7FF] focus:bg-white focus:ring-1 focus:ring-[#5BA7FF]/20 placeholder:text-slate-300"
+                              />
+                            </td>
                             <td className="border border-[#E4E8EE] px-2.5 py-2 text-slate-700">{l.quantity || "—"}</td>
                             <td className="border border-[#E4E8EE] px-2.5 py-2 text-slate-600">{l.lead_time || "—"}</td>
                             <td className="border border-[#E4E8EE] px-2.5 py-2 text-right font-medium text-slate-800">

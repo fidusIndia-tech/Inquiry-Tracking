@@ -101,7 +101,8 @@ function fMoney(v, cur) {
   const code = (cur || "INR").toUpperCase();
   // ₹ (U+20B9) is NOT in Helvetica — renders as garbled glyph in react-pdf; use "Rs."
   // ¥ (U+00A5) IS in Helvetica — safe to use
-  const sym = code === "INR" ? "Rs. " : code === "JPY" ? "¥" : code + " ";
+  const PDF_SYM = { JPY: "¥", CNY: "¥", USD: "$", EUR: "€", GBP: "£", SGD: "S$" };
+  const sym = code === "INR" ? "Rs. " : (PDF_SYM[code] ?? code + " ");
   const dec = ZERO_DEC_PDF.has(code) ? 0 : 2;
   return `${sym}${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: dec, maximumFractionDigits: dec })}`;
 }

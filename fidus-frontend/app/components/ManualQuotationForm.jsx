@@ -5,7 +5,7 @@ import { Download, FileText, Plus, Save, Trash2, X } from "lucide-react";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const CURRENCIES   = ["INR", "USD", "EUR", "AED", "GBP"];
+const CURRENCIES   = ["INR", "USD", "EUR", "AED", "GBP", "JPY", "THB", "SGD", "CNY", "MYR"];
 const GST_OPTIONS  = [
   { value: "NONE",      label: "No GST / Exempt" },
   { value: "CGST_SGST", label: "CGST + SGST" },

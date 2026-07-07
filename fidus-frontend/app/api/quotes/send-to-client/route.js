@@ -4,7 +4,7 @@ import { pool, query } from "@/lib/db";
 import QuotationDocument from "@/lib/quotationPdf";
 
 const PYTHON_BACKEND_URL = (process.env.PYTHON_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
-const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£", AED: "AED ", JPY: "¥" };
+const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£", AED: "AED ", JPY: "¥", CNY: "¥", THB: "฿", SGD: "S$", MYR: "RM " };
 
 function computeGstData(lines, gstOpt, customTax) {
   const taxable = lines.reduce(

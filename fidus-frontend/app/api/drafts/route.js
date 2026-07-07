@@ -55,7 +55,7 @@ async function ensureDraftsSchema() {
   _draftsSchemaReady = true;
 }
 
-const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£" };
+const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€", GBP: "£", AED: "AED ", JPY: "¥", CNY: "¥", THB: "฿", SGD: "S$", MYR: "RM " };
 
 function escapeHtml(str) {
   return String(str ?? "").replace(/[&<>"']/g, (c) => (

@@ -101,9 +101,10 @@ function formatDate(d) {
 
 // Use currency code prefix (e.g. "INR 1,23,456.00") — ₹ not in Helvetica; ¥ is safe.
 const ZERO_DEC_QT = new Set(["JPY", "KRW", "VND", "IDR"]);
+const PDF_SYM_QT  = { JPY: "¥", CNY: "¥", USD: "$", EUR: "€", GBP: "£", SGD: "S$" };
 function formatMoney(value, currency) {
   const code = (currency || "INR").toUpperCase();
-  const sym  = code === "JPY" ? "¥" : `${code} `;
+  const sym  = PDF_SYM_QT[code] ?? `${code} `;
   const dec  = ZERO_DEC_QT.has(code) ? 0 : 2;
   return `${sym}${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: dec, maximumFractionDigits: dec })}`;
 }

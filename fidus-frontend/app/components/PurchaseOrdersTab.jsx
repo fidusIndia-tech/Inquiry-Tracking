@@ -19,7 +19,7 @@ const GST_OPTIONS = [
   { value: "EXPORT",    label: "Export / LUT (0%)",         rate: 0  },
 ];
 
-const CURRENCY_OPTIONS = ["INR", "USD", "EUR", "AED", "GBP", "JPY"];
+const CURRENCY_OPTIONS = ["INR", "USD", "EUR", "AED", "GBP", "JPY", "THB", "SGD", "CNY", "MYR"];
 
 const DEFAULT_PO_TERMS = `Payment Terms: 20% advance with the purchase order, and the remaining 80% prior to shipment.
 Dispatch Schedule: As per Quotation
@@ -38,7 +38,7 @@ function badge(status) {
 }
 
 const ZERO_DEC = new Set(["JPY", "KRW", "VND", "IDR"]);
-const CUR_SYM  = { INR: "₹", USD: "$", EUR: "€", GBP: "£", JPY: "¥", AED: "AED " };
+const CUR_SYM  = { INR: "₹", USD: "$", EUR: "€", GBP: "£", JPY: "¥", AED: "AED ", CNY: "¥", THB: "฿", SGD: "S$", MYR: "RM " };
 
 function fmtMoney(value, currency) {
   const code = (currency || "INR").toUpperCase();

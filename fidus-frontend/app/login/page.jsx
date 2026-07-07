@@ -32,7 +32,7 @@ export default function LoginPage() {
   }, []);
 
   const openModal = () => {
-    setError(""); setEmail(""); setPassword(""); setRole("admin");
+    setError(""); setEmail(""); setPassword(""); setRole("employee");
     setShowModal(true);
   };
 

@@ -76,7 +76,18 @@ export async function POST(request) {
       const rawId      = rawResult.rows[0].id;
       const uniqueCode = `FIAPL${String(rawId).padStart(7, "0")}`;
 
-      const assignedToId = assigned_to ? Number(assigned_to) : null;
+      // Validate the FK before inserting — if the userId from localStorage is
+      // stale (employee removed + re-added, getting a new id) the INSERT would
+      // fail with a FK violation and show a cryptic error. Silently fall back
+      // to unassigned instead, so the inquiry is still created.
+      let assignedToId = assigned_to ? Number(assigned_to) : null;
+      if (assignedToId) {
+        const userCheck = await client.query(
+          `SELECT id FROM users WHERE id = $1 AND is_active = TRUE LIMIT 1`,
+          [assignedToId]
+        );
+        if (!userCheck.rows[0]) assignedToId = null;
+      }
 
       const inquiryResult = await client.query(
         `INSERT INTO inquiries (

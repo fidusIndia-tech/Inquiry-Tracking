@@ -551,7 +551,16 @@ function VendorsTab({ inquiry, onDraftsGenerated }) {
       };
 
       discovered.forEach((v) => { if (selDisc.has(discKey(v))) addToGroup(`d-${v.id}`, "discovered", v.name, v.email, v.brand); });
-      legacy.forEach((v) => { if (selLeg.has(legKey(v))) addToGroup(`l-${(v.email || v.id || "").toLowerCase()}`, "legacy", v.name, v.email, v.brand); });
+      // Legacy: group by email+name so the same real vendor (same email AND same
+      // supplier name) across multiple brands still gets ONE combined draft, but
+      // two genuinely different suppliers that happen to share a generic email
+      // address are kept as separate drafts instead of being silently merged.
+      legacy.forEach((v) => {
+        const email = (v.email || "").trim().toLowerCase();
+        const name  = (v.name  || "").trim().toLowerCase();
+        const key   = email ? `l-${email}\x00${name}` : `l-id-${v.id}`;
+        if (selLeg.has(legKey(v))) addToGroup(key, "legacy", v.name, v.email, v.brand);
+      });
       manual.forEach((v) => { if (selMan.has(String(v.id))) addToGroup(`m-${v.id}`, "manual", v.name, v.email, v.brand); });
 
       const vendors = [...groups.values()].map((g) => ({

@@ -1,15 +1,64 @@
-import { withTransaction } from "@/lib/db";
+import crypto from "crypto";
+import { pool, withTransaction } from "@/lib/db";
 import {
   buildInquiryItems,
   extractEmail,
   extractSenderName,
+  isInternalEmail,
   normalizeParserPayload,
 } from "@/lib/inquiry-normalizer";
+
+let _schemaReady = false;
+async function ensureSchema() {
+  if (_schemaReady) return;
+  await pool.query("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS source_fingerprint TEXT");
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS inquiries_source_fingerprint_idx
+    ON inquiries (source_fingerprint)
+    WHERE source_fingerprint IS NOT NULL
+  `);
+  _schemaReady = true;
+}
+
+function normalizeFingerprintText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\b(re|fw|fwd)\s*:\s*/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function buildSourceFingerprint({ senderEmail, clientName, subject, items }) {
+  const itemText = (items || [])
+    .map((item) => [
+      item.brand,
+      item.partNumber,
+      item.quantity,
+      item.uom,
+    ].map(normalizeFingerprintText).filter(Boolean).join(":"))
+    .filter(Boolean)
+    .sort()
+    .join("|");
+
+  const base = [
+    normalizeFingerprintText(senderEmail || clientName),
+    normalizeFingerprintText(subject),
+    itemText,
+  ].filter(Boolean).join("||");
+
+  if (!base || !itemText) return null;
+  return crypto.createHash("sha256").update(base).digest("hex");
+}
 
 export async function POST(request) {
   try {
     const payload = await request.json();
     const rawItem = normalizeParserPayload(payload);
+    const serializedLineItems = rawItem.line_items
+      ? typeof rawItem.line_items === "string"
+        ? rawItem.line_items
+        : JSON.stringify(rawItem.line_items)
+      : null;
 
     if (!rawItem.message_id && !rawItem.subject) {
       return Response.json(
@@ -18,31 +67,8 @@ export async function POST(request) {
       );
     }
 
+    await ensureSchema();
     const result = await withTransaction(async (client) => {
-      // Fingerprint dedup: if same content already exists, skip creating a new inquiry.
-      const fingerprint = payload.source_fingerprint || null;
-      if (fingerprint) {
-        const existing = await client.query(
-          `SELECT r.id, i.unique_code, i.id AS inquiry_id, i.status
-           FROM raw_email_items r
-           JOIN inquiries i ON i.raw_email_item_id = r.id
-           WHERE r.source_fingerprint = $1
-           LIMIT 1`,
-          [fingerprint]
-        );
-        if (existing.rows.length > 0) {
-          const row = existing.rows[0];
-          return {
-            skipped: true,
-            reason: "duplicate_fingerprint",
-            rawEmailItemId: row.id,
-            inquiryId: row.inquiry_id,
-            uniqueCode: row.unique_code,
-            itemCount: 0,
-          };
-        }
-      }
-
       const rawResult = await client.query(
         `
           INSERT INTO raw_email_items (
@@ -56,14 +82,14 @@ export async function POST(request) {
             part_numbers,
             quantities,
             notes,
+            line_items,
             sender,
             subject,
             email_date,
             parser_created_at,
-            source_fingerprint,
             processing_status
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'processing')
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, 'processing')
           ON CONFLICT (message_id) WHERE message_id IS NOT NULL
           DO UPDATE SET
             thread_id = EXCLUDED.thread_id,
@@ -73,11 +99,11 @@ export async function POST(request) {
             part_numbers = EXCLUDED.part_numbers,
             quantities = EXCLUDED.quantities,
             notes = EXCLUDED.notes,
+            line_items = EXCLUDED.line_items,
             sender = EXCLUDED.sender,
             subject = EXCLUDED.subject,
             email_date = EXCLUDED.email_date,
             parser_created_at = EXCLUDED.parser_created_at,
-            source_fingerprint = EXCLUDED.source_fingerprint,
             processing_status = 'processing',
             processing_error = NULL
           RETURNING *
@@ -85,7 +111,7 @@ export async function POST(request) {
         [
           rawItem.parser_row_id,
           rawItem.message_id,
-          payload.thread_id || null,
+          rawItem.thread_id,
           rawItem.source_user_id,
           rawItem.username,
           rawItem.location,
@@ -93,18 +119,48 @@ export async function POST(request) {
           rawItem.part_numbers,
           rawItem.quantities,
           rawItem.notes,
+          serializedLineItems,
           rawItem.sender,
           rawItem.subject,
           rawItem.email_date,
           rawItem.parser_created_at,
-          fingerprint,
         ]
       );
 
       const savedRawItem = rawResult.rows[0];
       const uniqueCode = `FIAPL${String(savedRawItem.id).padStart(7, "0")}`;
-      const senderEmail = extractEmail(savedRawItem.sender);
-      const senderName = extractSenderName(savedRawItem.sender, savedRawItem.username);
+      const headerEmail = extractEmail(savedRawItem.sender);
+      const senderEmail = rawItem.sender_email || (isInternalEmail(headerEmail) ? null : headerEmail);
+      const senderName = savedRawItem.username || extractSenderName(savedRawItem.sender, null);
+      const items = buildInquiryItems(savedRawItem);
+      const sourceFingerprint = buildSourceFingerprint({
+        senderEmail,
+        clientName: rawItem.client_name,
+        subject: savedRawItem.subject,
+        items,
+      });
+
+      if (sourceFingerprint) {
+        const duplicateResult = await client.query(
+          "SELECT id, unique_code FROM inquiries WHERE source_fingerprint = $1 LIMIT 1",
+          [sourceFingerprint]
+        );
+
+        if (duplicateResult.rows[0]) {
+          await client.query(
+            "UPDATE raw_email_items SET processing_status = 'processed', processing_error = NULL WHERE id = $1",
+            [savedRawItem.id]
+          );
+
+          return {
+            rawEmailItemId: savedRawItem.id,
+            inquiryId: duplicateResult.rows[0].id,
+            uniqueCode: duplicateResult.rows[0].unique_code,
+            itemCount: items.length,
+            duplicate: true,
+          };
+        }
+      }
 
       const inquiryResult = await client.query(
         `
@@ -116,11 +172,12 @@ export async function POST(request) {
             sender_name,
             sender_email,
             subject,
+            source_fingerprint,
             notes,
             email_date,
             status
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'new')
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new')
           ON CONFLICT (unique_code)
           DO UPDATE SET
             client_name = EXCLUDED.client_name,
@@ -128,6 +185,7 @@ export async function POST(request) {
             sender_name = EXCLUDED.sender_name,
             sender_email = EXCLUDED.sender_email,
             subject = EXCLUDED.subject,
+            source_fingerprint = EXCLUDED.source_fingerprint,
             notes = EXCLUDED.notes,
             email_date = EXCLUDED.email_date,
             updated_at = NOW()
@@ -136,18 +194,18 @@ export async function POST(request) {
         [
           uniqueCode,
           savedRawItem.id,
-          savedRawItem.username,
+          rawItem.client_name || null,
           savedRawItem.location,
           senderName,
           senderEmail,
           savedRawItem.subject,
+          sourceFingerprint,
           savedRawItem.notes,
           savedRawItem.email_date,
         ]
       );
 
       const inquiry = inquiryResult.rows[0];
-      const items = buildInquiryItems(savedRawItem);
 
       await client.query("DELETE FROM inquiry_items WHERE inquiry_id = $1", [
         inquiry.id,
@@ -161,15 +219,17 @@ export async function POST(request) {
               brand,
               part_number,
               quantity,
+              uom,
               item_notes
             )
-            VALUES ($1, $2, $3, $4, $5)
+            VALUES ($1, $2, $3, $4, $5, $6)
           `,
           [
             inquiry.id,
             item.brand,
             item.partNumber,
             item.quantity,
+            item.uom,
             item.itemNotes,
           ]
         );
@@ -179,6 +239,8 @@ export async function POST(request) {
         "UPDATE raw_email_items SET processing_status = 'processed', processing_error = NULL WHERE id = $1",
         [savedRawItem.id]
       );
+
+      await client.query("SELECT pg_notify('inquiries_changed', '')");
 
       return {
         rawEmailItemId: savedRawItem.id,

@@ -4,16 +4,16 @@ const { Pool } = pg;
 
 const connectionString = process.env.DATABASE_URL;
 
-if (!connectionString) {
-  throw new Error("DATABASE_URL is not set");
-}
-
 const globalForPg = globalThis;
 
 export const pool =
   globalForPg.pgPool ||
   new Pool({
     connectionString,
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    max: 20,
+    connectionTimeoutMillis: 8000,
+    idleTimeoutMillis: 30000,
   });
 
 if (process.env.NODE_ENV !== "production") {
@@ -21,6 +21,9 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export async function query(sql, values = []) {
+  if (!connectionString) {
+    throw new Error("DATABASE_URL environment variable is not configured on this server.");
+  }
   return pool.query(sql, values);
 }
 

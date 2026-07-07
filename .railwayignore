@@ -1,0 +1,13 @@
+.git
+.claude
+.venv
+__pycache__
+*.db
+celerybeat-schedule.*
+client_secret.json
+.env
+
+fidus-frontend/node_modules
+fidus-frontend/.next
+fidus-frontend/.env
+fidus-frontend/npm-debug.log*

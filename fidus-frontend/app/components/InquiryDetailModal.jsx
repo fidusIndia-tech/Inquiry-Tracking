@@ -1714,17 +1714,27 @@ function QuotesTab({ inquiry }) {
   const { matchedByItem, unmatchedQuotes, byPart, partNumbers } = useMemo(() => {
     const items     = inquiry.items || [];
     const normItems = items.map((it) => norm(it.partNumber || ""));
-    const matched   = {};
+    const matched   = {};  // keyed by item.id (DB row id)
     const unmatched = [];
     const legacy    = {};
 
     for (const q of quotes) {
       const qNorm = norm(q.part_number);
       if (items.length > 0) {
+        // Manual quotes carry item_id — use it directly so null-part-number
+        // items are never relegated to unmatched just because pn is empty.
+        if (q.item_id) {
+          const item = items.find((it) => String(it.id) === String(q.item_id));
+          if (item) {
+            (matched[item.id] = matched[item.id] || []).push(q);
+            continue;
+          }
+        }
+        // Extracted quotes — match by normalised part number.
         const idx = normItems.findIndex((n) => n && n === qNorm);
         if (idx !== -1) {
-          const key = items[idx].partNumber;
-          (matched[key] = matched[key] || []).push(q);
+          const item = items[idx];
+          (matched[item.id] = matched[item.id] || []).push(q);
         } else {
           unmatched.push(q);
         }
@@ -1771,7 +1781,7 @@ function QuotesTab({ inquiry }) {
         .map((item) => {
           const pn     = item.partNumber;
           const itemId = item.id;
-          const q      = (matchedByItem[pn] || []).find((x) => String(x.id) === String(selected[itemId]));
+          const q      = (matchedByItem[itemId] || []).find((x) => String(x.id) === String(selected[itemId]));
           return {
             item_id:            itemId,
             part_number:        linePartNumbers[itemId] !== undefined ? linePartNumbers[itemId] : (pn || null),
@@ -1869,8 +1879,10 @@ function QuotesTab({ inquiry }) {
           vendor_name:  manualForm.vendor_name.trim(),
           vendor_email: manualEmail,
           source_type:  "manual",
+          item_id:      itemId,
           quotes: [{
             part_number:  partNumber,
+            item_id:      itemId,
             unit_price:   parseFloat(manualForm.unit_price),
             currency:     manualForm.currency || quoteCurrency,
             lead_time:    manualForm.lead_time    || null,
@@ -2260,7 +2272,7 @@ function QuotesTab({ inquiry }) {
                 {inquiryItems.map((item, rowIdx) => {
                   const pn          = item.partNumber;
                   const itemId      = item.id ?? rowIdx;
-                  const rowQuotes   = matchedByItem[pn] || [];
+                  const rowQuotes   = matchedByItem[itemId] || [];
                   const bestId      = rowQuotes.find((q) => Number.isFinite(Number(q.unit_price)) && Number(q.unit_price) > 0)?.id;
                   const isExp       = expandedItems[itemId];
                   const visible     = isExp ? rowQuotes : rowQuotes.slice(0, MAX_V);

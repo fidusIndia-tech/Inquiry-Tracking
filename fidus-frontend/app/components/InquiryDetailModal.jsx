@@ -1879,8 +1879,10 @@ function QuotesTab({ inquiry }) {
 
   /* ── Assign unmatched quote to an inquiry item ── */
   const handleAssignUnmatched = async (quoteId) => {
-    const partNumber = unmatchedAssign[quoteId];
-    if (!partNumber) return;
+    const itemId = unmatchedAssign[quoteId];
+    if (!itemId) return;
+    const matchedItem = (inquiry.items || []).find((it) => String(it.id) === String(itemId));
+    const partNumber = matchedItem?.partNumber || null;
     setSavingAssign(quoteId);
     try {
       const res = await fetch("/api/quotes", {
@@ -2585,7 +2587,9 @@ function QuotesTab({ inquiry }) {
                         >
                           <option value="">— select item —</option>
                           {inquiryItems.map((it) => (
-                            <option key={it.partNumber} value={it.partNumber}>{it.partNumber}</option>
+                            <option key={it.id} value={it.id}>
+                              {it.partNumber || `[no part#] ${it.itemNotes || it.brand || "item " + it.id}`}
+                            </option>
                           ))}
                         </select>
                       </td>

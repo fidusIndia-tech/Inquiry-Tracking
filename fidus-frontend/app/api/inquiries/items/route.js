@@ -19,6 +19,24 @@ async function ensureSchema() {
  *    brand the client never stated. Tags the row so the UI can show it was
  *    machine-detected, not typed by a person.
  */
+export async function POST(request) {
+  try {
+    await ensureSchema();
+    const { inquiry_id, brand, part_number, quantity, uom, item_notes } = await request.json();
+    if (!inquiry_id) return Response.json({ error: "inquiry_id is required" }, { status: 400 });
+    const result = await query(
+      `INSERT INTO inquiry_items (inquiry_id, brand, part_number, quantity, uom, item_notes)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [inquiry_id, brand?.trim() || null, part_number?.trim() || null,
+       quantity ? Number(quantity) : null, uom?.trim() || null, item_notes?.trim() || null]
+    );
+    await query("SELECT pg_notify('inquiries_changed', '')");
+    return Response.json({ item: result.rows[0] }, { status: 201 });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function PATCH(request) {
   try {
     await ensureSchema();

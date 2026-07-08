@@ -3,7 +3,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Award, Ban, Bot, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCopy, FileText, Globe,
-  History, Loader2, Mail, MapPin, Phone, RefreshCw, Search, Send, ShoppingCart, Store, Tag, Trash2, UserPlus, X, XCircle,
+  History, Loader2, Mail, MapPin, Phone, Plus, RefreshCw, Search, Send, ShoppingCart, Store, Tag, Trash2, UserPlus, X, XCircle,
 } from "lucide-react";
 import PurchaseOrdersTab from "./PurchaseOrdersTab";
 
@@ -130,6 +130,42 @@ function BrandCell({ item }) {
 
 function DetailsTab({ inquiry }) {
   const items = inquiry.items?.length ? inquiry.items : [];
+  const [addedItems, setAddedItems] = useState([]);
+  const [adding,     setAdding]     = useState(false);
+  const [newItem,    setNewItem]     = useState({ brand: "", part_number: "", quantity: "", uom: "", item_notes: "" });
+  const [saving,     setSaving]      = useState(false);
+
+  const allItems = [...items, ...addedItems];
+
+  const resetForm = () => {
+    setNewItem({ brand: "", part_number: "", quantity: "", uom: "", item_notes: "" });
+    setAdding(false);
+  };
+
+  const handleAddItem = async () => {
+    if (!newItem.brand && !newItem.part_number && !newItem.item_notes) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/inquiries/items", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ inquiry_id: inquiry.id, ...newItem }),
+      });
+      if (res.ok) {
+        const { item } = await res.json();
+        setAddedItems((prev) => [...prev, {
+          id: item.id, brand: item.brand, partNumber: item.part_number,
+          quantity: item.quantity, uom: item.uom, itemNotes: item.item_notes, brandSource: null,
+        }]);
+        resetForm();
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inCls = "w-full rounded border border-[#E4E8EE] bg-white px-1.5 py-1 text-[11px] outline-none focus:border-[#5BA7FF] focus:ring-1 focus:ring-[#5BA7FF]/20";
+
   return (
     <div className="space-y-5 p-5">
       <div className="grid grid-cols-2 gap-x-6 gap-y-4">
@@ -162,47 +198,90 @@ function DetailsTab({ inquiry }) {
         </div>
       )}
 
-      {items.length > 0 && (
-        <div>
-          <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Line Items ({items.length}) <span className="font-normal text-slate-300">· click brand, part number, or qty to edit</span>
-            {items.some((i) => i.brandSource === "auto") && (
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            Line Items ({allItems.length}) <span className="font-normal text-slate-300">· click brand, part number, or qty to edit</span>
+            {allItems.some((i) => i.brandSource === "auto") && (
               <span className="flex items-center gap-1 font-normal text-[#8B5CF6]">
                 <Bot size={10} />= auto-detected, verify before relying on it
               </span>
             )}
           </p>
-          <div className="overflow-hidden rounded-xl border border-[#E4E8EE]">
-            <table className="w-full border-collapse text-[11px]">
-              <thead>
-                <tr style={{ background: "linear-gradient(90deg,#EEF4FF,#E6EDFC)" }}>
-                  {["Brand", "Part Number", "Qty", "UOM", "Notes"].map((h) => (
-                    <th key={h} className="border-b border-[#D0DCF4] px-3 py-2 text-left font-bold text-[#4461A8]">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item, idx) => (
-                  <tr key={item.id ?? idx} className="border-b border-[#EEF2F6] last:border-b-0"
-                      style={{ background: idx % 2 === 0 ? "white" : "#F8FAFC" }}>
-                    <td className="px-1 py-1">
-                      {item.id ? <BrandCell item={item} /> : <span className="px-2 text-slate-600">{item.brand || "—"}</span>}
-                    </td>
-                    <td className="px-1 py-1">
-                      {item.id ? <PartNumberCell item={item} /> : <span className="px-2 font-semibold text-slate-900">{item.partNumber || "—"}</span>}
-                    </td>
-                    <td className="px-1 py-1">
-                      {item.id ? <QuantityCell item={item} /> : <span className="px-2 text-slate-600">{item.quantity || "—"}</span>}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">{item.uom        || "—"}</td>
-                    <td className="px-3 py-2 text-slate-500">{item.itemNotes  || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {!adding && (
+            <button
+              onClick={() => setAdding(true)}
+              className="flex items-center gap-1 rounded-lg border border-[#D0DCF4] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#4461A8] transition hover:bg-[#EEF4FF]"
+            >
+              <Plus size={11} /> Add Item
+            </button>
+          )}
         </div>
-      )}
+        <div className="overflow-hidden rounded-xl border border-[#E4E8EE]">
+          <table className="w-full border-collapse text-[11px]">
+            <thead>
+              <tr style={{ background: "linear-gradient(90deg,#EEF4FF,#E6EDFC)" }}>
+                {["Brand", "Part Number", "Qty", "UOM", "Notes"].map((h) => (
+                  <th key={h} className="border-b border-[#D0DCF4] px-3 py-2 text-left font-bold text-[#4461A8]">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {allItems.map((item, idx) => (
+                <tr key={item.id ?? idx} className="border-b border-[#EEF2F6] last:border-b-0"
+                    style={{ background: idx % 2 === 0 ? "white" : "#F8FAFC" }}>
+                  <td className="px-1 py-1">
+                    {item.id ? <BrandCell item={item} /> : <span className="px-2 text-slate-600">{item.brand || "—"}</span>}
+                  </td>
+                  <td className="px-1 py-1">
+                    {item.id ? <PartNumberCell item={item} /> : <span className="px-2 font-semibold text-slate-900">{item.partNumber || "—"}</span>}
+                  </td>
+                  <td className="px-1 py-1">
+                    {item.id ? <QuantityCell item={item} /> : <span className="px-2 text-slate-600">{item.quantity || "—"}</span>}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600">{item.uom        || "—"}</td>
+                  <td className="px-3 py-2 text-slate-500">{item.itemNotes  || "—"}</td>
+                </tr>
+              ))}
+              {adding && (
+                <tr className="border-t-2 border-[#5BA7FF]/30 bg-[#F0F7FF]">
+                  <td className="px-1 py-1.5">
+                    <input className={inCls} placeholder="Brand" value={newItem.brand}
+                      onChange={(e) => setNewItem((p) => ({ ...p, brand: e.target.value }))} />
+                  </td>
+                  <td className="px-1 py-1.5">
+                    <input className={inCls} placeholder="Part number" value={newItem.part_number}
+                      onChange={(e) => setNewItem((p) => ({ ...p, part_number: e.target.value }))} />
+                  </td>
+                  <td className="px-1 py-1.5">
+                    <input className={inCls} placeholder="Qty" type="number" value={newItem.quantity}
+                      onChange={(e) => setNewItem((p) => ({ ...p, quantity: e.target.value }))} />
+                  </td>
+                  <td className="px-1 py-1.5">
+                    <input className={inCls} placeholder="UOM" value={newItem.uom}
+                      onChange={(e) => setNewItem((p) => ({ ...p, uom: e.target.value }))} />
+                  </td>
+                  <td className="px-1 py-1.5">
+                    <div className="flex items-center gap-1">
+                      <input className={inCls} placeholder="Notes" value={newItem.item_notes}
+                        onChange={(e) => setNewItem((p) => ({ ...p, item_notes: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleAddItem(); if (e.key === "Escape") resetForm(); }} />
+                      <button onClick={handleAddItem} disabled={saving}
+                        className="shrink-0 rounded bg-[#5BA7FF] px-2 py-1 text-[10px] font-bold text-white transition hover:bg-[#4499EE] disabled:opacity-50">
+                        {saving ? "…" : "Save"}
+                      </button>
+                      <button onClick={resetForm}
+                        className="shrink-0 rounded border border-[#E4E8EE] bg-white px-2 py-1 text-[10px] text-slate-500 transition hover:bg-slate-50">
+                        ✕
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

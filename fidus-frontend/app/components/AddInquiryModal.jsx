@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, RefreshCw, Trash2, X } from "lucide-react";
 
 export default function AddInquiryModal({
@@ -40,6 +40,14 @@ export default function AddInquiryModal({
   const [submitting,       setSubmitting]       = useState(false);
   const [validationError,  setValidationError]  = useState("");
   const [error,            setError]            = useState("");
+  const [clientNames,      setClientNames]      = useState([]);
+
+  useEffect(() => {
+    fetch("/api/inquiries/client-names")
+      .then((r) => r.json())
+      .then((d) => setClientNames(d.names || []))
+      .catch(() => {});
+  }, []);
 
   const updateField = (key, val) => setForm((f) => ({ ...f, [key]: val }));
   const updateItem  = (idx, key, val) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, [key]: val } : it));
@@ -86,7 +94,7 @@ export default function AddInquiryModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-3xl bg-white rounded-2xl overflow-hidden max-h-[92vh] flex flex-col"
+      <div className="relative z-10 w-full max-w-5xl bg-white rounded-2xl overflow-hidden max-h-[92vh] flex flex-col"
            style={{ boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
 
         {/* Header */}
@@ -119,7 +127,12 @@ export default function AddInquiryModal({
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <span className={lbl}>Client Name <span className="text-rose-400">*</span></span>
-                <input value={form.client_name} onChange={(e) => updateField("client_name", e.target.value)} placeholder="ABC Industries" className={inp} />
+                <input value={form.client_name} onChange={(e) => updateField("client_name", e.target.value)}
+                  placeholder="ABC Industries" className={inp}
+                  list="add-inquiry-client-names" autoComplete="off" />
+                <datalist id="add-inquiry-client-names">
+                  {clientNames.map((n) => <option key={n} value={n} />)}
+                </datalist>
               </label>
               <label className="block">
                 <span className={lbl}>Company Name</span>

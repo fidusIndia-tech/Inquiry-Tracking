@@ -3,7 +3,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Award, Ban, Bot, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCopy, FileText, Globe,
-  History, Loader2, Mail, MapPin, Phone, RefreshCw, Search, Send, ShoppingCart, Store, Tag, Trash2, UserPlus, X, XCircle,
+  History, Loader2, Mail, MapPin, Phone, Plus, RefreshCw, Search, Send, ShoppingCart, Store, Tag, Trash2, UserPlus, X, XCircle,
 } from "lucide-react";
 import PurchaseOrdersTab from "./PurchaseOrdersTab";
 
@@ -130,6 +130,42 @@ function BrandCell({ item }) {
 
 function DetailsTab({ inquiry }) {
   const items = inquiry.items?.length ? inquiry.items : [];
+  const [addedItems, setAddedItems] = useState([]);
+  const [adding,     setAdding]     = useState(false);
+  const [newItem,    setNewItem]     = useState({ brand: "", part_number: "", quantity: "", uom: "", item_notes: "" });
+  const [saving,     setSaving]      = useState(false);
+
+  const allItems = [...items, ...addedItems];
+
+  const resetForm = () => {
+    setNewItem({ brand: "", part_number: "", quantity: "", uom: "", item_notes: "" });
+    setAdding(false);
+  };
+
+  const handleAddItem = async () => {
+    if (!newItem.brand && !newItem.part_number && !newItem.item_notes) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/inquiries/items", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ inquiry_id: inquiry.id, ...newItem }),
+      });
+      if (res.ok) {
+        const { item } = await res.json();
+        setAddedItems((prev) => [...prev, {
+          id: item.id, brand: item.brand, partNumber: item.part_number,
+          quantity: item.quantity, uom: item.uom, itemNotes: item.item_notes, brandSource: null,
+        }]);
+        resetForm();
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inCls = "w-full rounded border border-[#E4E8EE] bg-white px-1.5 py-1 text-[11px] outline-none focus:border-[#5BA7FF] focus:ring-1 focus:ring-[#5BA7FF]/20";
+
   return (
     <div className="space-y-5 p-5">
       <div className="grid grid-cols-2 gap-x-6 gap-y-4">
@@ -162,47 +198,90 @@ function DetailsTab({ inquiry }) {
         </div>
       )}
 
-      {items.length > 0 && (
-        <div>
-          <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Line Items ({items.length}) <span className="font-normal text-slate-300">· click brand, part number, or qty to edit</span>
-            {items.some((i) => i.brandSource === "auto") && (
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            Line Items ({allItems.length}) <span className="font-normal text-slate-300">· click brand, part number, or qty to edit</span>
+            {allItems.some((i) => i.brandSource === "auto") && (
               <span className="flex items-center gap-1 font-normal text-[#8B5CF6]">
                 <Bot size={10} />= auto-detected, verify before relying on it
               </span>
             )}
           </p>
-          <div className="overflow-hidden rounded-xl border border-[#E4E8EE]">
-            <table className="w-full border-collapse text-[11px]">
-              <thead>
-                <tr style={{ background: "linear-gradient(90deg,#EEF4FF,#E6EDFC)" }}>
-                  {["Brand", "Part Number", "Qty", "UOM", "Notes"].map((h) => (
-                    <th key={h} className="border-b border-[#D0DCF4] px-3 py-2 text-left font-bold text-[#4461A8]">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item, idx) => (
-                  <tr key={item.id ?? idx} className="border-b border-[#EEF2F6] last:border-b-0"
-                      style={{ background: idx % 2 === 0 ? "white" : "#F8FAFC" }}>
-                    <td className="px-1 py-1">
-                      {item.id ? <BrandCell item={item} /> : <span className="px-2 text-slate-600">{item.brand || "—"}</span>}
-                    </td>
-                    <td className="px-1 py-1">
-                      {item.id ? <PartNumberCell item={item} /> : <span className="px-2 font-semibold text-slate-900">{item.partNumber || "—"}</span>}
-                    </td>
-                    <td className="px-1 py-1">
-                      {item.id ? <QuantityCell item={item} /> : <span className="px-2 text-slate-600">{item.quantity || "—"}</span>}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">{item.uom        || "—"}</td>
-                    <td className="px-3 py-2 text-slate-500">{item.itemNotes  || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {!adding && (
+            <button
+              onClick={() => setAdding(true)}
+              className="flex items-center gap-1 rounded-lg border border-[#D0DCF4] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#4461A8] transition hover:bg-[#EEF4FF]"
+            >
+              <Plus size={11} /> Add Item
+            </button>
+          )}
         </div>
-      )}
+        <div className="overflow-hidden rounded-xl border border-[#E4E8EE]">
+          <table className="w-full border-collapse text-[11px]">
+            <thead>
+              <tr style={{ background: "linear-gradient(90deg,#EEF4FF,#E6EDFC)" }}>
+                {["Brand", "Part Number", "Qty", "UOM", "Notes"].map((h) => (
+                  <th key={h} className="border-b border-[#D0DCF4] px-3 py-2 text-left font-bold text-[#4461A8]">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {allItems.map((item, idx) => (
+                <tr key={item.id ?? idx} className="border-b border-[#EEF2F6] last:border-b-0"
+                    style={{ background: idx % 2 === 0 ? "white" : "#F8FAFC" }}>
+                  <td className="px-1 py-1">
+                    {item.id ? <BrandCell item={item} /> : <span className="px-2 text-slate-600">{item.brand || "—"}</span>}
+                  </td>
+                  <td className="px-1 py-1">
+                    {item.id ? <PartNumberCell item={item} /> : <span className="px-2 font-semibold text-slate-900">{item.partNumber || "—"}</span>}
+                  </td>
+                  <td className="px-1 py-1">
+                    {item.id ? <QuantityCell item={item} /> : <span className="px-2 text-slate-600">{item.quantity || "—"}</span>}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600">{item.uom        || "—"}</td>
+                  <td className="px-3 py-2 text-slate-500">{item.itemNotes  || "—"}</td>
+                </tr>
+              ))}
+              {adding && (
+                <tr className="border-t-2 border-[#5BA7FF]/30 bg-[#F0F7FF]">
+                  <td className="px-1 py-1.5">
+                    <input className={inCls} placeholder="Brand" value={newItem.brand}
+                      onChange={(e) => setNewItem((p) => ({ ...p, brand: e.target.value }))} />
+                  </td>
+                  <td className="px-1 py-1.5">
+                    <input className={inCls} placeholder="Part number" value={newItem.part_number}
+                      onChange={(e) => setNewItem((p) => ({ ...p, part_number: e.target.value }))} />
+                  </td>
+                  <td className="px-1 py-1.5">
+                    <input className={inCls} placeholder="Qty" type="number" value={newItem.quantity}
+                      onChange={(e) => setNewItem((p) => ({ ...p, quantity: e.target.value }))} />
+                  </td>
+                  <td className="px-1 py-1.5">
+                    <input className={inCls} placeholder="UOM" value={newItem.uom}
+                      onChange={(e) => setNewItem((p) => ({ ...p, uom: e.target.value }))} />
+                  </td>
+                  <td className="px-1 py-1.5">
+                    <div className="flex items-center gap-1">
+                      <input className={inCls} placeholder="Notes" value={newItem.item_notes}
+                        onChange={(e) => setNewItem((p) => ({ ...p, item_notes: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleAddItem(); if (e.key === "Escape") resetForm(); }} />
+                      <button onClick={handleAddItem} disabled={saving}
+                        className="shrink-0 rounded bg-[#5BA7FF] px-2 py-1 text-[10px] font-bold text-white transition hover:bg-[#4499EE] disabled:opacity-50">
+                        {saving ? "…" : "Save"}
+                      </button>
+                      <button onClick={resetForm}
+                        className="shrink-0 rounded border border-[#E4E8EE] bg-white px-2 py-1 text-[10px] text-slate-500 transition hover:bg-slate-50">
+                        ✕
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1584,6 +1663,9 @@ function QuotesTab({ inquiry }) {
   const [termsText,           setTermsText]           = useState(DEFAULT_TERMS);
   const [clientNote,          setClientNote]          = useState("");
   const [lineRemarks,         setLineRemarks]         = useState({});
+  const [lineDescriptions,    setLineDescriptions]    = useState({});
+  const [linePartNumbers,     setLinePartNumbers]     = useState({});
+  const [lineQuantities,      setLineQuantities]      = useState({});
   const [showPreview,         setShowPreview]         = useState(false);
   const [downloading,         setDownloading]         = useState(false);
 
@@ -1632,17 +1714,27 @@ function QuotesTab({ inquiry }) {
   const { matchedByItem, unmatchedQuotes, byPart, partNumbers } = useMemo(() => {
     const items     = inquiry.items || [];
     const normItems = items.map((it) => norm(it.partNumber || ""));
-    const matched   = {};
+    const matched   = {};  // keyed by item.id (DB row id)
     const unmatched = [];
     const legacy    = {};
 
     for (const q of quotes) {
       const qNorm = norm(q.part_number);
       if (items.length > 0) {
+        // Manual quotes carry item_id — use it directly so null-part-number
+        // items are never relegated to unmatched just because pn is empty.
+        if (q.item_id) {
+          const item = items.find((it) => String(it.id) === String(q.item_id));
+          if (item) {
+            (matched[item.id] = matched[item.id] || []).push(q);
+            continue;
+          }
+        }
+        // Extracted quotes — match by normalised part number.
         const idx = normItems.findIndex((n) => n && n === qNorm);
         if (idx !== -1) {
-          const key = items[idx].partNumber;
-          (matched[key] = matched[key] || []).push(q);
+          const item = items[idx];
+          (matched[item.id] = matched[item.id] || []).push(q);
         } else {
           unmatched.push(q);
         }
@@ -1685,20 +1777,22 @@ function QuotesTab({ inquiry }) {
     const items = inquiry.items || [];
     if (items.length > 0) {
       return items
-        .filter((item) => selected[item.partNumber] && sellingPrices[item.partNumber])
+        .filter((item) => selected[item.id] && sellingPrices[item.id])
         .map((item) => {
-          const pn = item.partNumber;
-          const q  = (matchedByItem[pn] || []).find((x) => String(x.id) === String(selected[pn]));
+          const pn     = item.partNumber;
+          const itemId = item.id;
+          const q      = (matchedByItem[itemId] || []).find((x) => String(x.id) === String(selected[itemId]));
           return {
-            part_number:        pn,
-            description:        item.itemNotes || null,
+            item_id:            itemId,
+            part_number:        linePartNumbers[itemId] !== undefined ? linePartNumbers[itemId] : (pn || null),
+            description:        lineDescriptions[itemId] !== undefined ? lineDescriptions[itemId] : (item.itemNotes || null),
             brand:              item.brand     || null,
-            quantity:           item.quantity  || null,
+            quantity:           lineQuantities[itemId] !== undefined ? lineQuantities[itemId] : (item.quantity || null),
             uom:                item.uom       || null,
             currency:           quoteCurrency,
-            selling_price:      sellingPrices[pn],
-            lead_time:          leadTimes[pn] || q?.lead_time || "",
-            remark:             lineRemarks[pn] || null,
+            selling_price:      sellingPrices[itemId],
+            lead_time:          leadTimes[itemId] || q?.lead_time || "",
+            remark:             lineRemarks[itemId] || null,
             // Vendor fields — persisted in quotations.lines JSONB for PO generation.
             // The PDF renderer ignores unknown keys so these are non-breaking.
             vendor_quote_id:    q?.id                || null,
@@ -1732,7 +1826,7 @@ function QuotesTab({ inquiry }) {
           vendor_availability: q?.availability     || null,
         };
       });
-  }, [inquiry.items, selected, sellingPrices, leadTimes, lineRemarks, matchedByItem, quoteCurrency, partNumbers, byPart, itemByPart]);
+  }, [inquiry.items, selected, sellingPrices, leadTimes, lineRemarks, lineDescriptions, linePartNumbers, lineQuantities, matchedByItem, quoteCurrency, partNumbers, byPart, itemByPart]);
 
   /* ── Loading state ── */
   if (loading) {
@@ -1767,7 +1861,7 @@ function QuotesTab({ inquiry }) {
   const MAX_V     = 5;
 
   /* ── Manual price add ── */
-  const handleManualAdd = async (partNumber) => {
+  const handleManualAdd = async (itemId, partNumber) => {
     if (!manualForm.vendor_name.trim() || !manualForm.unit_price) return;
     setAddingManual(true);
     try {
@@ -1785,8 +1879,10 @@ function QuotesTab({ inquiry }) {
           vendor_name:  manualForm.vendor_name.trim(),
           vendor_email: manualEmail,
           source_type:  "manual",
+          item_id:      itemId,
           quotes: [{
             part_number:  partNumber,
+            item_id:      itemId,
             unit_price:   parseFloat(manualForm.unit_price),
             currency:     manualForm.currency || quoteCurrency,
             lead_time:    manualForm.lead_time    || null,
@@ -1805,9 +1901,9 @@ function QuotesTab({ inquiry }) {
         (q) => q.vendor_email === manualEmail && norm(q.part_number) === norm(partNumber)
       );
       if (saved) {
-        setSelected((prev) => ({ ...prev, [partNumber]: saved.id }));
+        setSelected((prev) => ({ ...prev, [itemId]: saved.id }));
         if (manualForm.lead_time) {
-          setLeadTimes((prev) => ({ ...prev, [partNumber]: manualForm.lead_time }));
+          setLeadTimes((prev) => ({ ...prev, [itemId]: manualForm.lead_time }));
         }
       }
       setShowAddManual(null);
@@ -1874,8 +1970,10 @@ function QuotesTab({ inquiry }) {
 
   /* ── Assign unmatched quote to an inquiry item ── */
   const handleAssignUnmatched = async (quoteId) => {
-    const partNumber = unmatchedAssign[quoteId];
-    if (!partNumber) return;
+    const itemId = unmatchedAssign[quoteId];
+    if (!itemId) return;
+    const matchedItem = (inquiry.items || []).find((it) => String(it.id) === String(itemId));
+    const partNumber = matchedItem?.partNumber || null;
     setSavingAssign(quoteId);
     try {
       const res = await fetch("/api/quotes", {
@@ -1989,7 +2087,7 @@ function QuotesTab({ inquiry }) {
                 </button>
               </div>
               <p className="text-[11px] font-medium text-slate-500 mb-3">
-                Part: <span className="font-semibold text-slate-800">{showAddManual}</span>
+                Part: <span className="font-semibold text-slate-800">{showAddManual?.partNumber}</span>
               </p>
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
@@ -2062,7 +2160,7 @@ function QuotesTab({ inquiry }) {
                   Cancel
                 </button>
                 <button
-                  onClick={() => handleManualAdd(showAddManual)}
+                  onClick={() => handleManualAdd(showAddManual.itemId, showAddManual.partNumber)}
                   disabled={!manualForm.vendor_name.trim() || !manualForm.unit_price || addingManual}
                   className="flex h-8 items-center gap-1.5 rounded-lg px-4 text-[12px] font-semibold text-white disabled:opacity-40"
                   style={{ background: "linear-gradient(135deg,#5BA7FF,#6D7CFF)" }}
@@ -2173,17 +2271,18 @@ function QuotesTab({ inquiry }) {
               <tbody>
                 {inquiryItems.map((item, rowIdx) => {
                   const pn          = item.partNumber;
-                  const rowQuotes   = matchedByItem[pn] || [];
+                  const itemId      = item.id ?? rowIdx;
+                  const rowQuotes   = matchedByItem[itemId] || [];
                   const bestId      = rowQuotes.find((q) => Number.isFinite(Number(q.unit_price)) && Number(q.unit_price) > 0)?.id;
-                  const isExp       = expandedItems[pn];
+                  const isExp       = expandedItems[itemId];
                   const visible     = isExp ? rowQuotes : rowQuotes.slice(0, MAX_V);
                   const hiddenCount = rowQuotes.length - MAX_V;
-                  const isSel       = !!selected[pn];
+                  const isSel       = !!selected[itemId];
                   const isLocked    = lockedParts.has(pn);
                   const bg          = isLocked ? "#F0FDF4" : isSel ? "#FFFBEB" : (rowIdx % 2 === 0 ? "white" : "#FAFBFF");
 
                   return (
-                    <tr key={pn} style={{ background: bg }}
+                    <tr key={itemId} style={{ background: bg }}
                         className="border-b border-[#EEF2F6] last:border-b-0 align-top">
                       <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{item.brand || "—"}</td>
                       <td className="px-3 py-2.5">
@@ -2199,15 +2298,15 @@ function QuotesTab({ inquiry }) {
                       <td className="px-3 py-2" style={{ minWidth: "380px" }}>
                         <div className="flex flex-wrap gap-2">
                           {visible.map((q) => {
-                            const isCurrent  = String(selected[pn]) === String(q.id);
+                            const isCurrent  = String(selected[itemId]) === String(q.id);
                             const hasQPO     = !!quickPOMap[q.id];  // keyed by vendor_quote_id
                             const isCreating = poCreating[pn] && isCurrent;
                             return (
                               <div key={q.id}
                                 onClick={() => {
                                   if (isLocked) return;
-                                  setSelected((prev) => ({ ...prev, [pn]: q.id }));
-                                  setLeadTimes((prev) => prev[pn] ? prev : { ...prev, [pn]: q.lead_time || "" });
+                                  setSelected((prev) => ({ ...prev, [itemId]: q.id }));
+                                  setLeadTimes((prev) => prev[itemId] ? prev : { ...prev, [itemId]: q.lead_time || "" });
                                 }}
                                 className={`flex flex-col gap-0.5 rounded-lg border px-2.5 py-2 transition select-none ${
                                   isLocked
@@ -2282,7 +2381,7 @@ function QuotesTab({ inquiry }) {
 
                           {!isExp && hiddenCount > 0 && (
                             <button
-                              onClick={() => setExpandedItems((prev) => ({ ...prev, [pn]: true }))}
+                              onClick={() => setExpandedItems((prev) => ({ ...prev, [itemId]: true }))}
                               className="self-start mt-1 text-[10px] font-semibold text-[#4451E8] hover:underline"
                             >
                               +{hiddenCount} more
@@ -2290,7 +2389,7 @@ function QuotesTab({ inquiry }) {
                           )}
                           {isExp && rowQuotes.length > MAX_V && (
                             <button
-                              onClick={() => setExpandedItems((prev) => ({ ...prev, [pn]: false }))}
+                              onClick={() => setExpandedItems((prev) => ({ ...prev, [itemId]: false }))}
                               className="self-start mt-1 text-[10px] font-semibold text-slate-400 hover:underline"
                             >
                               Show less
@@ -2300,7 +2399,7 @@ function QuotesTab({ inquiry }) {
                           <button
                             onClick={() => {
                               setManualForm({ vendor_name: "", vendor_email: "", unit_price: "", currency: quoteCurrency, lead_time: "", availability: "", remarks: "" });
-                              setShowAddManual(pn);
+                              setShowAddManual({ itemId, partNumber: pn });
                             }}
                             className="self-start flex items-center gap-1 rounded-lg border border-dashed border-[#C7D9F8] bg-[#F5F8FF] px-2.5 py-2 text-[10px] font-semibold text-[#4451E8] hover:bg-[#EEF4FF] transition whitespace-nowrap"
                           >
@@ -2313,14 +2412,14 @@ function QuotesTab({ inquiry }) {
                       <td className="px-3 py-2.5">
                         {isLocked ? (
                           <div className="flex items-center gap-1">
-                            <span className="text-[12px] font-semibold text-slate-700">{sellingPrices[pn] || "—"}</span>
+                            <span className="text-[12px] font-semibold text-slate-700">{sellingPrices[itemId] || "—"}</span>
                             <span title="Locked — PO already sent" className="text-[10px] text-green-600">🔒</span>
                           </div>
                         ) : (
                           <input
                             type="number"
-                            value={sellingPrices[pn] || ""}
-                            onChange={(e) => setSellingPrices((prev) => ({ ...prev, [pn]: e.target.value }))}
+                            value={sellingPrices[itemId] || ""}
+                            onChange={(e) => setSellingPrices((prev) => ({ ...prev, [itemId]: e.target.value }))}
                             placeholder="0.00"
                             disabled={!isSel}
                             className="w-24 rounded-lg border px-2 py-1.5 text-[12px] font-medium text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
@@ -2333,14 +2432,14 @@ function QuotesTab({ inquiry }) {
                       <td className="px-3 py-2.5">
                         {isLocked ? (
                           <div className="flex items-center gap-1">
-                            <span className="text-[12px] text-slate-700">{leadTimes[pn] || "—"}</span>
+                            <span className="text-[12px] text-slate-700">{leadTimes[itemId] || "—"}</span>
                             <span title="Locked — PO already sent" className="text-[10px] text-green-600">🔒</span>
                           </div>
                         ) : (
                           <input
                             type="text"
-                            value={leadTimes[pn] || ""}
-                            onChange={(e) => setLeadTimes((prev) => ({ ...prev, [pn]: e.target.value }))}
+                            value={leadTimes[itemId] || ""}
+                            onChange={(e) => setLeadTimes((prev) => ({ ...prev, [itemId]: e.target.value }))}
                             placeholder="e.g. 2 weeks"
                             disabled={!isSel}
                             className="w-28 rounded-lg border px-2 py-1.5 text-[12px] font-medium text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
@@ -2353,8 +2452,8 @@ function QuotesTab({ inquiry }) {
                       <td className="px-3 py-2.5">
                         <textarea
                           rows={2}
-                          value={lineRemarks[pn] || ""}
-                          onChange={(e) => setLineRemarks((prev) => ({ ...prev, [pn]: e.target.value }))}
+                          value={lineRemarks[itemId] || ""}
+                          onChange={(e) => setLineRemarks((prev) => ({ ...prev, [itemId]: e.target.value }))}
                           placeholder="Add remark…"
                           disabled={!isSel}
                           className="w-32 resize-none rounded-lg border px-2 py-1.5 text-[11px] leading-snug text-slate-800 outline-none transition disabled:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
@@ -2579,7 +2678,9 @@ function QuotesTab({ inquiry }) {
                         >
                           <option value="">— select item —</option>
                           {inquiryItems.map((it) => (
-                            <option key={it.partNumber} value={it.partNumber}>{it.partNumber}</option>
+                            <option key={it.id} value={it.id}>
+                              {it.partNumber || `[no part#] ${it.itemNotes || it.brand || "item " + it.id}`}
+                            </option>
                           ))}
                         </select>
                       </td>
@@ -2930,15 +3031,46 @@ function QuotesTab({ inquiry }) {
                     <tbody>
                       {readyLines.map((l, i) => {
                         const amt = (Number(l.quantity) || 1) * Number(l.selling_price || 0);
+                        const editCls = "w-full rounded border border-transparent bg-transparent px-1.5 py-1 outline-none hover:border-[#D0DCF4] focus:border-[#5BA7FF] focus:bg-white focus:ring-1 focus:ring-[#5BA7FF]/20 placeholder:text-slate-300";
                         return (
                           <tr key={i} className="border-b border-[#EEF2F6]">
                             <td className="border border-[#E4E8EE] px-2.5 py-2 text-slate-500">{i + 1}</td>
-                            <td className="border border-[#E4E8EE] px-2.5 py-2 font-semibold text-slate-900">{l.part_number || "—"}</td>
-                            <td className="border border-[#E4E8EE] px-2.5 py-2 text-slate-600">{l.description || "—"}</td>
-                            <td className="border border-[#E4E8EE] px-2.5 py-2 text-slate-700">{l.quantity || "—"}</td>
+                            <td className="border border-[#E4E8EE] px-1.5 py-1.5">
+                              <input
+                                type="text"
+                                value={l.part_number ?? ""}
+                                onChange={(e) => setLinePartNumbers((prev) => ({ ...prev, [l.item_id]: e.target.value }))}
+                                placeholder="Part number…"
+                                className={`${editCls} min-w-[100px] text-[12px] font-semibold text-slate-900`}
+                              />
+                            </td>
+                            <td className="border border-[#E4E8EE] px-1.5 py-1.5">
+                              <input
+                                type="text"
+                                value={l.description ?? ""}
+                                onChange={(e) => setLineDescriptions((prev) => ({ ...prev, [l.item_id]: e.target.value }))}
+                                placeholder="Description…"
+                                className={`${editCls} min-w-[140px] text-[11px] text-slate-700`}
+                              />
+                            </td>
+                            <td className="border border-[#E4E8EE] px-1.5 py-1.5">
+                              <input
+                                type="number"
+                                value={l.quantity ?? ""}
+                                onChange={(e) => setLineQuantities((prev) => ({ ...prev, [l.item_id]: e.target.value }))}
+                                placeholder="Qty…"
+                                className={`${editCls} w-16 text-[12px] text-slate-700`}
+                              />
+                            </td>
                             <td className="border border-[#E4E8EE] px-2.5 py-2 text-slate-600">{l.lead_time || "—"}</td>
-                            <td className="border border-[#E4E8EE] px-2.5 py-2 text-right font-medium text-slate-800">
-                              {quoteCurrency} {Number(l.selling_price || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <td className="border border-[#E4E8EE] px-1.5 py-1.5">
+                              <input
+                                type="number"
+                                value={l.selling_price ?? ""}
+                                onChange={(e) => setSellingPrices((prev) => ({ ...prev, [l.item_id]: e.target.value }))}
+                                placeholder="0.00"
+                                className={`${editCls} w-24 text-[12px] font-medium text-slate-800 text-right`}
+                              />
                             </td>
                             <td className="border border-[#E4E8EE] px-2.5 py-2 text-right font-semibold text-slate-900">
                               {fmtAmt(amt)}

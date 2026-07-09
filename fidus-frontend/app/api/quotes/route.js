@@ -27,6 +27,7 @@ async function ensureQuotesSchema() {
   `);
   await pool.query("ALTER TABLE vendor_quotes ADD COLUMN IF NOT EXISTS raw_reply_is_html BOOLEAN DEFAULT FALSE");
   await pool.query("ALTER TABLE vendor_quotes ADD COLUMN IF NOT EXISTS source_type TEXT DEFAULT 'extracted'");
+  await pool.query("ALTER TABLE vendor_quotes ADD COLUMN IF NOT EXISTS item_id INT");
   // Dedup index — must delete existing duplicates first or CREATE UNIQUE INDEX
   // fails on tables that already have rows. Wrapped non-fatal so a failure here
   // never blocks the GET (prices would just not deduplicate on re-insert).
@@ -96,7 +97,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await ensureQuotesSchema();
-    const { unique_code, draft_id, vendor_name, vendor_email, source_email, brand, raw_reply, raw_reply_is_html, quotes, source_type } = await request.json();
+    const { unique_code, draft_id, vendor_name, vendor_email, source_email, brand, raw_reply, raw_reply_is_html, quotes, source_type, item_id } = await request.json();
 
     if (!unique_code || !quotes?.length) {
       return Response.json({ error: "unique_code and quotes are required" }, { status: 400 });
@@ -110,8 +111,8 @@ export async function POST(request) {
       const res = await query(
         `INSERT INTO vendor_quotes
            (inquiry_unique_code, draft_id, vendor_name, vendor_email, brand, part_number,
-            unit_price, currency, moq, lead_time, availability, remarks, raw_reply, raw_reply_is_html, source_type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            unit_price, currency, moq, lead_time, availability, remarks, raw_reply, raw_reply_is_html, source_type, item_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          ON CONFLICT (inquiry_unique_code, LOWER(COALESCE(vendor_email,'')), LOWER(COALESCE(part_number,'')))
          DO UPDATE SET
            unit_price        = EXCLUDED.unit_price,
@@ -122,6 +123,7 @@ export async function POST(request) {
            remarks           = EXCLUDED.remarks,
            raw_reply         = EXCLUDED.raw_reply,
            raw_reply_is_html = EXCLUDED.raw_reply_is_html,
+           item_id           = EXCLUDED.item_id,
            received_at       = NOW()
          RETURNING *`,
         [
@@ -140,6 +142,7 @@ export async function POST(request) {
           cleanReply,
           isHtml,
           source_type || "extracted",
+          q.item_id ?? item_id ?? null,
         ]
       );
       if (res.rows[0]) created.push(res.rows[0]);
